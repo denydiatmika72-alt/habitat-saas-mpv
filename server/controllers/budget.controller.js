@@ -50,6 +50,7 @@ const createCategory = async (req, res) => {
 const updateCategory = async (req, res) => {
   try {
     const { categoryId } = req.params; // UUID string otomatis, tidak pake Number()
+    console.log('[UPDATE CATEGORY] categoryId received:', categoryId);
     const { name } = req.body;
 
     if (!name || name.trim() === '') {
@@ -57,10 +58,15 @@ const updateCategory = async (req, res) => {
     }
 
     // Cari tahu dulu apakah kategorinya ada
+    // PENTING: Budget tidak punya promotor_id langsung — harus traversal ke Event
     const category = await prisma.budgetCategory.findUnique({
       where: { id: categoryId },
-      include: { 
-        budget: true 
+      include: {
+        budget: {
+          include: {
+            event: true   // Event yang menyimpan promotor_id
+          }
+        }
       },
     });
 
@@ -68,8 +74,8 @@ const updateCategory = async (req, res) => {
       return res.status(404).json({ success: false, message: 'Kategori anggaran tidak ditemukan.' });
     }
 
-    // Validasi keamanan: Pastikan budget ini milik promotor yang sedang login
-    if (category.budget.promotor_id !== req.user.id) {
+    // Validasi keamanan: promotor_id ada di Event, bukan di Budget
+    if (category.budget.event.promotor_id !== req.user.id) {
       return res.status(403).json({ success: false, message: 'Anda tidak memiliki akses untuk mengubah kategori ini.' });
     }
 
@@ -90,17 +96,24 @@ const updateCategory = async (req, res) => {
 const deleteCategory = async (req, res) => {
   try {
     const { categoryId } = req.params;
-    
+    console.log('[DELETE CATEGORY] categoryId received:', categoryId);
+
     const category = await prisma.budgetCategory.findUnique({
       where: { id: categoryId },
-      include: { budget: true }
+      include: {
+        budget: {
+          include: {
+            event: true   // promotor_id ada di Event, bukan Budget
+          }
+        }
+      }
     });
 
     if (!category) {
       return res.status(404).json({ success: false, message: 'Kategori tidak ditemukan.' });
     }
 
-    if (category.budget.promotor_id !== req.user.id) {
+    if (category.budget.event.promotor_id !== req.user.id) {
       return res.status(403).json({ success: false, message: 'Akses ditolak.' });
     }
 

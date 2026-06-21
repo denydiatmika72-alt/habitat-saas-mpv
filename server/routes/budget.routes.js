@@ -7,8 +7,8 @@ const {
   deleteCategory
 } = require('../controllers/budget.controller');
 
-// Pastikan nama file middleware ini sesuai dengan sistem login Anda
-const verifyToken = require('../middleware/verifyToken'); 
+// Auth middleware — destructure karena auth.middleware.js mengexport { verifyToken }
+const { verifyToken } = require('../middleware/auth.middleware');
 
 // Rute umum budget & kategori
 router.post('/categories', verifyToken, createCategory);

@@ -7,9 +7,8 @@ const {
   deleteEvent 
 } = require('../controllers/event.controller');
 
-// Pastikan nama file middleware ini sesuai dengan file autentikasi yang kamu punya
-// Jika nama file middleware kamu beda (misal: auth.js), tolong ubah './verifyToken' di bawah
-const verifyToken = require('../middleware/verifyToken'); 
+// Auth middleware — destructure karena auth.middleware.js mengexport { verifyToken }
+const { verifyToken } = require('../middleware/auth.middleware');
 
 router.post('/', verifyToken, createEvent);
 router.get('/', verifyToken, getEvents);
