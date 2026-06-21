@@ -42,7 +42,7 @@ export function DocumentTable() {
 
   const fetchEvents = () => {
     const token = localStorage.getItem("token")
-    axios.get("http://localhost:5000/api/events", { headers: { Authorization: `Bearer ${token}` } })
+    axios.get("${process.env.NEXT_PUBLIC_API_URL}/api/events", { headers: { Authorization: `Bearer ${token}` } })
       .then((res) => {
         const data = Array.isArray(res.data) ? res.data : res.data.data ?? []
         setEvents(data)
@@ -117,7 +117,7 @@ function EventTableRow({ event }: { event: Event }) {
 
   useEffect(() => {
     const token = localStorage.getItem("token")
-    axios.get(`http://localhost:5000/api/budgets/${event.id}`, { headers: { Authorization: `Bearer ${token}` } })
+    axios.get(`${process.env.NEXT_PUBLIC_API_URL}/api/budgets/${event.id}`, { headers: { Authorization: `Bearer ${token}` } })
       .then((res) => {
         const budgetData = res.data.budget ?? res.data.data ?? res.data
         if (budgetData && Object.keys(budgetData).length > 0) {
@@ -137,7 +137,7 @@ function EventTableRow({ event }: { event: Event }) {
     
     try {
       const token = localStorage.getItem("token");
-      await axios.delete(`http://localhost:5000/api/events/${event.id}`, {
+      await axios.delete(`${process.env.NEXT_PUBLIC_API_URL}/api/events/${event.id}`, {
         headers: { Authorization: `Bearer ${token}` }
       });
       // Refresh halaman agar tabel terupdate otomatis

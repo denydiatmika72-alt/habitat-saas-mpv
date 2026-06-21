@@ -4,7 +4,7 @@
 // (Pastikan server sudah running di terminal lain)
 // ============================================================
 
-const BASE_URL = 'http://localhost:5000';
+const BASE_URL = '${process.env.NEXT_PUBLIC_API_URL}';
 
 async function testLogin() {
   console.log('🧪 Menguji endpoint POST /api/auth/login...\n');

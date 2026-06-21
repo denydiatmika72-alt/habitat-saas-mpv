@@ -63,7 +63,7 @@ export function StatCards() {
   useEffect(() => {
     const token = localStorage.getItem("token")
     axios
-      .get("http://localhost:5000/api/events", {
+      .get("${process.env.NEXT_PUBLIC_API_URL}/api/events", {
         headers: { Authorization: `Bearer ${token}` },
       })
       .then((res) => {
