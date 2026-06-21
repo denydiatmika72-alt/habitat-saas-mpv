@@ -42,7 +42,7 @@ export function DocumentTable() {
 
   const fetchEvents = () => {
     const token = localStorage.getItem("token")
-    axios.get("${process.env.NEXT_PUBLIC_API_URL}/api/events", { headers: { Authorization: `Bearer ${token}` } })
+    axios.get(`${process.env.NEXT_PUBLIC_API_URL}/api/events`, { headers: { Authorization: `Bearer ${token}` } })
       .then((res) => {
         const data = Array.isArray(res.data) ? res.data : res.data.data ?? []
         setEvents(data)

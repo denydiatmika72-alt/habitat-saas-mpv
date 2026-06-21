@@ -48,7 +48,7 @@ function formatCompact(num: number) {
   return formatRupiah(num)
 }
 
-const API = "${process.env.NEXT_PUBLIC_API_URL}/api"
+const API = `${process.env.NEXT_PUBLIC_API_URL}/api`
 const getToken = () => typeof window !== "undefined" ? (localStorage.getItem("token") ?? "") : ""
 const authHeaders = () => ({ Authorization: `Bearer ${getToken()}` })
 

@@ -1,12 +1,21 @@
 const express = require('express');
 const router = express.Router();
-const { createEvent, getEvents } = require('../controllers/event.controller');
-const { verifyToken } = require('../middleware/auth.middleware');
+const { 
+  createEvent, 
+  getEvents, 
+  getEventById, 
+  deleteEvent 
+} = require('../controllers/event.controller');
 
-// POST /api/events — Buat event baru (wajib login)
+// Pastikan nama file middleware ini sesuai dengan file autentikasi yang kamu punya
+// Jika nama file middleware kamu beda (misal: auth.js), tolong ubah './verifyToken' di bawah
+const verifyToken = require('../middleware/verifyToken'); 
+
 router.post('/', verifyToken, createEvent);
-
-// GET /api/events — Ambil semua event milik promotor yang login
 router.get('/', verifyToken, getEvents);
+
+// 2 Route di bawah ini WAJIB berada di bawah route '/' di atas
+router.get('/:id', verifyToken, getEventById);
+router.delete('/:id', verifyToken, deleteEvent);
 
 module.exports = router;
