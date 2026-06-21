@@ -7,7 +7,7 @@ const jwt = require('jsonwebtoken');
  * memverifikasi dengan JWT_SECRET, lalu menyimpan payload ke req.user.
  *
  * - Tidak ada token     → 401 Unauthorized
- * - Token tidak valid   → 403 Forbidden
+ * - Token tidak valid   → 401 Unauthorized
  * - Token valid         → req.user = { id, email, name, ... } + next()
  */
 const verifyToken = (req, res, next) => {
@@ -28,9 +28,9 @@ const verifyToken = (req, res, next) => {
     req.user = decoded; // { id, email, name, iat, exp }
     next();
   } catch (err) {
-    return res.status(403).json({
+    return res.status(401).json({
       success: false,
-      message: 'Forbidden: Token tidak valid atau sudah expired.',
+      message: 'Unauthorized: Token tidak valid atau sudah expired.',
     });
   }
 };

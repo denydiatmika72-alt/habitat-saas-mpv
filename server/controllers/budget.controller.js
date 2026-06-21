@@ -46,9 +46,10 @@ const createCategory = async (req, res) => {
 
 // Update / Rename Kategori Anggaran
 const updateCategory = async (req, res) => {
+  console.log('[updateCategory] hit — categoryId:', req.params.categoryId);
+  console.log('[updateCategory] token user:', req.user);
   try {
     const { categoryId } = req.params;
-    console.log('[UPDATE CATEGORY] categoryId received:', categoryId);
     const { name } = req.body;
 
     const updated = await prisma.budgetCategory.update({
