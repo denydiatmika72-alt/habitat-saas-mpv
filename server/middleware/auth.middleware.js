@@ -15,10 +15,7 @@ const verifyToken = (req, res, next) => {
 
   // Cek header ada dan formatnya "Bearer <token>"
   if (!authHeader || !authHeader.startsWith('Bearer ')) {
-    return res.status(401).json({
-      success: false,
-      message: 'Unauthorized: Token tidak ditemukan. Silakan login terlebih dahulu.',
-    });
+    return res.status(401).json({ message: 'No token provided' });
   }
 
   const token = authHeader.split(' ')[1];
@@ -28,10 +25,7 @@ const verifyToken = (req, res, next) => {
     req.user = decoded; // { id, email, name, iat, exp }
     next();
   } catch (err) {
-    return res.status(401).json({
-      success: false,
-      message: 'Unauthorized: Token tidak valid atau sudah expired.',
-    });
+    return res.status(401).json({ message: 'Invalid token' });
   }
 };
 

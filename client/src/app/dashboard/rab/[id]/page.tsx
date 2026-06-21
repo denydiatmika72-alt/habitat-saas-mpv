@@ -99,7 +99,7 @@ export default function RABPage() {
   const handleAddCategory = async () => {
     if (!newCategoryName.trim() || !budget) return;
     setSaving(true);
-    try { await axios.post(`${API}/budgets/${budget.id}/categories`, { name: newCategoryName.trim() }, { headers: authHeaders() }); setNewCategoryName(''); await refreshBudget(); } catch { alert('Gagal membuat kategori.'); } finally { setSaving(false); }
+    try { await axios.post(`${API}/budgets/categories`, { budgetId: budget.id, name: newCategoryName.trim() }, { headers: authHeaders() }); setNewCategoryName(''); await refreshBudget(); } catch { alert('Gagal membuat kategori.'); } finally { setSaving(false); }
   };
 
   const handleSaveCategory = async (categoryId: string) => {

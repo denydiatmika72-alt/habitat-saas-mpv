@@ -1,76 +1,84 @@
-const { PrismaClient } = require('@prisma/client');
-const prisma = new PrismaClient();
+const prisma = require('../src/lib/prisma'); // Singleton dengan PrismaPg adapter (wajib Prisma v7)
 
-// Ambil semua event (Halaman Dashboard)
+// GET /api/events — Ambil semua event milik promotor yang login
 const getEvents = async (req, res) => {
   try {
     const events = await prisma.event.findMany({
       where: { promotor_id: req.user.id },
-      orderBy: { createdAt: 'desc' }
+      orderBy: { createdAt: 'desc' },
     });
     return res.status(200).json({ success: true, data: events });
-  } catch (error) {
-    console.error('[GET EVENTS ERROR]', error);
-    return res.status(500).json({ success: false, message: 'Gagal mengambil event.' });
+  } catch (err) {
+    console.error('[GET EVENTS ERROR]', err);
+    return res.status(500).json({ success: false, message: err.message });
   }
 };
 
-// Buat event baru (Halaman Create Event)
+// POST /api/events — Buat event baru
 const createEvent = async (req, res) => {
   try {
-    const newEvent = await prisma.event.create({
+    const { title, location, event_date, venue_capacity, target_profit, target_sponsorship } = req.body;
+
+    if (!title || !location || !event_date || !venue_capacity || !target_profit || !target_sponsorship) {
+      return res.status(400).json({ success: false, message: 'Semua field wajib diisi.' });
+    }
+
+    const event = await prisma.event.create({
       data: {
-        ...req.body,
-        promotor_id: req.user.id // Pastikan promotor yang login yang memiliki event ini
-      }
+        title,
+        location,
+        event_date: new Date(event_date),
+        venue_capacity: Number(venue_capacity),
+        target_profit: Number(target_profit),
+        target_sponsorship: Number(target_sponsorship),
+        promotor_id: req.user.id,
+      },
     });
-    return res.status(201).json({ success: true, data: newEvent, message: 'Event berhasil dibuat.' });
-  } catch (error) {
-    console.error('[CREATE EVENT ERROR]', error);
-    return res.status(500).json({ success: false, message: 'Gagal membuat event.' });
+
+    return res.status(201).json({ success: true, message: 'Event berhasil dibuat.', data: event });
+  } catch (err) {
+    console.error('[CREATE EVENT ERROR]', err);
+    return res.status(500).json({ success: false, message: err.message });
   }
 };
 
-// Ambil detail event berdasarkan ID (SOLUSI ERROR 404)
+// GET /api/events/:id — Ambil satu event berdasarkan ID (UUID string, bukan Number)
 const getEventById = async (req, res) => {
   try {
+    const { id } = req.params; // UUID string — jangan Number()
     const event = await prisma.event.findFirst({
-      // req.params.id dibiarkan utuh karena ID kamu berbentuk string UUID
-      where: { id: req.params.id, promotor_id: req.user.id },
-    });
-
-    if (!event) {
-      return res.status(404).json({ success: false, message: 'Event tidak ditemukan atau bukan milik Anda.' });
-    }
-    return res.status(200).json({ success: true, data: event });
-  } catch (error) {
-    console.error('[GET EVENT BY ID ERROR]', error);
-    return res.status(500).json({ success: false, message: 'Gagal mengambil detail event.' });
-  }
-};
-
-// Hapus event (Fitur Tambahan dari Claude)
-const deleteEvent = async (req, res) => {
-  try {
-    const event = await prisma.event.findFirst({
-      where: { id: req.params.id, promotor_id: req.user.id },
+      where: { id, promotor_id: req.user.id },
     });
 
     if (!event) {
       return res.status(404).json({ success: false, message: 'Event tidak ditemukan.' });
     }
 
-    await prisma.event.delete({ where: { id: req.params.id } });
-    return res.status(200).json({ success: true, message: 'Event berhasil dihapus.' });
-  } catch (error) {
-    console.error('[DELETE EVENT ERROR]', error);
-    return res.status(500).json({ success: false, message: 'Gagal menghapus event.' });
+    return res.status(200).json({ success: true, data: event });
+  } catch (err) {
+    console.error('[GET EVENT BY ID ERROR]', err);
+    return res.status(500).json({ success: false, message: err.message });
   }
 };
 
-module.exports = {
-  getEvents,
-  createEvent,
-  getEventById,
-  deleteEvent
+// DELETE /api/events/:id — Hapus event (UUID string, bukan Number)
+const deleteEvent = async (req, res) => {
+  try {
+    const { id } = req.params; // UUID string — jangan Number()
+    const event = await prisma.event.findFirst({
+      where: { id, promotor_id: req.user.id },
+    });
+
+    if (!event) {
+      return res.status(404).json({ success: false, message: 'Event tidak ditemukan.' });
+    }
+
+    await prisma.event.delete({ where: { id } });
+    return res.status(200).json({ success: true, message: 'Event berhasil dihapus.' });
+  } catch (err) {
+    console.error('[DELETE EVENT ERROR]', err);
+    return res.status(500).json({ success: false, message: err.message });
+  }
 };
+
+module.exports = { getEvents, createEvent, getEventById, deleteEvent };
