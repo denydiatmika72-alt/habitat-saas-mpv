@@ -1,0 +1,83 @@
+// ============================================================
+// HABITAT - Music Event SaaS
+// Prisma Schema File
+// ============================================================
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+model User {
+  id        String   @id @default(uuid())
+  name      String
+  email     String   @unique
+  password  String
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt      @map("updated_at")
+
+  events    Event[]
+
+  @@map("users")
+}
+
+model Event {
+  id                 String   @id @default(uuid())
+  title              String
+  location           String
+  event_date         DateTime
+  venue_capacity     Int
+  target_profit      Decimal  @db.Decimal(15, 2)
+  target_sponsorship Decimal  @db.Decimal(15, 2)
+  status             String   @default("DRAFT")
+
+  createdAt          DateTime @default(now()) @map("created_at")
+  updatedAt          DateTime @updatedAt      @map("updated_at")
+
+  promotor_id        String
+  promotor           User     @relation(fields: [promotor_id], references: [id])
+  budget             Budget?
+
+  @@map("events")
+}
+
+model Budget {
+  id                        String           @id @default(uuid())
+  eventId                   String           @unique @map("event_id")
+  event                     Event            @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  totalEstimatedCost        Decimal          @default(0) @db.Decimal(15, 2)
+  contingencyFundPercentage Decimal          @default(20.00) @db.Decimal(5, 2)
+  contingencyFundAmount     Decimal          @default(0) @db.Decimal(15, 2)
+  createdAt                 DateTime         @default(now()) @map("created_at")
+  categories                BudgetCategory[]
+
+  @@map("budgets")
+}
+
+model BudgetCategory {
+  id              String       @id @default(uuid())
+  budgetId        String       @map("budget_id")
+  budget          Budget       @relation(fields: [budgetId], references: [id], onDelete: Cascade)
+  name            String
+  allocatedBudget Decimal      @default(0) @db.Decimal(15, 2)
+  items           BudgetItem[]
+
+  @@map("budget_categories")
+}
+
+model BudgetItem {
+  id            String         @id @default(uuid())
+  categoryId    String         @map("category_id")
+  category      BudgetCategory @relation(fields: [categoryId], references: [id], onDelete: Cascade)
+  name          String
+  qty           Int            @default(1)
+  hargaSatuan   Decimal        @default(0) @db.Decimal(15, 2)
+  estimatedCost Decimal        @default(0) @db.Decimal(15, 2)
+  actualCost    Decimal        @default(0) @db.Decimal(15, 2)
+
+  @@map("budget_items")
+}

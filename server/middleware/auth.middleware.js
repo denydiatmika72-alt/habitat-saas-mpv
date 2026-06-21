@@ -1,0 +1,38 @@
+const jwt = require('jsonwebtoken');
+
+/**
+ * verifyToken — Auth Middleware
+ *
+ * Mengekstrak JWT dari header "Authorization: Bearer <token>",
+ * memverifikasi dengan JWT_SECRET, lalu menyimpan payload ke req.user.
+ *
+ * - Tidak ada token     → 401 Unauthorized
+ * - Token tidak valid   → 403 Forbidden
+ * - Token valid         → req.user = { id, email, name, ... } + next()
+ */
+const verifyToken = (req, res, next) => {
+  const authHeader = req.headers['authorization'];
+
+  // Cek header ada dan formatnya "Bearer <token>"
+  if (!authHeader || !authHeader.startsWith('Bearer ')) {
+    return res.status(401).json({
+      success: false,
+      message: 'Unauthorized: Token tidak ditemukan. Silakan login terlebih dahulu.',
+    });
+  }
+
+  const token = authHeader.split(' ')[1];
+
+  try {
+    const decoded = jwt.verify(token, process.env.JWT_SECRET);
+    req.user = decoded; // { id, email, name, iat, exp }
+    next();
+  } catch (err) {
+    return res.status(403).json({
+      success: false,
+      message: 'Forbidden: Token tidak valid atau sudah expired.',
+    });
+  }
+};
+
+module.exports = { verifyToken };
