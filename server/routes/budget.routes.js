@@ -1,31 +1,25 @@
 const express = require('express');
 const router = express.Router();
 const {
-  initializeBudget,
-  getBudget,
-  addCategory,
-  deleteCategory,
-  addBudgetItem,
-  deleteBudgetItem,
+  getBudgetByEvent,
+  createCategory,
+  updateCategory,
+  deleteCategory
 } = require('../controllers/budget.controller');
-const { verifyToken } = require('../middleware/auth.middleware');
 
-// POST /api/budgets/initialize — Inisialisasi RAB + kategori default
-router.post('/initialize', verifyToken, initializeBudget);
+// Pastikan nama file middleware ini sesuai dengan sistem login Anda
+const verifyToken = require('../middleware/verifyToken'); 
 
-// POST /api/budgets/:budgetId/categories — Tambah kategori baru
-router.post('/:budgetId/categories', verifyToken, addCategory);
+// Rute umum budget & kategori
+router.post('/categories', verifyToken, createCategory);
 
-// POST /api/budgets/categories/:categoryId/items — Tambah item + auto-kalkulasi
-router.post('/categories/:categoryId/items', verifyToken, addBudgetItem);
-
-// DELETE /api/budgets/categories/:categoryId — Hapus kategori + semua item-nya + auto-kalkulasi
+// ===================================================================
+// POSISI SANGAT PENTING: PUT harus di atas DELETE dan rute ID umum
+// ===================================================================
+router.put('/categories/:categoryId', verifyToken, updateCategory);    // Menghilangkan 404 saat rename kategori
 router.delete('/categories/:categoryId', verifyToken, deleteCategory);
 
-// DELETE /api/budgets/items/:itemId — Hapus item + auto-kalkulasi ulang
-router.delete('/items/:itemId', verifyToken, deleteBudgetItem);
-
-// GET /api/budgets/:eventId — Ambil detail RAB + kategori + item
-router.get('/:eventId', verifyToken, getBudget);
+// Ambil data budget berdasarkan Event ID (Paling bawah agar tidak bentrok pattern)
+router.get('/:eventId', verifyToken, getBudgetByEvent);
 
 module.exports = router;
