@@ -5,82 +5,88 @@ const BACKEND_URL = process.env.BACKEND_URL || 'http://a11p3qz385lvjh13zc5d7952.
 export async function POST(req: NextRequest, { params }: { params: Promise<{ proxy: string[] }> }) {
   const { proxy } = await params;
   const path = proxy.join('/');
-  const body = await req.json();
-  
+  const text = await req.text();
+  const body = text ? text : '{}';
+
   const res = await fetch(`${BACKEND_URL}/api/${path}`, {
     method: 'POST',
-    headers: { 
+    headers: {
       'Content-Type': 'application/json',
       ...(req.headers.get('authorization') ? { 'Authorization': req.headers.get('authorization')! } : {})
     },
-    body: JSON.stringify(body),
+    body,
   });
-  
-  const data = await res.json();
+
+  const resText = await res.text();
+  const data = resText ? JSON.parse(resText) : {};
   return NextResponse.json(data, { status: res.status });
 }
 
 export async function PUT(req: NextRequest, { params }: { params: Promise<{ proxy: string[] }> }) {
   const { proxy } = await params;
   const path = proxy.join('/');
-  const body = await req.json();
-  
+  const text = await req.text();
+
   const res = await fetch(`${BACKEND_URL}/api/${path}`, {
     method: 'PUT',
-    headers: { 
+    headers: {
       'Content-Type': 'application/json',
       ...(req.headers.get('authorization') ? { 'Authorization': req.headers.get('authorization')! } : {})
     },
-    body: JSON.stringify(body),
+    body: text || '{}',
   });
-  
-  const data = await res.json();
+
+  const resText = await res.text();
+  const data = resText ? JSON.parse(resText) : {};
   return NextResponse.json(data, { status: res.status });
 }
 
 export async function DELETE(req: NextRequest, { params }: { params: Promise<{ proxy: string[] }> }) {
   const { proxy } = await params;
   const path = proxy.join('/');
-  
+
   const res = await fetch(`${BACKEND_URL}/api/${path}`, {
     method: 'DELETE',
     headers: {
       ...(req.headers.get('authorization') ? { 'Authorization': req.headers.get('authorization')! } : {})
     },
   });
-  
-  const data = await res.json();
+
+  const resText = await res.text();
+  const data = resText ? JSON.parse(resText) : {};
   return NextResponse.json(data, { status: res.status });
 }
 
 export async function PATCH(req: NextRequest, { params }: { params: Promise<{ proxy: string[] }> }) {
   const { proxy } = await params;
   const path = proxy.join('/');
-  const body = await req.json();
-  
+  const text = await req.text();
+
   const res = await fetch(`${BACKEND_URL}/api/${path}`, {
     method: 'PATCH',
-    headers: { 
+    headers: {
       'Content-Type': 'application/json',
       ...(req.headers.get('authorization') ? { 'Authorization': req.headers.get('authorization')! } : {})
     },
-    body: JSON.stringify(body),
+    body: text || '{}',
   });
-  
-  const data = await res.json();
+
+  const resText = await res.text();
+  const data = resText ? JSON.parse(resText) : {};
   return NextResponse.json(data, { status: res.status });
 }
 
 export async function GET(req: NextRequest, { params }: { params: Promise<{ proxy: string[] }> }) {
   const { proxy } = await params;
   const path = proxy.join('/');
-  
-  const res = await fetch(`${BACKEND_URL}/api/${path}`, {
+  const search = req.nextUrl.search;
+
+  const res = await fetch(`${BACKEND_URL}/api/${path}${search}`, {
     headers: {
       ...(req.headers.get('authorization') ? { 'Authorization': req.headers.get('authorization')! } : {})
     },
   });
-  
+
   const data = await res.json();
   return NextResponse.json(data, { status: res.status });
 }
