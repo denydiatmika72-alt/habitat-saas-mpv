@@ -7,10 +7,13 @@ if (process.env.NODE_ENV !== 'production') {
 const express = require('express');
 const cors = require('cors');
 
-const authRoutes    = require('./routes/auth.routes');
-const eventRoutes   = require('../routes/event.routes');
-const budgetRoutes  = require('../routes/budget.routes');
-const sponsorRoutes = require('../routes/sponsor.routes');
+const path = require('path');
+const authRoutes     = require('./routes/auth.routes');
+const eventRoutes    = require('../routes/event.routes');
+const budgetRoutes   = require('../routes/budget.routes');
+const sponsorRoutes  = require('../routes/sponsor.routes');
+const invoiceRoutes  = require('../routes/invoice.routes');
+const settingsRoutes = require('../routes/settings.routes');
 
 const app = express();
 const PORT = process.env.PORT || 5000;
@@ -19,12 +22,17 @@ app.use(cors({ origin: process.env.CLIENT_URL || 'http://localhost:3000', creden
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
+// Static files (generated invoices)
+app.use('/public', express.static(path.join(__dirname, '..', 'public')));
+
 app.get('/', (req, res) => res.json({ success: true, message: '🎵 Habitat API is running!' }));
 
-app.use('/api/auth',    authRoutes);
-app.use('/api/events',  eventRoutes);
-app.use('/api/budgets', budgetRoutes);
-app.use('/api/sponsor', sponsorRoutes);
+app.use('/api/auth',     authRoutes);
+app.use('/api/events',   eventRoutes);
+app.use('/api/budgets',  budgetRoutes);
+app.use('/api/sponsor',  sponsorRoutes);
+app.use('/api/invoices', invoiceRoutes);
+app.use('/api/settings', settingsRoutes);
 
 app.use((req, res) => res.status(404).json({ success: false, message: `Route ${req.method} ${req.originalUrl} tidak ditemukan.` }));
 
