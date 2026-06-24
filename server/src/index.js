@@ -8,17 +8,26 @@ const express = require('express');
 const cors = require('cors');
 
 const path = require('path');
-const authRoutes     = require('./routes/auth.routes');
-const eventRoutes    = require('../routes/event.routes');
-const budgetRoutes   = require('../routes/budget.routes');
-const sponsorRoutes  = require('../routes/sponsor.routes');
-const invoiceRoutes  = require('../routes/invoice.routes');
-const settingsRoutes = require('../routes/settings.routes');
+const authRoutes          = require('./routes/auth.routes');
+const eventRoutes         = require('../routes/event.routes');
+const budgetRoutes        = require('../routes/budget.routes');
+const sponsorRoutes       = require('../routes/sponsor.routes');
+const invoiceRoutes       = require('../routes/invoice.routes');
+const settingsRoutes      = require('../routes/settings.routes');
+const purchaseOrderRoutes = require('../routes/purchaseOrder.routes');
 
 const app = express();
 const PORT = process.env.PORT || 5000;
 
-app.use(cors({ origin: process.env.CLIENT_URL || 'http://localhost:3000', credentials: true }));
+const corsOptions = {
+  origin: ['http://localhost:3000', process.env.CLIENT_URL].filter(Boolean),
+  credentials: true,
+  methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization'],
+  exposedHeaders: ['Content-Disposition', 'Content-Type'],
+};
+app.use(cors(corsOptions));
+app.options(/(.*)/, cors(corsOptions));
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
@@ -33,6 +42,7 @@ app.use('/api/budgets',  budgetRoutes);
 app.use('/api/sponsor',  sponsorRoutes);
 app.use('/api/invoices', invoiceRoutes);
 app.use('/api/settings', settingsRoutes);
+app.use('/api/po',       purchaseOrderRoutes);
 
 app.use((req, res) => res.status(404).json({ success: false, message: `Route ${req.method} ${req.originalUrl} tidak ditemukan.` }));
 
