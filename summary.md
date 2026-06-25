@@ -1,4 +1,4 @@
-# 📋 HABITAT SaaS — Project Status Summary
+﻿# 📋 NEXEVENT SaaS — Project Status Summary
 > Terakhir diperbarui: 21 Juni 2026 | Ditulis oleh Claude (AI Engineer Assistant)
 
 ---
@@ -6,7 +6,7 @@
 ## 🏗️ Tech Stack & Arsitektur
 
 ### Monorepo Structure
-habitat-saas/
+nexevent-saas/
 ├── client/     → Next.js 14 (App Router) — deploy ke Vercel
 └── server/     → Express.js + Prisma v7 — MIGRASI ke Hostinger VPS
 
@@ -16,7 +16,7 @@ habitat-saas/
 | Framework | Next.js 14 App Router ("use client") |
 | Styling | Tailwind CSS + shadcn/ui |
 | HTTP Client | Axios + native fetch |
-| Deploy | Vercel (habitat-web-baru.vercel.app) |
+| Deploy | Vercel (nexevent-web.vercel.app) |
 | Env Var | NEXT_PUBLIC_API_URL=https://<hostinger-domain-baru> |
 
 ### Backend (server/)
@@ -39,7 +39,7 @@ habitat-saas/
 ### Di Hostinger VPS (Backend)
 DATABASE_URL=postgresql://user:pass@host/db?sslmode=require
 JWT_SECRET=string_random_panjang_min_32_karakter
-CLIENT_URL=https://habitat-web-baru.vercel.app
+CLIENT_URL=https://nexevent-web.vercel.app
 NODE_ENV=production
 JWT_EXPIRES_IN=7d
 
@@ -174,7 +174,7 @@ DELETE /api/budgets/items/:itemId
 - [ ] Install dependencies: cd server && npm install
 - [ ] Setup .env file di server/ dengan semua env vars
 - [ ] Jalankan: npx prisma generate
-- [ ] Start dengan PM2: pm2 start src/index.js --name habitat-api
+- [ ] Start dengan PM2: pm2 start src/index.js --name nexevent-api
 - [ ] Setup Nginx sebagai reverse proxy ke port Express
 - [ ] Setup SSL dengan Certbot (Let's Encrypt)
 - [ ] Update NEXT_PUBLIC_API_URL di Vercel ke URL Hostinger baru

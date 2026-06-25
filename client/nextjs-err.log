@@ -1,0 +1,104 @@
+⚠ Slow filesystem detected. The benchmark took 3465ms. If D:\PROJECT\APLIKASI HABITAT\V2\habitat-saas\client\.next/dev is a network drive, consider moving it to a local folder.
+See more: https://nextjs.org/docs/app/guides/local-development
+⨯ SyntaxError: Unexpected end of JSON input
+    at JSON.parse (<anonymous>)
+[browser] [GENERATE CODE] exception: SyntaxError: Failed to execute 'json' on 'Response': Unexpected end of JSON input
+    at generate (file://D:/PROJECT/APLIKASI HABITAT/V2/habitat-saas/client/.next/dev/static/chunks/src_0dkpo5r._.js:170:36) (file://D:/PROJECT/APLIKASI HABITAT/V2/habitat-saas/client/.next/dev/static/chunks/src_0dkpo5r._.js:194:21)
+⨯ SyntaxError: Unexpected end of JSON input
+    at JSON.parse (<anonymous>)
+[browser] [GENERATE CODE] exception: SyntaxError: Failed to execute 'json' on 'Response': Unexpected end of JSON input
+    at generate (file://D:/PROJECT/APLIKASI HABITAT/V2/habitat-saas/client/.next/dev/static/chunks/src_0dkpo5r._.js:170:36) (file://D:/PROJECT/APLIKASI HABITAT/V2/habitat-saas/client/.next/dev/static/chunks/src_0dkpo5r._.js:194:21)
+⨯ ./src/app/dashboard/sponsor/page.tsx:107:1
+Expression expected
+  [90m105 |[0m   [36mtry[0m { [36mreturn[0m text ? ([33mJSON[0m.parse(text) [36mas[0m [33mRecord[0m<string, unknown>) : {} } [36mcatch[0m { [36mreturn[0m...
+  [90m106 |[0m }
+[31m[1m>[0m [90m107 |[0m }
+  [90m    |[0m [31m[1m^[0m
+  [90m108 |[0m
+  [90m109 |[0m [36mconst[0m [33mBENEFIT_CATEGORIES[0m = [[32m"Branding"[0m, [32m"Digital"[0m, [32m"On-Ground"[0m, [32m"Ticketing"[0m, [32m"Lainnya"[0m]
+  [90m110 |[0m [36mconst[0m [33mDEFAULT_TIERS[0m = [[32m"Silver"[0m, [32m"Gold"[0m, [32m"Platinum"[0m, [32m"Title Sponsor"[0m]
+
+Parsing ecmascript source code failed
+
+
+⨯ ./src/app/dashboard/sponsor/page.tsx:107:1
+Expression expected
+  [90m105 |[0m   [36mtry[0m { [36mreturn[0m text ? ([33mJSON[0m.parse(text) [36mas[0m [33mRecord[0m<string, unknown>) : {} } [36mcatch[0m { [36mreturn[0m...
+  [90m106 |[0m }
+[31m[1m>[0m [90m107 |[0m }
+  [90m    |[0m [31m[1m^[0m
+  [90m108 |[0m
+  [90m109 |[0m [36mconst[0m [33mBENEFIT_CATEGORIES[0m = [[32m"Branding"[0m, [32m"Digital"[0m, [32m"On-Ground"[0m, [32m"Ticketing"[0m, [32m"Lainnya"[0m]
+  [90m110 |[0m [36mconst[0m [33mDEFAULT_TIERS[0m = [[32m"Silver"[0m, [32m"Gold"[0m, [32m"Platinum"[0m, [32m"Title Sponsor"[0m]
+
+Parsing ecmascript source code failed
+
+
+⨯ ./src/app/dashboard/sponsor/page.tsx:107:1
+Expression expected
+  [90m105 |[0m   [36mtry[0m { [36mreturn[0m text ? ([33mJSON[0m.parse(text) [36mas[0m [33mRecord[0m<string, unknown>) : {} } [36mcatch[0m { [36mreturn[0m...
+  [90m106 |[0m }
+[31m[1m>[0m [90m107 |[0m }
+  [90m    |[0m [31m[1m^[0m
+  [90m108 |[0m
+  [90m109 |[0m [36mconst[0m [33mBENEFIT_CATEGORIES[0m = [[32m"Branding"[0m, [32m"Digital"[0m, [32m"On-Ground"[0m, [32m"Ticketing"[0m, [32m"Lainnya"[0m]
+  [90m110 |[0m [36mconst[0m [33mDEFAULT_TIERS[0m = [[32m"Silver"[0m, [32m"Gold"[0m, [32m"Platinum"[0m, [32m"Title Sponsor"[0m]
+
+Parsing ecmascript source code failed
+
+
+⨯ ./src/app/dashboard/sponsor/page.tsx:107:1
+Expression expected
+  [90m105 |[0m   [36mtry[0m { [36mreturn[0m text ? ([33mJSON[0m.parse(text) [36mas[0m [33mRecord[0m<string, unknown>) : {} } [36mcatch[0m { [36mreturn[0m...
+  [90m106 |[0m }
+[31m[1m>[0m [90m107 |[0m }
+  [90m    |[0m [31m[1m^[0m
+  [90m108 |[0m
+  [90m109 |[0m [36mconst[0m [33mBENEFIT_CATEGORIES[0m = [[32m"Branding"[0m, [32m"Digital"[0m, [32m"On-Ground"[0m, [32m"Ticketing"[0m, [32m"Lainnya"[0m]
+  [90m110 |[0m [36mconst[0m [33mDEFAULT_TIERS[0m = [[32m"Silver"[0m, [32m"Gold"[0m, [32m"Platinum"[0m, [32m"Title Sponsor"[0m]
+
+Parsing ecmascript source code failed
+
+
+⨯ ./src/app/dashboard/sponsor/page.tsx:107:1
+Expression expected
+  [90m105 |[0m   [36mtry[0m { [36mreturn[0m text ? ([33mJSON[0m.parse(text) [36mas[0m [33mRecord[0m<string, unknown>) : {} } [36mcatch[0m { [36mreturn[0m...
+  [90m106 |[0m }
+[31m[1m>[0m [90m107 |[0m }
+  [90m    |[0m [31m[1m^[0m
+  [90m108 |[0m
+  [90m109 |[0m [36mconst[0m [33mBENEFIT_CATEGORIES[0m = [[32m"Branding"[0m, [32m"Digital"[0m, [32m"On-Ground"[0m, [32m"Ticketing"[0m, [32m"Lainnya"[0m]
+  [90m110 |[0m [36mconst[0m [33mDEFAULT_TIERS[0m = [[32m"Silver"[0m, [32m"Gold"[0m, [32m"Platinum"[0m, [32m"Title Sponsor"[0m]
+
+Parsing ecmascript source code failed
+
+
+[browser] Uncaught Error: ./src/app/dashboard/sponsor/page.tsx:107:1
+Expression expected
+  105 |   try { return text ? (JSON.parse(text) as Record<string, unknown>) : {} } catch { return...
+  106 | }
+> 107 | }
+      | ^
+  108 |
+  109 | const BENEFIT_CATEGORIES = ["Branding", "Digital", "On-Ground", "Ticketing", "Lainnya"]
+  110 | const DEFAULT_TIERS = ["Silver", "Gold", "Platinum", "Title Sponsor"]
+
+Parsing ecmascript source code failed
+
+
+    at <unknown> (Error: ./src/app/dashboard/sponsor/page.tsx:107:1)
+    at <unknown> (Error: (./src/app/dashboard/sponsor/page.tsx:107:1)
+⨯ SyntaxError: Unexpected end of JSON input
+    at JSON.parse (<anonymous>)
+[browser] SyntaxError: Unexpected token '<', "<!DOCTYPE "... is not valid JSON
+SyntaxError: Unexpected token '<', "<!DOCTYPE "... is not valid JSON (file://D:/PROJECT/APLIKASI HABITAT/V2/habitat-saas/client/.next/dev/static/chunks/src_0gt0n1l._.js:326:21)
+[browser] SyntaxError: Unexpected token '<', "<!DOCTYPE "... is not valid JSON
+SyntaxError: Unexpected token '<', "<!DOCTYPE "... is not valid JSON (file://D:/PROJECT/APLIKASI HABITAT/V2/habitat-saas/client/.next/dev/static/chunks/src_1btb0iw._.js:333:21)
+[browser] SyntaxError: Unexpected token '<', "<!DOCTYPE "... is not valid JSON
+SyntaxError: Unexpected token '<', "<!DOCTYPE "... is not valid JSON (file://D:/PROJECT/APLIKASI HABITAT/V2/habitat-saas/client/.next/dev/static/chunks/src_0gt0n1l._.js:326:21)
+[browser] SyntaxError: Unexpected token '<', "<!DOCTYPE "... is not valid JSON
+SyntaxError: Unexpected token '<', "<!DOCTYPE "... is not valid JSON (file://D:/PROJECT/APLIKASI HABITAT/V2/habitat-saas/client/.next/dev/static/chunks/src_0gt0n1l._.js:326:21)
+[browser] SyntaxError: Unexpected token '<', "<!DOCTYPE "... is not valid JSON
+SyntaxError: Unexpected token '<', "<!DOCTYPE "... is not valid JSON (file://D:/PROJECT/APLIKASI HABITAT/V2/habitat-saas/client/.next/dev/static/chunks/src_0gt0n1l._.js:326:21)
+[browser] [GENERATE CODE] error: No token provided 
+    at generate (file://D:/PROJECT/APLIKASI HABITAT/V2/habitat-saas/client/.next/dev/static/chunks/src_0dkpo5r._.js:181:25) (file://D:/PROJECT/APLIKASI HABITAT/V2/habitat-saas/client/.next/dev/static/chunks/src_0dkpo5r._.js:181:25)

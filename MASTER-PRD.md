@@ -1,4 +1,4 @@
-MASTER PRD: HABITAT (Music Event SaaS)
+﻿MASTER PRD: NEXEVENT (Music Event SaaS)
 1. Ringkasan Eksekutif & Visi Produk
 Platform SaaS B2B end-to-end yang berfungsi sebagai sistem operasi terpadu bagi promotor untuk mengelola siklus operasional event musik, mulai dari perencanaan finansial (RAB), pendanaan (Sponsor), penjualan tiket (B2C), penyewaan lapak, hingga pelaporan laba/rugi akhir.
 Target Pengguna Utama:
@@ -39,7 +39,7 @@ A. Skema Alur Promotor (Tenant B2B Inti)
 Plaintext
 [ LOGIN PROMOTOR ] -> Autentikasi via Email & Password
        |
-[ DASHBOARD HABITAT ]
+[ DASHBOARD NEXEVENT ]
        |--> 1. SETUP & PERENCANAAN
        |      |-- Input Profil Event & Kapasitas.
        |      |-- Setup Anggaran: Isi RAB (Itemized/Lump Sum).
@@ -58,7 +58,7 @@ Plaintext
               |-- Event Selesai: Sistem menyandingkan Uang Masuk (Sponsor+Tiket+Tenant+Merch) vs Uang Keluar (RAB/Expense) di Automated P&L.
 B. Skema Alur Sponsor (B2B Eksternal via Magic Link)
 Plaintext
-[ TERIMA MAGIC LINK ] -> Pihak brand mengklik URL (app.habitat.com/sponsor/EVT-XYZ)
+[ TERIMA MAGIC LINK ] -> Pihak brand mengklik URL (app.nexevent.com/sponsor/EVT-XYZ)
        |
 [ PITCHING DECK & ETALASE INTERAKTIF ] -> Melihat profil event.
        |

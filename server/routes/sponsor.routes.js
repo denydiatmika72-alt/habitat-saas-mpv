@@ -13,6 +13,7 @@ const {
   updateDealStatus,
   getPackages,
   createPackage,
+  deletePackage,
   getThresholds,
   saveThresholds,
   createAccount,
@@ -24,7 +25,7 @@ const {
 
 const verifyLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
-  max: 5,
+  max: 20,
   standardHeaders: true,
   legacyHeaders: false,
   message: { success: false, message: 'Terlalu banyak percobaan login. Coba lagi dalam 15 menit.' },
@@ -35,7 +36,7 @@ router.post('/codes', verifyToken, generateCode);
 router.post('/codes/validate', validateInviteCode);         // public
 
 // Benefits
-router.get('/benefits', verifyToken, getBenefits);
+router.get('/benefits', getBenefits);                    // public — portal reads this
 router.post('/benefits', verifyToken, createBenefit);
 router.delete('/benefits/:id', verifyToken, deleteBenefit);
 
@@ -45,8 +46,9 @@ router.post('/deals', createDeal);                          // public — sponso
 router.patch('/deals/:id', verifyToken, updateDealStatus);
 
 // Packages
-router.get('/packages', verifyToken, getPackages);
+router.get('/packages', getPackages);                    // public — portal reads this
 router.post('/packages', verifyToken, createPackage);
+router.delete('/packages/:id', verifyToken, deletePackage);
 
 // Thresholds
 router.get('/thresholds', getThresholds);                   // public — sponsor portal

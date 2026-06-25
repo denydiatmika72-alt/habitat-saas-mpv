@@ -218,6 +218,43 @@ const deleteItem = async (req, res) => {
   }
 };
 
+// ─── GET /api/events/:eventId/rab-items ──────────────────────────────────────
+// Kembalikan semua budget items dari sebuah event (untuk Import dari RAB di PO)
+const getRabItemsByEvent = async (req, res) => {
+  try {
+    const { eventId } = req.params;
+
+    const budget = await prisma.budget.findFirst({
+      where: { eventId },
+      include: {
+        categories: {
+          include: { items: true },
+        },
+      },
+    });
+
+    if (!budget) {
+      return res.status(404).json({ success: false, message: 'RAB belum dibuat untuk event ini.' });
+    }
+
+    const items = budget.categories.flatMap((cat) =>
+      cat.items.map((item) => ({
+        id: item.id,
+        name: item.name,
+        qty: Number(item.qty),
+        hargaSatuan: Number(item.hargaSatuan),
+        estimatedCost: Number(item.estimatedCost),
+        categoryName: cat.name,
+      }))
+    );
+
+    return res.json({ success: true, data: items });
+  } catch (err) {
+    console.error('[getRabItemsByEvent]', err);
+    return res.status(500).json({ success: false, message: 'Gagal mengambil item RAB.' });
+  }
+};
+
 module.exports = {
   initializeBudget,
   getBudgetByEvent,
@@ -226,4 +263,5 @@ module.exports = {
   deleteCategory,
   createItem,
   deleteItem,
+  getRabItemsByEvent,
 };

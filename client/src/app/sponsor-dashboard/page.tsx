@@ -11,6 +11,7 @@ import {
   ChevronDown,
   CircleDollarSign,
   Download,
+  FileText,
   ImageOff,
   Loader2,
   MapPin,
@@ -22,6 +23,17 @@ import { cn } from "@/lib/utils"
 // ─── API ──────────────────────────────────────────────────────────────────────
 const API_BASE = "/api"
 
+async function safeJson(res: Response): Promise<Record<string, unknown>> {
+  const text = await res.text()
+  try { return text ? (JSON.parse(text) as Record<string, unknown>) : {} } catch { return {} }
+}
+
+const currencyIDR = new Intl.NumberFormat("id-ID", {
+  style: "currency",
+  currency: "IDR",
+  maximumFractionDigits: 0,
+})
+
 // ─── Types ────────────────────────────────────────────────────────────────────
 type ApiDeliverable = {
   id: string
@@ -31,6 +43,8 @@ type ApiDeliverable = {
   proofImageUrl: string | null
   notes: string | null
   createdAt: string
+  value: number | null
+  dealCreatedAt: string | null
 }
 
 type DeliverableStatus = "completed" | "in-progress" | "scheduled" | "at-risk"
@@ -65,126 +79,36 @@ type Deliverable = {
   proofs: Proof[]
 }
 
-const sponsor = {
-  name: "Stellar Luxe Group",
-  tier: "Platinum Partner",
-  property: "Aurora Music Festival 2025",
-  contract: "Jan 2025 – Dec 2025",
-  manager: "Sarah Lestari",
-  managerRole: "Partnership Director",
-  overallProgress: 68,
-  rightsDelivered: 17,
-  rightsTotal: 25,
-  valueDelivered: "$142,000",
-  valueTotal: "$210,000",
-  daysRemaining: 127,
+type DashStats = {
+  total: number
+  executed: number
+  active: number
+  packagePrice: number
+  loaded: boolean
 }
-
-const deliverables: Deliverable[] = [
-  {
-    id: "1",
-    title: "Main Stage LED Branding",
-    rightType: "Visual Placement",
-    category: "Branding",
-    status: "completed",
-    delivered: 4,
-    contracted: 4,
-    unit: "nights",
-    progress: 100,
-    value: "$45,000",
-    window: "Jun–Aug 2025",
-    milestones: [
-      { label: "Design approved", date: "May 15", done: true },
-      { label: "Assets delivered", date: "Jun 01", done: true },
-      { label: "Live activation", date: "Jun 15", done: true },
-    ],
-    proofs: [],
-  },
-  {
-    id: "2",
-    title: "VIP Lounge Activation",
-    rightType: "Experiential",
-    category: "Hospitality",
-    status: "in-progress",
-    delivered: 2,
-    contracted: 4,
-    unit: "events",
-    progress: 50,
-    value: "$32,000",
-    window: "Jul–Oct 2025",
-    milestones: [
-      { label: "Concept finalized", date: "Jun 20", done: true },
-      { label: "First activation", date: "Jul 10", done: true },
-      { label: "Mid-review", date: "Aug 15", done: false },
-      { label: "Final activation", date: "Oct 01", done: false },
-    ],
-    proofs: [],
-  },
-  {
-    id: "3",
-    title: "Social Media Campaign",
-    rightType: "Digital",
-    category: "Digital",
-    status: "in-progress",
-    delivered: 6,
-    contracted: 12,
-    unit: "posts",
-    progress: 50,
-    value: "$18,000",
-    window: "Jan–Dec 2025",
-    milestones: [
-      { label: "Content calendar", date: "Jan 10", done: true },
-      { label: "Q1 posts done", date: "Mar 31", done: true },
-      { label: "Q2 posts done", date: "Jun 30", done: true },
-      { label: "Q3 posts done", date: "Sep 30", done: false },
-    ],
-    proofs: [],
-  },
-  {
-    id: "4",
-    title: "On-Stage MC Mentions",
-    rightType: "Verbal",
-    category: "Broadcast",
-    status: "at-risk",
-    delivered: 1,
-    contracted: 8,
-    unit: "mentions",
-    progress: 12,
-    value: "$12,000",
-    window: "Jun–Nov 2025",
-    milestones: [
-      { label: "Script approved", date: "Jun 01", done: true },
-      { label: "First mention", date: "Jun 15", done: true },
-      { label: "Remaining mentions", date: "Jul–Nov", done: false },
-    ],
-    proofs: [],
-  },
-  {
-    id: "5",
-    title: "Branded Ticket Bundle",
-    rightType: "Product Placement",
-    category: "Ticketing",
-    status: "scheduled",
-    delivered: 0,
-    contracted: 1000,
-    unit: "tickets",
-    progress: 0,
-    value: "$35,000",
-    window: "Sep–Oct 2025",
-    milestones: [
-      { label: "Design mockup", date: "Aug 01", done: false },
-      { label: "Print run", date: "Sep 01", done: false },
-      { label: "Distribution", date: "Sep 15", done: false },
-    ],
-    proofs: [],
-  },
-]
 
 // ─── Deliverable mapping helpers ──────────────────────────────────────────────
 function mapApiStatus(s: string): DeliverableStatus {
   if (s === "Executed") return "completed"
   if (s === "InProduction") return "in-progress"
   return "scheduled"
+}
+
+function computeWindow(dealCreatedAt: string | null): string {
+  if (!dealCreatedAt) return "Hari H Event"
+  const deadline = new Date(dealCreatedAt)
+  deadline.setDate(deadline.getDate() + 30)
+  return `s/d ${deadline.toLocaleDateString("id-ID", { day: "numeric", month: "short", year: "numeric" })}`
+}
+
+function computeMilestones(status: DeliverableStatus): Milestone[] {
+  const labels = ["Persiapan materi", "Proses produksi", "Eksekusi & dokumentasi"]
+  return labels.map((label, i) => {
+    let done = false
+    if (status === "completed") done = true
+    else if (status === "in-progress") done = i < 2
+    return { label, date: "", done }
+  })
 }
 
 function mapToDeliverable(d: ApiDeliverable): Deliverable {
@@ -199,9 +123,9 @@ function mapToDeliverable(d: ApiDeliverable): Deliverable {
     contracted: 1,
     unit: "items",
     progress: status === "completed" ? 100 : status === "in-progress" ? 50 : 0,
-    value: "-",
-    window: "-",
-    milestones: [],
+    value: d.value != null ? currencyIDR.format(d.value) : "—",
+    window: computeWindow(d.dealCreatedAt),
+    milestones: computeMilestones(status),
     proofs: d.proofImageUrl
       ? [{ id: "proof", src: d.proofImageUrl, caption: d.notes ?? "", date: "", location: "" }]
       : [],
@@ -256,7 +180,7 @@ function StatusBadge({ status }: { status: DeliverableStatus }) {
 }
 
 // ─── SponsorTopbar ────────────────────────────────────────────────────────────
-function SponsorTopbar({ clientName, clientTier }: { clientName?: string; clientTier?: string }) {
+function SponsorTopbar({ clientName, clientTier }: { clientName: string; clientTier: string }) {
   return (
     <header className="sticky top-0 z-30 border-b border-slate-200 bg-slate-50/80 backdrop-blur-xl">
       <div className="mx-auto flex max-w-[1400px] items-center justify-between gap-4 px-5 py-3.5 md:px-8">
@@ -295,14 +219,14 @@ function SponsorTopbar({ clientName, clientTier }: { clientName?: string; client
             className="flex items-center gap-2 rounded-lg border border-slate-200 bg-white py-1 pl-1 pr-2.5 transition-colors hover:bg-slate-100"
           >
             <span className="flex size-7 items-center justify-center rounded-md bg-emerald-50 text-xs font-semibold text-emerald-800 ring-1 ring-emerald-800/30">
-              {(clientName ?? sponsor.manager).slice(0, 2).toUpperCase()}
+              {clientName.slice(0, 2).toUpperCase()}
             </span>
             <span className="hidden text-left leading-tight sm:block">
               <span className="block text-xs font-medium text-slate-900">
-                {clientName ?? sponsor.manager}
+                {clientName}
               </span>
               <span className="block text-[10px] text-slate-500">
-                {clientTier ?? sponsor.tier}
+                {clientTier}
               </span>
             </span>
             <ChevronDown className="size-3.5 text-slate-500" />
@@ -341,7 +265,20 @@ function Stat({
   )
 }
 
-function RightsOverview() {
+function RightsOverview({
+  sponsorName,
+  tier,
+  stats,
+}: {
+  sponsorName: string
+  tier: string
+  stats: DashStats
+}) {
+  const progress = stats.total > 0 ? Math.round((stats.executed / stats.total) * 100) : 0
+  const valueDelivered = stats.total > 0
+    ? Math.round((stats.executed / stats.total) * stats.packagePrice)
+    : 0
+
   return (
     <section className="mx-auto max-w-[1400px] px-5 pt-8 md:px-8">
       <div className="flex flex-col gap-6 lg:flex-row lg:items-stretch">
@@ -353,13 +290,13 @@ function RightsOverview() {
           />
           <span className="inline-flex items-center gap-2 rounded-full bg-emerald-50 px-3 py-1 text-xs font-medium uppercase tracking-[0.16em] text-emerald-800 ring-1 ring-inset ring-emerald-800/30">
             <Trophy className="size-3.5" />
-            {sponsor.tier}
+            {tier}
           </span>
           <h1 className="mt-4 text-3xl font-semibold tracking-tight text-slate-900 text-balance md:text-4xl">
-            {sponsor.name}
+            {sponsorName}
           </h1>
           <p className="mt-2 max-w-md text-sm leading-relaxed text-slate-500">
-            {sponsor.property} · Contract period {sponsor.contract}
+            Event Kemitraan · Sponsor {tier}
           </p>
 
           <div className="mt-7 max-w-md">
@@ -368,18 +305,21 @@ function RightsOverview() {
                 Overall rights fulfilled
               </span>
               <span className="text-2xl font-semibold text-emerald-800">
-                {sponsor.overallProgress}%
+                {stats.loaded ? `${progress}%` : "—"}
               </span>
             </div>
             <div className="mt-2 h-2.5 overflow-hidden rounded-full bg-slate-100">
               <div
-                className="h-full rounded-full bg-gradient-to-r from-emerald-600 to-emerald-800"
-                style={{ width: `${sponsor.overallProgress}%` }}
+                className="h-full rounded-full bg-gradient-to-r from-emerald-600 to-emerald-800 transition-all duration-700"
+                style={{ width: `${stats.loaded ? progress : 0}%` }}
               />
             </div>
             <p className="mt-2 text-xs text-slate-500">
-              {sponsor.rightsDelivered} of {sponsor.rightsTotal} contracted
-              deliverables verified
+              {stats.loaded
+                ? stats.total === 0
+                  ? "Deliverables belum ditambahkan oleh tim event"
+                  : `${stats.executed} dari ${stats.total} deliverable terpenuhi`
+                : "Memuat data…"}
             </p>
           </div>
         </div>
@@ -387,27 +327,31 @@ function RightsOverview() {
         {/* Stat grid */}
         <div className="grid flex-1 grid-cols-2 gap-4 sm:grid-cols-2 lg:max-w-md">
           <Stat
-            label="Value delivered"
-            value={sponsor.valueDelivered}
-            sub={`of ${sponsor.valueTotal} total`}
+            label="Nilai tersampaikan"
+            value={stats.loaded ? currencyIDR.format(valueDelivered) : "—"}
+            sub={`dari ${stats.loaded ? currencyIDR.format(stats.packagePrice) : "—"} total paket`}
             icon={<CircleDollarSign className="size-4" />}
           />
           <Stat
-            label="Days remaining"
-            value={`${sponsor.daysRemaining}`}
-            sub="until season finale"
+            label="Tanggal event"
+            value="Segera"
+            sub="diumumkan"
             icon={<CalendarDays className="size-4" />}
           />
           <Stat
-            label="Rights delivered"
-            value={`${sponsor.rightsDelivered}`}
-            sub={`${sponsor.rightsTotal - sponsor.rightsDelivered} remaining`}
+            label="Hak terpenuhi"
+            value={stats.loaded ? `${stats.executed}` : "—"}
+            sub={stats.loaded
+              ? stats.total === 0
+                ? "belum ada deliverable"
+                : `${stats.total - stats.executed} belum terpenuhi`
+              : "memuat…"}
             icon={<Trophy className="size-4" />}
           />
           <Stat
-            label="Active deliverables"
-            value="5"
-            sub="across 5 categories"
+            label="Masih berjalan"
+            value={stats.loaded ? `${stats.active}` : "—"}
+            sub="deliverable aktif"
             icon={<Trophy className="size-4" />}
           />
         </div>
@@ -480,37 +424,41 @@ function DeliverableCard({
         <p className="mb-3 text-[10px] font-medium uppercase tracking-[0.16em] text-slate-500">
           Milestones
         </p>
-        <ol className="relative space-y-3 pl-4">
-          <span
-            className="absolute left-[5px] top-1 bottom-1 w-px bg-slate-200"
-            aria-hidden
-          />
-          {d.milestones.map((m) => (
-            <li key={m.label} className="relative flex items-center gap-2.5">
-              <span
-                className={cn(
-                  "absolute -left-4 flex size-[11px] items-center justify-center rounded-full ring-2 ring-white",
-                  m.done ? "bg-emerald-800" : "bg-slate-200",
-                )}
-              >
-                {m.done && (
-                  <Check className="size-2 text-white" strokeWidth={3} />
-                )}
-              </span>
-              <span
-                className={cn(
-                  "text-xs",
-                  m.done ? "text-slate-900" : "text-slate-500",
-                )}
-              >
-                {m.label}
-              </span>
-              <span className="ml-auto text-[10px] tabular-nums text-slate-500">
-                {m.date}
-              </span>
-            </li>
-          ))}
-        </ol>
+        {d.milestones.length === 0 ? (
+          <p className="text-xs text-slate-400">Belum ada milestone.</p>
+        ) : (
+          <ol className="relative space-y-3 pl-4">
+            <span
+              className="absolute left-[5px] top-1 bottom-1 w-px bg-slate-200"
+              aria-hidden
+            />
+            {d.milestones.map((m) => (
+              <li key={m.label} className="relative flex items-center gap-2.5">
+                <span
+                  className={cn(
+                    "absolute -left-4 flex size-[11px] items-center justify-center rounded-full ring-2 ring-white",
+                    m.done ? "bg-emerald-800" : "bg-slate-200",
+                  )}
+                >
+                  {m.done && (
+                    <Check className="size-2 text-white" strokeWidth={3} />
+                  )}
+                </span>
+                <span
+                  className={cn(
+                    "text-xs",
+                    m.done ? "text-slate-900" : "text-slate-500",
+                  )}
+                >
+                  {m.label}
+                </span>
+                <span className="ml-auto text-[10px] tabular-nums text-slate-500">
+                  {m.date}
+                </span>
+              </li>
+            ))}
+          </ol>
+        )}
       </div>
 
       {/* Proof of execution */}
@@ -521,16 +469,137 @@ function DeliverableCard({
             Proof of Execution
           </p>
           <span className="ml-auto text-[10px] text-slate-500">
-            {d.proofs.length} files
+            {d.proofs.length > 0 ? "1 file tersedia" : "0 files"}
           </span>
         </div>
 
-        <div className="flex aspect-[4/3] flex-col items-center justify-center gap-1.5 rounded-lg border border-dashed border-slate-200 bg-slate-50 text-slate-500">
-          <ImageOff className="size-5 opacity-60" />
-          <span className="text-[11px]">Awaiting first activation</span>
-        </div>
+        {d.proofs.length > 0 ? (
+          <a
+            href={d.proofs[0].src}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="flex w-full items-center justify-between rounded-lg border border-emerald-800/30 bg-emerald-50 px-3 py-3 text-sm font-medium text-emerald-800 transition-colors hover:bg-emerald-100"
+          >
+            <span className="flex items-center gap-2">
+              <Camera className="size-4" />
+              Lihat Bukti
+            </span>
+            <span className="text-xs opacity-70">Buka →</span>
+          </a>
+        ) : (
+          <div className="flex aspect-[4/3] flex-col items-center justify-center gap-1.5 rounded-lg border border-dashed border-slate-200 bg-slate-50 text-slate-500">
+            <ImageOff className="size-5 opacity-60" />
+            <span className="text-[11px]">Awaiting first activation</span>
+          </div>
+        )}
       </div>
     </article>
+  )
+}
+
+// ─── InvoiceSection ──────────────────────────────────────────────────────────
+
+const IDR = new Intl.NumberFormat("id-ID", { style: "currency", currency: "IDR", maximumFractionDigits: 0 })
+
+type InvoiceSummary = {
+  id: string
+  invoiceNumber: string
+  grandTotal: number
+  status: string
+  currentTier: string
+  createdAt: string
+  pdfUrl: string | null
+}
+
+function statusInvoiceColor(s: string) {
+  if (s === "Lunas") return "text-emerald-700 bg-emerald-50 ring-emerald-200"
+  if (s === "DP Terbayar") return "text-amber-700 bg-amber-50 ring-amber-200"
+  return "text-red-700 bg-red-50 ring-red-200"
+}
+
+function InvoiceSection({ dealId }: { dealId: string }) {
+  const [invoices, setInvoices] = useState<InvoiceSummary[]>([])
+  const [loading, setLoading] = useState(true)
+  const [downloading, setDownloading] = useState<string | null>(null)
+
+  useEffect(() => {
+    fetch(`${API_BASE}/invoices/deal/${dealId}`, { cache: "no-store" })
+      .then((r) => r.json())
+      .then((d) => {
+        if (d.success && d.data) setInvoices([d.data])
+        else setInvoices([])
+      })
+      .catch(() => setInvoices([]))
+      .finally(() => setLoading(false))
+  }, [dealId])
+
+  async function downloadPdf(pdfUrl: string, invoiceNumber: string) {
+    setDownloading(invoiceNumber)
+    try {
+      const res = await fetch(`/api/pdf?path=${encodeURIComponent(pdfUrl)}`)
+      const blob = await res.blob()
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement("a")
+      a.href = url
+      a.download = `${invoiceNumber}.pdf`
+      a.click()
+      URL.revokeObjectURL(url)
+    } catch { /* ignore */ }
+    setDownloading(null)
+  }
+
+  if (loading || invoices.length === 0) return null
+
+  return (
+    <section className="mx-auto mt-10 max-w-[1400px] px-5 md:px-8">
+      <div className="mb-5">
+        <h2 className="text-xl font-semibold tracking-tight text-slate-900 md:text-2xl">
+          Invoice & Pembayaran
+        </h2>
+        <p className="mt-1 text-sm text-slate-500">Dokumen tagihan sponsorship Anda</p>
+      </div>
+
+      <div className="space-y-3">
+        {invoices.map((inv) => (
+          <div key={inv.id} className="flex items-center justify-between rounded-2xl border border-slate-200 bg-white px-5 py-4 shadow-sm">
+            <div className="flex items-center gap-4">
+              <div className="flex size-10 items-center justify-center rounded-xl bg-slate-100">
+                <FileText className="size-5 text-slate-600" />
+              </div>
+              <div>
+                <p className="font-mono text-sm font-bold text-slate-900">{inv.invoiceNumber}</p>
+                <p className="text-xs text-slate-500">
+                  {new Date(inv.createdAt).toLocaleDateString("id-ID", { day: "numeric", month: "long", year: "numeric" })}
+                  {" · "}Tier {inv.currentTier}
+                </p>
+                <p className="mt-0.5 font-mono text-base font-bold text-emerald-700">{IDR.format(Number(inv.grandTotal))}</p>
+              </div>
+            </div>
+
+            <div className="flex items-center gap-3">
+              <span className={cn("inline-flex items-center gap-1 rounded-full px-3 py-1 text-xs font-medium ring-1 ring-inset", statusInvoiceColor(inv.status))}>
+                {inv.status === "Lunas" && <Check className="size-3" strokeWidth={2.5} />}
+                {inv.status}
+              </span>
+              {inv.pdfUrl && (
+                <button
+                  onClick={() => downloadPdf(inv.pdfUrl!, inv.invoiceNumber)}
+                  disabled={downloading === inv.invoiceNumber}
+                  className="flex items-center gap-1.5 rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-medium text-slate-700 transition-colors hover:bg-slate-50"
+                >
+                  {downloading === inv.invoiceNumber ? (
+                    <Loader2 className="size-3.5 animate-spin" />
+                  ) : (
+                    <Download className="size-3.5" />
+                  )}
+                  Unduh PDF
+                </button>
+              )}
+            </div>
+          </div>
+        ))}
+      </div>
+    </section>
   )
 }
 
@@ -542,8 +611,8 @@ function DeliverablesTracker({ dealId }: { dealId: string }) {
 
   useEffect(() => {
     fetch(`${API_BASE}/sponsor/deliverables?dealId=${dealId}`)
-      .then((r) => r.json())
-      .then((d) => { if (d.success) setItems((d.data ?? []).map(mapToDeliverable)) })
+      .then((r) => safeJson(r))
+      .then((d) => { if (d.success) setItems(((d.data ?? []) as ApiDeliverable[]).map(mapToDeliverable)) })
       .catch(() => {})
       .finally(() => setLoading(false))
   }, [dealId])
@@ -612,6 +681,30 @@ export default function SponsorDashboardPage() {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [form, setForm] = useState({ username: "", password: "" })
+  const [stats, setStats] = useState<DashStats>({
+    total: 0, executed: 0, active: 0, packagePrice: 0, loaded: false,
+  })
+
+  // Setelah login berhasil, ambil deliverables dan harga paket dari tier
+  useEffect(() => {
+    if (!session) return
+    Promise.all([
+      fetch(`${API_BASE}/sponsor/deliverables?dealId=${session.dealId}`).then(safeJson),
+      fetch(`${API_BASE}/sponsor/thresholds`).then(safeJson),
+    ])
+      .then(([delivData, thrData]) => {
+        const delivs = (delivData.data ?? []) as ApiDeliverable[]
+        const executed = delivs.filter((d) => d.status === "Executed").length
+        const active = delivs.filter((d) => d.status === "InProduction" || d.status === "Planning").length
+
+        const thresholds = (thrData.data ?? []) as Array<{ tierName: string; minPrice: string }>
+        const match = thresholds.find((t) => t.tierName === session.tier)
+        const packagePrice = match ? Number(match.minPrice) : 0
+
+        setStats({ total: delivs.length, executed, active, packagePrice, loaded: true })
+      })
+      .catch(() => setStats((prev) => ({ ...prev, loaded: true })))
+  }, [session])
 
   async function handleLogin(e: React.FormEvent) {
     e.preventDefault()
@@ -627,12 +720,13 @@ export default function SponsorDashboardPage() {
           body: JSON.stringify({ username: form.username, password: form.password }),
         },
       )
-      const data = await res.json()
+      const data = await safeJson(res)
       if (!res.ok || !data.success) {
-        setError(data.message ?? "Login gagal. Periksa username dan password Anda.")
+        setError((data.message as string) ?? "Login gagal. Periksa username dan password Anda.")
         return
       }
-      setSession({ sponsorName: data.data.sponsorName, tier: data.data.tier, dealId: data.data.dealId })
+      const d = data.data as { sponsorName: string; tier: string; dealId: string }
+      setSession({ sponsorName: d.sponsorName, tier: d.tier, dealId: d.dealId })
     } catch {
       setError("Belum ada akun klien aktif. Hubungi Event Organizer Anda.")
     } finally {
@@ -712,7 +806,8 @@ export default function SponsorDashboardPage() {
   return (
     <main className="min-h-dvh bg-slate-50 pb-16">
       <SponsorTopbar clientName={session.sponsorName} clientTier={session.tier} />
-      <RightsOverview />
+      <RightsOverview sponsorName={session.sponsorName} tier={session.tier} stats={stats} />
+      <InvoiceSection dealId={session.dealId} />
       <DeliverablesTracker dealId={session.dealId} />
 
       <footer className="mx-auto mt-12 max-w-[1400px] px-5 md:px-8">

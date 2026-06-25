@@ -1,4 +1,4 @@
-// ============================================================
+﻿// ============================================================
 // Test Script: POST /api/auth/register
 // Jalankan dengan: node test-register.js
 // (Pastikan server sudah running di terminal lain)
@@ -11,7 +11,7 @@ async function testRegister() {
 
   const userData = {
     name: 'Test Promotor',
-    email: 'test@habitat.com',
+    email: 'test@nexevent.com',
     password: 'password123',
   };
 

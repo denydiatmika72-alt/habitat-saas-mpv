@@ -1,20 +1,18 @@
 "use client"
 
-import { useEffect, useRef, useState, type KeyboardEvent, type ClipboardEvent } from "react"
+import { useEffect, useState } from "react"
 import { ArrowRight, CalendarDays, Check, Loader2, MapPin, ShieldCheck } from "lucide-react"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { cn } from "@/lib/utils"
 
-// ─── Config ───────────────────────────────────────────────────────────────────
-const THRESHOLDS_FALLBACK: Record<string, number> = {
-  Silver: 0,
-  Gold: 0,
-  Platinum: 0,
-  "Title Sponsor": 0,
-  "Community Partner": 0,
+// ─── Helpers ──────────────────────────────────────────────────────────────────
+async function safeJson(res: Response): Promise<Record<string, unknown>> {
+  const text = await res.text()
+  try { return text ? (JSON.parse(text) as Record<string, unknown>) : {} } catch { return {} }
 }
 
+// ─── Config ───────────────────────────────────────────────────────────────────
 const currencyIDR = new Intl.NumberFormat("id-ID", {
   style: "currency",
   currency: "IDR",
@@ -27,66 +25,37 @@ const EVENT = {
   tagline: "The Sound of Tomorrow",
   date: "15–17 Agustus 2025",
   venue: "Gelora Bung Karno, Jakarta",
-  codeLength: 6,
 }
 
-const SPONSOR_TIERS = [
-  {
-    id: "platinum",
-    name: "Platinum",
-    allocation: "2 Slots Available",
-    description: "Hak eksklusif penamaan panggung utama, branding LED premium, dan hospitality suite khusus.",
-    perks: [
-      "Main stage naming rights",
-      "Premium LED wall branding",
-      "VIP lounge activation",
-      "Social media takeover",
-      "50 complimentary tickets",
-    ],
-  },
-  {
-    id: "gold",
-    name: "Gold",
-    allocation: "4 Slots Available",
-    description: "Visibilitas tinggi di area festival dengan penempatan logo strategis dan aktivasi brand.",
-    perks: [
-      "Side stage branding",
-      "LED screen rotation",
-      "Brand activation booth",
-      "Social media feature",
-      "20 complimentary tickets",
-    ],
-  },
-  {
-    id: "silver",
-    name: "Silver",
-    allocation: "6 Slots Available",
-    description: "Kehadiran brand di material promosi resmi dan penempatan banner di area publik.",
-    perks: [
-      "Banner placement",
-      "Program booklet logo",
-      "Website listing",
-      "10 complimentary tickets",
-    ],
-  },
-  {
-    id: "community",
-    name: "Community Partner",
-    allocation: "Unlimited",
-    description: "Dukungan komunitas dengan pengenalan brand pada kanal digital acara.",
-    perks: [
-      "Website & social listing",
-      "Newsletter mention",
-      "5 complimentary tickets",
-    ],
-  },
-]
+// ─── Types ────────────────────────────────────────────────────────────────────
+type ApiPackage = {
+  id: string
+  name: string
+  price: number
+  slots: number
+  description: string
+  benefits: Array<{ qty: number; benefit: { id: string; name: string; category: string; price: number } }>
+}
+
+type ApiBenefit = {
+  id: string
+  name: string
+  category: string
+  description: string
+  price: number
+  maxQty: number
+  usedQty: number
+  heldQty: number
+}
 
 type SponsorSubmission = {
   company: string
   contactName: string
   email: string
   tier: string
+  packageId?: string
+  selectedBenefits: { benefitId: string; qty: number; unitPrice: number }[]
+  totalValue: number
 }
 
 type Step = "gate" | "form" | "success"
@@ -97,108 +66,12 @@ const STEPS: { id: Step; label: string }[] = [
   { id: "success", label: "Konfirmasi" },
 ]
 
-// ─── CodeInput ────────────────────────────────────────────────────────────────
-function CodeInput({
-  length,
-  value,
-  onChange,
-  invalid,
-  disabled,
-}: {
-  length: number
-  value: string
-  onChange: (value: string) => void
-  invalid?: boolean
-  disabled?: boolean
-}) {
-  const inputs = useRef<Array<HTMLInputElement | null>>([])
-  const [focused, setFocused] = useState<number | null>(null)
-  const chars = Array.from({ length }, (_, i) => value[i] ?? "")
-
-  function setCharAt(index: number, char: string) {
-    const next = chars.slice()
-    next[index] = char
-    onChange(next.join("").slice(0, length))
-  }
-
-  function handleInput(index: number, raw: string) {
-    const char = raw.replace(/[^a-zA-Z0-9]/g, "").toUpperCase().slice(-1)
-    if (!char) return
-    setCharAt(index, char)
-    if (index < length - 1) inputs.current[index + 1]?.focus()
-  }
-
-  function handleKeyDown(index: number, e: KeyboardEvent<HTMLInputElement>) {
-    if (e.key === "Backspace") {
-      e.preventDefault()
-      if (chars[index]) {
-        setCharAt(index, "")
-      } else if (index > 0) {
-        inputs.current[index - 1]?.focus()
-        setCharAt(index - 1, "")
-      }
-    } else if (e.key === "ArrowLeft" && index > 0) {
-      inputs.current[index - 1]?.focus()
-    } else if (e.key === "ArrowRight" && index < length - 1) {
-      inputs.current[index + 1]?.focus()
-    }
-  }
-
-  function handlePaste(e: ClipboardEvent<HTMLInputElement>) {
-    e.preventDefault()
-    const pasted = e.clipboardData
-      .getData("text")
-      .replace(/[^a-zA-Z0-9]/g, "")
-      .toUpperCase()
-      .slice(0, length)
-    if (!pasted) return
-    onChange(pasted)
-    const nextIndex = Math.min(pasted.length, length - 1)
-    inputs.current[nextIndex]?.focus()
-  }
-
-  return (
-    <div className="flex items-center justify-center gap-2.5 sm:gap-3" role="group" aria-label="Kode undangan acara">
-      {chars.map((char, i) => (
-        <input
-          key={i}
-          ref={(el) => {
-            inputs.current[i] = el
-          }}
-          type="text"
-          inputMode="text"
-          autoComplete="off"
-          aria-label={`Karakter ${i + 1}`}
-          value={char}
-          disabled={disabled}
-          maxLength={1}
-          onChange={(e) => handleInput(i, e.target.value)}
-          onKeyDown={(e) => handleKeyDown(i, e)}
-          onPaste={handlePaste}
-          onFocus={() => setFocused(i)}
-          onBlur={() => setFocused(null)}
-          className={cn(
-            "h-14 w-11 rounded-md border bg-slate-50 text-center text-2xl font-medium text-slate-900 caret-emerald-800",
-            "shadow-[inset_0_1px_0_oklch(1_0_0/6%)] outline-none transition-all duration-300 sm:h-16 sm:w-13",
-            "placeholder:text-slate-400",
-            focused === i && !invalid && "border-emerald-800 bg-white shadow-[0_0_0_1px_theme(colors.emerald.800),0_0_24px_-6px_theme(colors.emerald.800/30%)]",
-            char && focused !== i && !invalid && "border-emerald-800/40",
-            (!char && focused !== i) && "border-slate-200",
-            invalid && "border-red-400 text-red-600 shadow-[0_0_0_1px_theme(colors.red.400/40%)]",
-            disabled && "cursor-not-allowed opacity-50",
-          )}
-        />
-      ))}
-    </div>
-  )
-}
-
 // ─── CodeGate ─────────────────────────────────────────────────────────────────
-function CodeGate({ onUnlock }: { onUnlock: (code: string) => void }) {
+function CodeGate({ onUnlock }: { onUnlock: (code: string, eventId: string | null) => void }) {
   const [code, setCode] = useState("")
-  const [status, setStatus] = useState<"idle" | "checking" | "error">("idle")
+  const [status, setStatus] = useState<"idle" | "checking" | "invalid" | "error">("idle")
 
-  const complete = code.length === EVENT.codeLength
+  const complete = code.trim().length > 0
 
   async function submit() {
     if (!complete || status === "checking") return
@@ -207,22 +80,28 @@ function CodeGate({ onUnlock }: { onUnlock: (code: string) => void }) {
       const res = await fetch("/api/sponsor/codes/validate", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ code }),
+        body: JSON.stringify({ code: code.trim().toUpperCase() }),
       })
-      const data = await res.json()
-      if (!res.ok || !data.success) {
-        setStatus("error")
+      if (!res.ok) {
+        setStatus(res.status === 400 ? "invalid" : "error")
         return
       }
-      onUnlock(code.toUpperCase())
+      const data = await safeJson(res)
+      if (!data.success) { setStatus("invalid"); return }
+      const eventId = (data.data as Record<string, unknown>)?.eventId as string | null ?? null
+      onUnlock(code.trim().toUpperCase(), eventId)
     } catch {
       setStatus("error")
     }
   }
 
-  function handleChange(next: string) {
-    setCode(next)
-    if (status === "error") setStatus("idle")
+  function handleChange(val: string) {
+    setCode(val.toUpperCase())
+    if (status !== "idle") setStatus("idle")
+  }
+
+  function handleKeyDown(e: React.KeyboardEvent<HTMLInputElement>) {
+    if (e.key === "Enter") submit()
   }
 
   return (
@@ -234,23 +113,36 @@ function CodeGate({ onUnlock }: { onUnlock: (code: string) => void }) {
             Masukkan Kode Undangan Anda
           </h2>
           <p className="mt-3 text-pretty text-sm leading-relaxed text-slate-500">
-            Portal pendaftaran sponsor ini bersifat privat. Gunakan kode {EVENT.codeLength} digit yang tertera pada
-            undangan resmi Anda.
+            Portal pendaftaran sponsor ini bersifat privat. Masukkan kode undangan resmi Anda dalam format{" "}
+            <span className="font-mono font-medium text-slate-700">SPN-XXXX-XXXX</span>.
           </p>
         </div>
 
-        <CodeInput
-          length={EVENT.codeLength}
+        <input
+          type="text"
           value={code}
-          onChange={handleChange}
-          invalid={status === "error"}
+          onChange={(e) => handleChange(e.target.value)}
+          onKeyDown={handleKeyDown}
           disabled={status === "checking"}
+          placeholder="Contoh: SPN-ABCD-1234"
+          className={cn(
+            "h-14 w-full rounded-md border bg-slate-50 px-4 text-center font-mono text-xl font-medium text-slate-900 tracking-widest outline-none transition-all duration-300",
+            "placeholder:font-sans placeholder:text-sm placeholder:tracking-normal placeholder:text-slate-400",
+            status === "idle" && "border-slate-200 focus:border-emerald-800 focus:bg-white focus:shadow-[0_0_0_1px_theme(colors.emerald.800),0_0_24px_-6px_theme(colors.emerald.800/30%)]",
+            (status === "invalid" || status === "error") && "border-red-400 text-red-600",
+            status === "checking" && "cursor-not-allowed opacity-50",
+          )}
         />
 
         <div className="mt-4 flex min-h-5 items-center justify-center">
-          {status === "error" && (
+          {status === "invalid" && (
             <p className="text-center text-sm text-red-600" role="alert">
               Kode tidak valid atau sudah digunakan.
+            </p>
+          )}
+          {status === "error" && (
+            <p className="text-center text-sm text-red-600" role="alert">
+              Terjadi kesalahan, coba lagi.
             </p>
           )}
         </div>
@@ -298,12 +190,16 @@ function CodeGate({ onUnlock }: { onUnlock: (code: string) => void }) {
 // ─── SponsorForm ──────────────────────────────────────────────────────────────
 function SponsorForm({
   onSubmit,
-  tierMinPrices = {},
+  packages = [],
+  benefits = [],
 }: {
   onSubmit: (data: SponsorSubmission) => void
-  tierMinPrices?: Record<string, number>
+  packages?: ApiPackage[]
+  benefits?: ApiBenefit[]
 }) {
-  const [tier, setTier] = useState<string>(SPONSOR_TIERS[1].id)
+  const [activeTab, setActiveTab] = useState<"packages" | "alacarte">("packages")
+  const [selectedPackageId, setSelectedPackageId] = useState<string>("")
+  const [alaCarteQtys, setAlaCarteQtys] = useState<Record<string, number>>({})
   const [submitting, setSubmitting] = useState(false)
   const [form, setForm] = useState({
     company: "",
@@ -315,23 +211,63 @@ function SponsorForm({
     agree: false,
   })
 
+  const alacarteTotalQty = Object.values(alaCarteQtys).reduce((s, q) => s + q, 0)
+  const selectionValid =
+    activeTab === "packages" ? selectedPackageId !== "" : alacarteTotalQty > 0
   const valid =
-    form.company.trim() && form.contactName.trim() && /.+@.+\..+/.test(form.email) && form.agree && tier
+    form.company.trim() && form.contactName.trim() && /.+@.+\..+/.test(form.email) && form.agree && selectionValid
 
   function update<K extends keyof typeof form>(key: K, value: (typeof form)[K]) {
     setForm((prev) => ({ ...prev, [key]: value }))
+  }
+
+  function setQty(benefitId: string, qty: number) {
+    const b = benefits.find((x) => x.id === benefitId)
+    if (!b) return
+    const available = (b.maxQty || 1) - (b.usedQty || 0) - (b.heldQty || 0)
+    setAlaCarteQtys((prev) => ({ ...prev, [benefitId]: Math.min(Math.max(0, qty), available) }))
   }
 
   function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
     if (!valid || submitting) return
     setSubmitting(true)
+
+    const selectedPkg = packages.find((p) => p.id === selectedPackageId)
+    const tierName =
+      activeTab === "packages"
+        ? (selectedPkg?.name ?? "")
+        : "À La Carte"
+
+    let selectedBenefits: SponsorSubmission["selectedBenefits"] = []
+    let totalValue = 0
+
+    if (activeTab === "packages" && selectedPkg) {
+      selectedBenefits = selectedPkg.benefits.map(({ benefit, qty }) => ({
+        benefitId: benefit.id,
+        qty,
+        unitPrice: Number(benefit.price),
+      }))
+      totalValue = Number(selectedPkg.price)
+    } else if (activeTab === "alacarte") {
+      selectedBenefits = Object.entries(alaCarteQtys)
+        .filter(([, qty]) => qty > 0)
+        .map(([benefitId, qty]) => {
+          const b = benefits.find((x) => x.id === benefitId)!
+          return { benefitId, qty, unitPrice: Number(b.price) }
+        })
+      totalValue = selectedBenefits.reduce((sum, { qty, unitPrice }) => sum + qty * unitPrice, 0)
+    }
+
     setTimeout(() => {
       onSubmit({
         company: form.company.trim(),
         contactName: form.contactName.trim(),
         email: form.email.trim(),
-        tier: SPONSOR_TIERS.find((t) => t.id === tier)?.name ?? tier,
+        tier: tierName,
+        packageId: activeTab === "packages" ? selectedPackageId : undefined,
+        selectedBenefits,
+        totalValue,
       })
     }, 1100)
   }
@@ -339,63 +275,237 @@ function SponsorForm({
   return (
     <form onSubmit={handleSubmit} className="w-full max-w-3xl">
       <div className="rounded-2xl border border-slate-200 bg-white p-7 shadow-lg sm:p-10">
-        {/* Tier selection */}
+
+        {/* ── Section 01: Package selection ──────────────────────────────── */}
         <section>
-          <SectionTitle index="01" title="Pilih Tingkat Kemitraan" hint="Pilih satu" />
-          <div className="mt-5 grid gap-3 sm:grid-cols-2">
-            {SPONSOR_TIERS.map((t) => {
-              const active = tier === t.id
-              return (
-                <button
-                  type="button"
-                  key={t.id}
-                  onClick={() => setTier(t.id)}
-                  className={cn(
-                    "group relative overflow-hidden rounded-xl border p-5 text-left transition-all duration-300",
-                    active
-                      ? "border-emerald-800/70 bg-emerald-50 shadow-[0_0_0_1px_theme(colors.emerald.800),0_18px_50px_-24px_theme(colors.emerald.800/20%)]"
-                      : "border-slate-200 bg-slate-50 hover:border-emerald-800/40 hover:bg-white",
-                  )}
-                >
-                  <div className="flex items-start justify-between gap-3">
-                    <div>
-                      <h3 className="text-lg font-medium text-slate-900">{t.name}</h3>
-                      <p className="mt-0.5 text-[10px] font-medium uppercase tracking-[0.2em] text-emerald-800/80">
-                        {t.allocation}
-                      </p>
-                      {tierMinPrices[t.name] > 0 && (
-                        <p className="mt-1 text-xs font-medium text-emerald-800">
-                          Mulai dari {currencyIDR.format(tierMinPrices[t.name])}
-                        </p>
-                      )}
-                    </div>
-                    <span
+          <SectionTitle index="01" title="Pilih Paket Sponsorship" hint="Pilih satu" />
+
+          {/* Tab switcher */}
+          <div className="mt-5 flex gap-1 rounded-lg border border-slate-200 bg-slate-50 p-1">
+            <button
+              type="button"
+              onClick={() => setActiveTab("packages")}
+              className={cn(
+                "flex-1 rounded-md px-4 py-2 text-sm font-medium transition-colors",
+                activeTab === "packages"
+                  ? "bg-white text-slate-900 shadow-sm"
+                  : "text-slate-500 hover:text-slate-700",
+              )}
+            >
+              Paket Sponsorship
+            </button>
+            <button
+              type="button"
+              onClick={() => setActiveTab("alacarte")}
+              className={cn(
+                "flex-1 rounded-md px-4 py-2 text-sm font-medium transition-colors",
+                activeTab === "alacarte"
+                  ? "bg-white text-slate-900 shadow-sm"
+                  : "text-slate-500 hover:text-slate-700",
+              )}
+            >
+              Benefit À La Carte
+            </button>
+          </div>
+
+          {/* Packages tab */}
+          {activeTab === "packages" && (
+            <div className="mt-4 grid gap-3 sm:grid-cols-2">
+              {packages.length === 0 ? (
+                <p className="col-span-2 py-8 text-center text-sm text-slate-500">
+                  Belum ada paket tersedia. Hubungi tim kemitraan kami untuk informasi lebih lanjut.
+                </p>
+              ) : (
+                packages.map((pkg) => {
+                  const active = selectedPackageId === pkg.id
+                  return (
+                    <button
+                      type="button"
+                      key={pkg.id}
+                      onClick={() => setSelectedPackageId(pkg.id)}
                       className={cn(
-                        "mt-0.5 flex size-5 shrink-0 items-center justify-center rounded-full border transition-all",
-                        active ? "border-emerald-800 bg-emerald-800 text-white" : "border-slate-300",
+                        "group relative overflow-hidden rounded-xl border p-5 text-left transition-all duration-300",
+                        active
+                          ? "border-emerald-800/70 bg-emerald-50 shadow-[0_0_0_1px_theme(colors.emerald.800),0_18px_50px_-24px_theme(colors.emerald.800/20%)]"
+                          : "border-slate-200 bg-slate-50 hover:border-emerald-800/40 hover:bg-white",
                       )}
                     >
-                      {active && <Check className="size-3" strokeWidth={3} />}
-                    </span>
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="min-w-0">
+                          <h3 className="text-lg font-medium text-slate-900">{pkg.name}</h3>
+                          <p className="mt-0.5 text-[10px] font-medium uppercase tracking-[0.2em] text-emerald-800/80">
+                            {pkg.slots} slot tersedia
+                          </p>
+                        </div>
+                        <span
+                          className={cn(
+                            "mt-0.5 flex size-5 shrink-0 items-center justify-center rounded-full border transition-all",
+                            active ? "border-emerald-800 bg-emerald-800 text-white" : "border-slate-300",
+                          )}
+                        >
+                          {active && <Check className="size-3" strokeWidth={3} />}
+                        </span>
+                      </div>
+                      <p className="mt-3 font-mono text-xl font-semibold text-emerald-800">
+                        {currencyIDR.format(Number(pkg.price))}
+                      </p>
+                      {pkg.benefits.length > 0 && (
+                        <ul className="mt-3 space-y-1.5">
+                          {pkg.benefits.map(({ benefit, qty }) => (
+                            <li key={benefit.id} className="flex items-center gap-2 text-xs text-slate-600">
+                              <span className="size-1 rounded-full bg-emerald-800/70" />
+                              <span className="font-medium">{qty}×</span>
+                              {benefit.name}
+                              <span className="text-slate-400">· {benefit.category}</span>
+                            </li>
+                          ))}
+                        </ul>
+                      )}
+                      <div
+                        className={cn(
+                          "mt-3 rounded-lg py-1.5 text-center text-xs font-medium",
+                          active ? "bg-emerald-800 text-white" : "bg-emerald-50 text-emerald-800",
+                        )}
+                      >
+                        {active ? "Paket Dipilih" : "Pilih Paket Ini"}
+                      </div>
+                    </button>
+                  )
+                })
+              )}
+            </div>
+          )}
+
+          {/* À La Carte tab */}
+          {activeTab === "alacarte" && (
+            <div className="mt-4 flex flex-col gap-2">
+              {benefits.length === 0 ? (
+                <p className="py-8 text-center text-sm text-slate-500">
+                  Belum ada benefit tersedia. Hubungi tim kemitraan kami.
+                </p>
+              ) : (
+                benefits.map((b) => {
+                  const available = (b.maxQty || 1) - (b.usedQty || 0) - (b.heldQty || 0)
+                  const qty = alaCarteQtys[b.id] ?? 0
+                  const outOfStock = available <= 0
+                  const selected = qty > 0
+                  const subtotal = Number(b.price) * qty
+
+                  return (
+                    <div
+                      key={b.id}
+                      className={cn(
+                        "rounded-xl border p-4 transition-colors",
+                        outOfStock
+                          ? "border-slate-200 bg-slate-50 opacity-60"
+                          : selected
+                          ? "border-emerald-800/50 bg-emerald-50"
+                          : "border-slate-200 bg-slate-50 hover:border-emerald-800/30 hover:bg-white",
+                      )}
+                    >
+                      {/* Header: kategori + badge stok habis */}
+                      <div className="flex items-center justify-between">
+                        <span className="text-[10px] font-medium uppercase tracking-wider text-slate-500">{b.category}</span>
+                        {outOfStock && (
+                          <span className="rounded-full bg-red-100 px-2 py-0.5 text-[10px] font-medium text-red-600">
+                            Stok Habis
+                          </span>
+                        )}
+                      </div>
+
+                      {/* Nama benefit */}
+                      <p className="mt-1 text-sm font-medium text-slate-900">{b.name}</p>
+
+                      {/* Harga satuan dan sisa stok */}
+                      <div className="mt-1 flex items-center gap-3 text-xs">
+                        <span className="text-slate-500">{currencyIDR.format(Number(b.price))} / pcs</span>
+                        {!outOfStock && (
+                          <span className="font-medium text-emerald-700">Sisa {available} pcs</span>
+                        )}
+                      </div>
+
+                      {/* Stepper dan subtotal */}
+                      {!outOfStock && (
+                        <div className="mt-3 flex items-center justify-between">
+                          <div className="flex items-center gap-2">
+                            <span className="text-xs text-slate-500">Qty:</span>
+                            <div className="flex items-center gap-1">
+                              <button
+                                type="button"
+                                disabled={qty <= 0}
+                                onClick={() => setQty(b.id, qty - 1)}
+                                className="flex size-7 items-center justify-center rounded-md border border-slate-200 text-slate-600 transition-colors hover:border-emerald-800/40 disabled:opacity-30"
+                              >
+                                −
+                              </button>
+                              <span className="w-8 text-center text-sm font-semibold text-slate-900">{qty}</span>
+                              <button
+                                type="button"
+                                disabled={qty >= available}
+                                onClick={() => setQty(b.id, qty + 1)}
+                                className="flex size-7 items-center justify-center rounded-md border border-slate-200 text-slate-600 transition-colors hover:border-emerald-800/40 disabled:opacity-30"
+                              >
+                                +
+                              </button>
+                            </div>
+                          </div>
+                          {selected && (
+                            <span className="font-mono text-sm font-semibold text-emerald-800">
+                              = {currencyIDR.format(subtotal)}
+                            </span>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  )
+                })
+              )}
+
+              {/* Keranjang belanja */}
+              {alacarteTotalQty > 0 && (
+                <div className="mt-2 rounded-xl border border-emerald-800/20 bg-emerald-50 p-4">
+                  <p className="mb-3 text-[11px] font-medium uppercase tracking-wider text-slate-500">
+                    Keranjang Belanja
+                  </p>
+                  <div className="flex flex-col gap-2">
+                    {Object.entries(alaCarteQtys)
+                      .filter(([, q]) => q > 0)
+                      .map(([benefitId, q]) => {
+                        const b = benefits.find((x) => x.id === benefitId)!
+                        return (
+                          <div key={benefitId} className="flex items-center justify-between text-sm">
+                            <span className="text-slate-700">
+                              <span className="font-medium">{q}×</span> {b.name}
+                            </span>
+                            <span className="font-mono text-emerald-800">
+                              {currencyIDR.format(Number(b.price) * q)}
+                            </span>
+                          </div>
+                        )
+                      })}
+                    <div className="mt-1.5 flex items-center justify-between border-t border-emerald-800/20 pt-2.5">
+                      <span className="text-sm font-semibold text-slate-900">Total Investasi</span>
+                      <span className="font-mono text-base font-semibold text-emerald-800">
+                        {currencyIDR.format(
+                          Object.entries(alaCarteQtys)
+                            .filter(([, q]) => q > 0)
+                            .reduce((sum, [bId, q]) => {
+                              const b = benefits.find((x) => x.id === bId)
+                              return sum + (b ? Number(b.price) * q : 0)
+                            }, 0),
+                        )}
+                      </span>
+                    </div>
                   </div>
-                  <p className="mt-3 text-sm leading-relaxed text-slate-500">{t.description}</p>
-                  <ul className="mt-4 space-y-1.5">
-                    {t.perks.map((perk) => (
-                      <li key={perk} className="flex items-center gap-2 text-xs text-slate-600">
-                        <span className="size-1 rounded-full bg-emerald-800/70" />
-                        {perk}
-                      </li>
-                    ))}
-                  </ul>
-                </button>
-              )
-            })}
-          </div>
+                </div>
+              )}
+            </div>
+          )}
         </section>
 
         <div className="my-8 h-px bg-gradient-to-r from-transparent via-slate-200 to-transparent" />
 
-        {/* Company details */}
+        {/* ── Section 02: Company details ─────────────────────────────────── */}
         <section>
           <SectionTitle index="02" title="Identitas Perusahaan" />
           <div className="mt-5 grid gap-5 sm:grid-cols-2">
@@ -418,7 +528,7 @@ function SponsorForm({
 
         <div className="my-8 h-px bg-gradient-to-r from-transparent via-slate-200 to-transparent" />
 
-        {/* Contact details */}
+        {/* ── Section 03: Contact details ─────────────────────────────────── */}
         <section>
           <SectionTitle index="03" title="Narahubung Resmi" />
           <div className="mt-5 grid gap-5 sm:grid-cols-2">
@@ -561,12 +671,13 @@ function RegistrationSuccess({ data }: { data: SponsorSubmission }) {
           referensi di atas.
         </p>
 
-        <a
-          href="#"
+        <button
+          type="button"
+          onClick={() => { window.location.href = "/sponsor-dashboard" }}
           className="mt-7 inline-flex w-full items-center justify-center rounded-md border border-slate-200 bg-slate-50 px-6 py-3 text-sm font-medium text-slate-900 transition-colors hover:border-emerald-800/40 hover:bg-emerald-50"
         >
           Kembali ke Beranda Acara
-        </a>
+        </button>
       </div>
     </div>
   )
@@ -649,22 +760,25 @@ export default function SponsorPortalPage() {
   const [step, setStep] = useState<Step>("gate")
   const [submission, setSubmission] = useState<SponsorSubmission | null>(null)
   const [unlockedCode, setUnlockedCode] = useState("")
-  const [tierMinPrices, setTierMinPrices] = useState<Record<string, number>>(THRESHOLDS_FALLBACK)
+  const [unlockedEventId, setUnlockedEventId] = useState<string | null>(null)
+  const [isVerified, setIsVerified] = useState(false)
+  const [packages, setPackages] = useState<ApiPackage[]>([])
+  const [benefits, setBenefits] = useState<ApiBenefit[]>([])
 
   useEffect(() => {
-    fetch("/api/sponsor/thresholds")
-      .then((r) => r.json())
-      .then((d) => {
-        if (d.success && Array.isArray(d.data) && d.data.length > 0) {
-          const map: Record<string, number> = { ...THRESHOLDS_FALLBACK }
-          d.data.forEach((t: { tierName: string; minPrice: number }) => {
-            map[t.tierName] = Number(t.minPrice)
-          })
-          setTierMinPrices(map)
-        }
+    if (!isVerified) return
+    Promise.all([
+      fetch("/api/sponsor/packages").then((r) => safeJson(r)),
+      fetch("/api/sponsor/benefits").then((r) => safeJson(r)),
+    ])
+      .then(([pkgData, benData]) => {
+        if (pkgData.success && Array.isArray(pkgData.data))
+          setPackages(pkgData.data as ApiPackage[])
+        if (benData.success && Array.isArray(benData.data))
+          setBenefits(benData.data as ApiBenefit[])
       })
-      .catch(() => {}) // fall back to hardcoded values silently
-  }, [])
+      .catch(() => {})
+  }, [isVerified])
 
   async function handleSubmit(data: SponsorSubmission) {
     await fetch("/api/sponsor/deals", {
@@ -676,8 +790,12 @@ export default function SponsorPortalPage() {
         email: data.email,
         tier: data.tier,
         codeUsed: unlockedCode || "PORTAL",
+        packageId: data.packageId ?? null,
+        selectedBenefits: data.selectedBenefits,
+        totalValue: data.totalValue,
+        eventId: unlockedEventId,
       }),
-    }).catch(() => {}) // non-blocking: submission recorded if possible
+    }).catch(() => {})
     setSubmission(data)
     setStep("success")
   }
@@ -731,8 +849,19 @@ export default function SponsorPortalPage() {
 
       {/* Active step */}
       <section className="relative z-10 flex flex-1 items-start justify-center px-6 py-14 sm:py-16">
-        {step === "gate" && <CodeGate onUnlock={(code) => { setUnlockedCode(code); setStep("form") }} />}
-        {step === "form" && <SponsorForm onSubmit={handleSubmit} tierMinPrices={tierMinPrices} />}
+        {step === "gate" && (
+          <CodeGate
+            onUnlock={(code, eventId) => {
+              setUnlockedCode(code)
+              setUnlockedEventId(eventId)
+              setIsVerified(true)
+              setStep("form")
+            }}
+          />
+        )}
+        {step === "form" && (
+          <SponsorForm onSubmit={handleSubmit} packages={packages} benefits={benefits} />
+        )}
         {step === "success" && submission && <RegistrationSuccess data={submission} />}
       </section>
 

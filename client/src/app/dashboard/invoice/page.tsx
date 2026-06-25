@@ -1,11 +1,14 @@
-"use client"
+﻿"use client"
 
 import { useEffect, useState, Suspense } from "react"
 import { useSearchParams, useRouter } from "next/navigation"
+import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs"
+import PurchaseOrderTab from "@/components/dashboard/PurchaseOrderTab"
 import {
   ArrowLeft,
   BadgeCheck,
   Building2,
+  CheckCircle2,
   Clock,
   CreditCard,
   Download,
@@ -39,6 +42,9 @@ const IDR = new Intl.NumberFormat("id-ID", {
   currency: "IDR",
   maximumFractionDigits: 0,
 })
+
+const INVOICE_STATUS = ["Belum Dibayar", "DP Terbayar", "Lunas"] as const
+type InvoiceStatus = typeof INVOICE_STATUS[number]
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -94,9 +100,35 @@ type InvoiceSummary = {
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
 function statusColor(s: string) {
-  if (s === "Sudah Dibayar") return "bg-emerald-100 text-emerald-700 border-emerald-200"
-  if (s === "Jatuh Tempo") return "bg-red-100 text-red-700 border-red-200"
+  if (s === "Lunas") return "bg-emerald-100 text-emerald-700 border-emerald-200"
+  if (s === "DP Terbayar") return "bg-blue-100 text-blue-700 border-blue-200"
   return "bg-amber-100 text-amber-700 border-amber-200"
+}
+
+type Toast = { id: number; message: string; type: "success" | "error" }
+
+function ToastContainer({ toasts, onRemove }: { toasts: Toast[]; onRemove: (id: number) => void }) {
+  return (
+    <div className="fixed bottom-5 right-5 z-50 flex flex-col gap-2">
+      {toasts.map((t) => (
+        <div
+          key={t.id}
+          className={cn(
+            "flex items-start gap-3 rounded-xl border px-4 py-3 shadow-lg text-sm max-w-sm",
+            t.type === "success"
+              ? "border-emerald-200 bg-emerald-50 text-emerald-800"
+              : "border-red-200 bg-red-50 text-red-800"
+          )}
+        >
+          {t.type === "success" ? <CheckCircle2 className="mt-0.5 size-4 shrink-0" /> : <X className="mt-0.5 size-4 shrink-0" />}
+          <span className="flex-1">{t.message}</span>
+          <button onClick={() => onRemove(t.id)} className="ml-1 opacity-60 hover:opacity-100">
+            <X className="size-3.5" />
+          </button>
+        </div>
+      ))}
+    </div>
+  )
 }
 
 // ─── Components ───────────────────────────────────────────────────────────────
@@ -250,7 +282,7 @@ function InvoicePreview({ data, onClose, onDownload, downloading }: {
           )}
 
           <div className="mt-8 border-t border-slate-100 pt-4 text-center text-[10px] text-slate-400">
-            Invoice dibuat otomatis oleh sistem Habitat • {data.promotorName}
+            Invoice dibuat otomatis oleh sistem nexEvent • {data.promotorName}
           </div>
         </div>
       </div>
@@ -311,6 +343,20 @@ function InvoicePage() {
   const [loadingInvoices, setLoadingInvoices] = useState(false)
   const [deletingId, setDeletingId] = useState<string | null>(null)
   const [updatingStatusId, setUpdatingStatusId] = useState<string | null>(null)
+  const [savedStatusId, setSavedStatusId] = useState<string | null>(null)
+
+  // Toasts
+  const [toasts, setToasts] = useState<Toast[]>([])
+
+  function addToast(message: string, type: Toast["type"] = "success") {
+    const id = Date.now()
+    setToasts((prev) => [...prev, { id, message, type }])
+    setTimeout(() => setToasts((prev) => prev.filter((t) => t.id !== id)), 4000)
+  }
+
+  function removeToast(id: number) {
+    setToasts((prev) => prev.filter((t) => t.id !== id))
+  }
 
   // ── Load on mount ──────────────────────────────────────────────────────────
 
@@ -486,6 +532,8 @@ function InvoicePage() {
       accountHolder: settings.accountHolder,
       bonusItems,
       invoiceType: fromDeal ? "sponsorship" : "manual",
+      invoiceSource: fromDeal ? (selectedDeal!.packageId ? "bundling" : "alacarte") : "alacarte",
+      packageId: fromDeal ? (selectedDeal!.packageId || null) : null,
     }
 
     if (!fromDeal) {
@@ -560,17 +608,40 @@ function InvoicePage() {
   // ── Update status ──────────────────────────────────────────────────────────
 
   async function updateStatus(id: string, status: string) {
+    const prev = invoices.find((i) => i.id === id)
+    if (!prev || prev.status === status) return
+
+    // Optimistic update
+    setInvoices((list) => list.map((i) => (i.id === id ? { ...i, status } : i)))
     setUpdatingStatusId(id)
-    const res = await fetch(`${API_BASE}/invoices/${id}/status`, {
-      method: "PATCH",
-      headers: authHeaders(),
-      body: JSON.stringify({ status }),
-    })
-    const json = await res.json()
-    if (json.success) {
-      setInvoices((prev) => prev.map((i) => (i.id === id ? { ...i, status } : i)))
+
+    try {
+      const res = await fetch(`${API_BASE}/invoices/${id}/status`, {
+        method: "PATCH",
+        headers: authHeaders(),
+        body: JSON.stringify({ status }),
+      })
+      const json = await res.json()
+      if (!json.success) throw new Error(json.message)
+
+      // Show saved checkmark briefly
+      setSavedStatusId(id)
+      setTimeout(() => setSavedStatusId((cur) => (cur === id ? null : cur)), 1500)
+
+      if (status === "Lunas") {
+        const inv = invoices.find((i) => i.id === id)
+        addToast(
+          `Invoice ${inv?.invoiceNumber ?? id} ditandai Lunas. Sponsor akan melihat perubahan ini di dashboard mereka.`,
+          "success"
+        )
+      }
+    } catch {
+      // Rollback
+      setInvoices((list) => list.map((i) => (i.id === id ? { ...i, status: prev.status } : i)))
+      addToast("Gagal update status. Coba lagi.", "error")
+    } finally {
+      setUpdatingStatusId(null)
     }
-    setUpdatingStatusId(null)
   }
 
   // ── Render ─────────────────────────────────────────────────────────────────
@@ -594,10 +665,20 @@ function InvoicePage() {
           <FileText className="size-5 text-white" />
         </div>
         <div>
-          <h1 className="text-xl font-bold text-slate-900">Invoice Generator</h1>
-          <p className="text-sm text-slate-500">Generate dan kelola invoice untuk berbagai kebutuhan</p>
+          <h1 className="text-xl font-bold text-slate-900">Invoice & Purchase Order</h1>
+          <p className="text-sm text-slate-500">Generate invoice dan kelola Purchase Order</p>
         </div>
       </div>
+
+      {/* ── Tab utama: Invoice vs Purchase Order ─────────────────────────────── */}
+      <Tabs defaultValue="invoice">
+        <TabsList className="w-full">
+          <TabsTrigger value="invoice" className="flex-1">Invoice</TabsTrigger>
+          <TabsTrigger value="po" className="flex-1">Purchase Order</TabsTrigger>
+        </TabsList>
+
+        {/* ── Tab Invoice: semua konten existing tidak diubah ───────────────── */}
+        <TabsContent value="invoice" className="mt-5 space-y-5">
 
       {/* Tab bar — Jenis Invoice */}
       <div className="flex gap-1 rounded-xl border border-slate-200 bg-slate-50 p-1">
@@ -1003,16 +1084,24 @@ function InvoicePage() {
 
                   <div className="flex flex-col items-end gap-2">
                     {/* Status change */}
-                    <select
-                      value={inv.status}
-                      disabled={updatingStatusId === inv.id}
-                      onChange={(e) => updateStatus(inv.id, e.target.value)}
-                      className="rounded-lg border border-slate-200 bg-white px-2 py-1 text-xs text-slate-700 outline-none"
-                    >
-                      <option>Belum Dibayar</option>
-                      <option>Sudah Dibayar</option>
-                      <option>Jatuh Tempo</option>
-                    </select>
+                    <div className="flex items-center gap-1.5">
+                      <select
+                        value={inv.status}
+                        disabled={updatingStatusId === inv.id}
+                        onChange={(e) => updateStatus(inv.id, e.target.value)}
+                        className="rounded-lg border border-slate-200 bg-white px-2 py-1 text-xs text-slate-700 outline-none"
+                      >
+                        {INVOICE_STATUS.map((s) => (
+                          <option key={s} value={s}>{s}</option>
+                        ))}
+                      </select>
+                      {updatingStatusId === inv.id && (
+                        <RotateCw className="size-3.5 animate-spin text-slate-400" />
+                      )}
+                      {savedStatusId === inv.id && updatingStatusId !== inv.id && (
+                        <CheckCircle2 className="size-3.5 text-emerald-600" />
+                      )}
+                    </div>
 
                     {/* Actions */}
                     <div className="flex items-center gap-1.5">
@@ -1064,7 +1153,7 @@ function InvoicePage() {
                 <Input
                   id="cName"
                   className="mt-1"
-                  placeholder="Habitat Entertainment"
+                  placeholder="nexEvent Entertainment"
                   value={settings.companyName ?? ""}
                   onChange={(e) => setSettings((s) => ({ ...s, companyName: e.target.value }))}
                 />
@@ -1094,7 +1183,7 @@ function InvoicePage() {
                 <Input
                   id="accHolder"
                   className="mt-1"
-                  placeholder="PT Habitat Nusantara"
+                  placeholder="PT nexEvent Nusantara"
                   value={settings.accountHolder ?? ""}
                   onChange={(e) => setSettings((s) => ({ ...s, accountHolder: e.target.value }))}
                 />
@@ -1125,6 +1214,15 @@ function InvoicePage() {
           downloading={generating}
         />
       )}
+
+      <ToastContainer toasts={toasts} onRemove={removeToast} />
+
+        </TabsContent>
+        {/* ── Tab Purchase Order ─────────────────────────────────────────────── */}
+        <TabsContent value="po" className="mt-5">
+          <PurchaseOrderTab />
+        </TabsContent>
+      </Tabs>
     </div>
   )
 }

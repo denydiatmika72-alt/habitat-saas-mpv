@@ -1,13 +1,16 @@
 "use client"
 
-import { useEffect, useMemo, useState } from "react"
+import { useEffect, useState } from "react"
 import {
   BadgeCheck,
   Check,
   Copy,
   ExternalLink,
+  FileText,
   KeyRound,
   LayoutGrid,
+  Mail,
+  MessageCircle,
   Plus,
   RotateCw,
   Sparkles,
@@ -15,6 +18,7 @@ import {
   Ticket,
   Trash2,
   Users,
+  X,
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
@@ -29,6 +33,12 @@ const getToken = () =>
 const authHeaders = () => ({ Authorization: `Bearer ${getToken()}` })
 
 // ─── Types ────────────────────────────────────────────────────────────────────
+type DealBenefitItem = {
+  id: string
+  qty: number
+  benefit: { name: string; category: string }
+}
+
 type Deal = {
   id: string
   sponsorName: string
@@ -37,8 +47,11 @@ type Deal = {
   tier: string
   codeUsed: string
   status: string
+  totalValue: number
+  packageId: string | null
   createdAt: string
   account: { id: string } | null
+  dealBenefits: DealBenefitItem[]
 }
 
 type GeneratedCreds = {
@@ -67,6 +80,9 @@ type ApiBenefit = {
   category: string
   description: string
   price: number
+  maxQty: number
+  usedQty: number
+  heldQty: number
 }
 
 type ApiPackage = {
@@ -75,7 +91,7 @@ type ApiPackage = {
   price: number
   slots: number
   description: string
-  benefits: Array<{ benefit: ApiBenefit }>
+  benefits: Array<{ qty: number; benefit: ApiBenefit }>
 }
 
 type ApiThreshold = {
@@ -115,6 +131,19 @@ function InvitationCodeGenerator() {
   const [copied, setCopied] = useState<string | null>(null)
   const [spinning, setSpinning] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [events, setEvents] = useState<{ id: string; title: string }[]>([])
+  const [selectedEventId, setSelectedEventId] = useState<string>("")
+
+  useEffect(() => {
+    fetch(`${API_BASE}/events`, { headers: authHeaders() })
+      .then((r) => r.json())
+      .then((data) => {
+        const list = Array.isArray(data) ? data : (data.data ?? [])
+        setEvents(list)
+        if (list.length > 0) setSelectedEventId(String(list[0].id))
+      })
+      .catch(() => {})
+  }, [])
 
   async function generate() {
     setSpinning(true)
@@ -123,6 +152,7 @@ function InvitationCodeGenerator() {
       const res = await fetch(`${API_BASE}/sponsor/codes`, {
         method: "POST",
         headers: { "Content-Type": "application/json", ...authHeaders() },
+        body: JSON.stringify({ eventId: selectedEventId || null }),
       })
       const data = await safeJson(res)
       if (!res.ok || !data.success) {
@@ -197,7 +227,24 @@ function InvitationCodeGenerator() {
           Create a unique, single-use code and share it with brands you want on board for your event.
         </p>
 
-        <div className="mt-8 w-full max-w-md">
+        {events.length > 0 && (
+          <div className="mt-6 w-full max-w-md text-left">
+            <label className="mb-1.5 block text-xs font-semibold uppercase tracking-wider text-slate-500">
+              Pilih Event
+            </label>
+            <select
+              value={selectedEventId}
+              onChange={(e) => setSelectedEventId(e.target.value)}
+              className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm text-slate-800 outline-none focus:border-emerald-600 focus:ring-2 focus:ring-emerald-600/20"
+            >
+              {events.map((ev) => (
+                <option key={ev.id} value={String(ev.id)}>{ev.title}</option>
+              ))}
+            </select>
+          </div>
+        )}
+
+        <div className="mt-6 w-full max-w-md">
           <div className="flex items-center justify-between gap-3 rounded-2xl border border-dashed border-emerald-800/30 bg-slate-50 px-5 py-5">
             <div className="flex items-center gap-3 overflow-hidden">
               <span className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-emerald-50 text-emerald-800">
@@ -302,16 +349,35 @@ function InvitationCodeGenerator() {
 }
 
 // ─── DeliverableManagerForDeal ────────────────────────────────────────────────
+const CATEGORY_BADGE: Record<string, string> = {
+  Branding: "bg-blue-50 text-blue-700 ring-blue-200",
+  Digital: "bg-purple-50 text-purple-700 ring-purple-200",
+  "On-Ground": "bg-amber-50 text-amber-700 ring-amber-200",
+  Ticketing: "bg-pink-50 text-pink-700 ring-pink-200",
+  Lainnya: "bg-slate-100 text-slate-600 ring-slate-200",
+}
+
 function DeliverableManagerForDeal({ dealId }: { dealId: string }) {
   const [items, setItems] = useState<ApiDeliverable[]>([])
   const [loadingItems, setLoadingItems] = useState(true)
   const [adding, setAdding] = useState(false)
   const [newItem, setNewItem] = useState({ title: "", category: "", status: "Planning" })
+  const [savedIds, setSavedIds] = useState<Set<string>>(new Set())
+  const [proofDrafts, setProofDrafts] = useState<Record<string, string>>({})
+  const [proofSaved, setProofSaved] = useState<Set<string>>(new Set())
 
   useEffect(() => {
     fetch(`${API_BASE}/sponsor/deliverables?dealId=${dealId}`)
       .then((r) => safeJson(r))
-      .then((d) => { if (d.success) setItems((d.data as typeof items) ?? []) })
+      .then((d) => {
+        if (d.success) {
+          const loaded = (d.data as typeof items) ?? []
+          setItems(loaded)
+          const drafts: Record<string, string> = {}
+          loaded.forEach((i) => { drafts[i.id] = i.proofImageUrl ?? "" })
+          setProofDrafts(drafts)
+        }
+      })
       .catch(() => {})
       .finally(() => setLoadingItems(false))
   }, [dealId])
@@ -341,7 +407,13 @@ function DeliverableManagerForDeal({ dealId }: { dealId: string }) {
         body: JSON.stringify({ status }),
       })
       const d = await safeJson(res)
-      if (d.success) setItems((prev) => prev.map((i) => (i.id === id ? { ...i, status } : i)))
+      if (d.success) {
+        setItems((prev) => prev.map((i) => (i.id === id ? { ...i, status } : i)))
+        setSavedIds((prev) => new Set([...prev, id]))
+        window.setTimeout(() => {
+          setSavedIds((prev) => { const s = new Set(prev); s.delete(id); return s })
+        }, 1500)
+      }
     } catch {}
   }
 
@@ -353,14 +425,25 @@ function DeliverableManagerForDeal({ dealId }: { dealId: string }) {
         body: JSON.stringify({ proofImageUrl }),
       })
       const d = await safeJson(res)
-      if (d.success) setItems((prev) => prev.map((i) => (i.id === id ? { ...i, proofImageUrl } : i)))
+      if (d.success) {
+        setItems((prev) => prev.map((i) => (i.id === id ? { ...i, proofImageUrl } : i)))
+        setProofSaved((prev) => new Set([...prev, id]))
+        window.setTimeout(() => {
+          setProofSaved((prev) => { const s = new Set(prev); s.delete(id); return s })
+        }, 1500)
+      }
     } catch {}
   }
 
   return (
     <div className="mt-1 border-t border-slate-100 pt-4">
       <div className="mb-3 flex items-center justify-between">
-        <p className="text-xs font-medium uppercase tracking-wider text-slate-500">Deliverables</p>
+        <p className="text-xs font-medium uppercase tracking-wider text-slate-500">
+          Deliverables
+          {items.length > 0 && (
+            <span className="ml-1.5 font-normal text-slate-400">({items.length})</span>
+          )}
+        </p>
         <Button
           type="button"
           size="sm"
@@ -378,69 +461,99 @@ function DeliverableManagerForDeal({ dealId }: { dealId: string }) {
       ) : (
         <>
           {items.length === 0 && !adding && (
-            <p className="text-xs text-slate-400">Belum ada deliverable ditambahkan.</p>
+            <p className="text-xs text-slate-400">
+              Deliverables akan muncul otomatis saat deal disetujui.
+            </p>
           )}
-          {items.map((item) => (
-            <div
-              key={item.id}
-              className="mb-2 flex flex-wrap items-center gap-2 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2"
-            >
-              <span className="flex-1 text-sm text-slate-900">{item.title}</span>
-              <span className="rounded bg-slate-200 px-1.5 py-0.5 text-[10px] text-slate-500">
-                {item.category}
-              </span>
-              <select
-                value={item.status}
-                onChange={(e) => updateStatus(item.id, e.target.value)}
-                className="rounded border border-slate-200 bg-white px-1.5 py-0.5 text-xs text-slate-700 outline-none focus:border-emerald-800"
+
+          {items.map((item) => {
+            const badgeCls = CATEGORY_BADGE[item.category] ?? CATEGORY_BADGE["Lainnya"]
+            return (
+              <div
+                key={item.id}
+                className="mb-2 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5"
               >
-                <option value="Planning">Planning</option>
-                <option value="InProduction">In Production</option>
-                <option value="Executed">Executed</option>
-              </select>
-              {item.status === "Executed" && (
-                <input
-                  type="text"
-                  defaultValue={item.proofImageUrl ?? ""}
-                  onBlur={(e) => updateProof(item.id, e.target.value)}
-                  placeholder="URL bukti foto"
-                  className="w-full rounded border border-slate-200 bg-white px-2 py-1 text-xs text-slate-700 outline-none focus:border-emerald-800"
-                />
-              )}
-            </div>
-          ))}
+                <div className="flex flex-wrap items-center gap-2">
+                  <span className="flex-1 text-sm font-medium text-slate-900">{item.title}</span>
+                  <span
+                    className={cn(
+                      "rounded-full px-2 py-0.5 text-[10px] font-medium ring-1 ring-inset",
+                      badgeCls,
+                    )}
+                  >
+                    {item.category}
+                  </span>
+                  <div className="flex items-center gap-1.5">
+                    <select
+                      value={item.status}
+                      onChange={(e) => updateStatus(item.id, e.target.value)}
+                      className="rounded-md border border-slate-200 bg-white px-2 py-1 text-xs text-slate-700 outline-none focus:border-emerald-800"
+                    >
+                      <option value="Planning">📋 Planning</option>
+                      <option value="InProduction">⚙️ In Production</option>
+                      <option value="Executed">✅ Executed</option>
+                    </select>
+                    {savedIds.has(item.id) && (
+                      <span className="flex size-5 shrink-0 items-center justify-center rounded-full bg-emerald-100">
+                        <Check className="size-3 text-emerald-700" strokeWidth={3} />
+                      </span>
+                    )}
+                  </div>
+                </div>
+                {item.status === "Executed" && (
+                  <div className="mt-2 flex items-center gap-1.5">
+                    <input
+                      type="text"
+                      value={proofDrafts[item.id] ?? ""}
+                      onChange={(e) =>
+                        setProofDrafts((prev) => ({ ...prev, [item.id]: e.target.value }))
+                      }
+                      placeholder="Paste link Google Drive, Dropbox, atau URL foto"
+                      className="min-w-0 flex-1 rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-xs text-slate-700 outline-none focus:border-emerald-800"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => updateProof(item.id, proofDrafts[item.id] ?? "")}
+                      className="flex shrink-0 items-center gap-1 rounded-lg bg-emerald-800 px-2.5 py-1.5 text-xs font-medium text-white transition-colors hover:bg-emerald-900"
+                    >
+                      {proofSaved.has(item.id) ? (
+                        <Check className="size-3" strokeWidth={3} />
+                      ) : (
+                        "Simpan"
+                      )}
+                    </button>
+                  </div>
+                )}
+              </div>
+            )
+          })}
 
           {adding && (
-            <div className="mt-2 flex flex-col gap-2 rounded-lg border border-emerald-800/20 bg-emerald-50 p-3">
+            <div className="mt-2 flex flex-col gap-2 rounded-xl border border-emerald-800/20 bg-emerald-50 p-3">
               <input
                 type="text"
                 value={newItem.title}
                 onChange={(e) => setNewItem((n) => ({ ...n, title: e.target.value }))}
                 placeholder="Nama deliverable"
-                className="rounded border border-slate-200 bg-white px-2 py-1.5 text-sm text-slate-900 outline-none focus:border-emerald-800"
-              />
-              <input
-                type="text"
-                value={newItem.category}
-                onChange={(e) => setNewItem((n) => ({ ...n, category: e.target.value }))}
-                placeholder="Kategori (misal: Branding, Digital)"
-                className="rounded border border-slate-200 bg-white px-2 py-1.5 text-sm text-slate-900 outline-none focus:border-emerald-800"
+                className="rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-sm text-slate-900 outline-none focus:border-emerald-800"
               />
               <select
-                value={newItem.status}
-                onChange={(e) => setNewItem((n) => ({ ...n, status: e.target.value }))}
-                className="rounded border border-slate-200 bg-white px-2 py-1.5 text-sm text-slate-700 outline-none focus:border-emerald-800"
+                value={newItem.category}
+                onChange={(e) => setNewItem((n) => ({ ...n, category: e.target.value }))}
+                className="rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-sm text-slate-700 outline-none focus:border-emerald-800"
               >
-                <option value="Planning">Planning</option>
-                <option value="InProduction">In Production</option>
-                <option value="Executed">Executed</option>
+                <option value="">— Pilih kategori —</option>
+                {BENEFIT_CATEGORIES.map((c) => (
+                  <option key={c} value={c}>{c}</option>
+                ))}
               </select>
               <div className="flex gap-2">
                 <Button
                   type="button"
                   size="sm"
+                  disabled={!newItem.title || !newItem.category}
                   onClick={addDeliverable}
-                  className="h-7 gap-1.5 bg-emerald-800 px-2.5 text-xs text-white hover:bg-emerald-900"
+                  className="h-7 gap-1.5 bg-emerald-800 px-2.5 text-xs text-white hover:bg-emerald-900 disabled:opacity-50"
                 >
                   <Check className="size-3.5" />
                   Simpan
@@ -449,7 +562,10 @@ function DeliverableManagerForDeal({ dealId }: { dealId: string }) {
                   type="button"
                   size="sm"
                   variant="outline"
-                  onClick={() => setAdding(false)}
+                  onClick={() => {
+                    setAdding(false)
+                    setNewItem({ title: "", category: "", status: "Planning" })
+                  }}
                   className="h-7 px-2.5 text-xs"
                 >
                   Batal
@@ -464,24 +580,110 @@ function DeliverableManagerForDeal({ dealId }: { dealId: string }) {
 }
 
 // ─── DealCard ─────────────────────────────────────────────────────────────────
+
+type PromoterSettings = {
+  companyName: string | null
+  bankName: string | null
+  bankAccount: string | null
+  accountHolder: string | null
+}
+
+type InvoiceState = {
+  id: string
+  status: string
+  invoiceNumber: string
+}
+
 function DealCard({
   deal,
   onApprove,
+  onReject,
   approving,
+  rejecting,
   creds,
+  promotorSettings,
 }: {
   deal: Deal
   onApprove: (d: Deal) => void
+  onReject: (d: Deal) => void
   approving: boolean
+  rejecting: boolean
   creds: GeneratedCreds | null
+  promotorSettings: PromoterSettings | null
 }) {
   const approved = deal.status === "Disetujui"
+  const rejected = deal.status === "Ditolak"
+  const [invoiceState, setInvoiceState] = useState<InvoiceState | null>(null)
+  const [generatingInvoice, setGeneratingInvoice] = useState(false)
+  const [invoiceError, setInvoiceError] = useState<string | null>(null)
+
+  useEffect(() => {
+    if (!approved) return
+    fetch(`${API_BASE}/invoices/deal/${deal.id}`)
+      .then((r) => r.json())
+      .then((d) => {
+        if (d.success && d.data) {
+          setInvoiceState({ id: d.data.id, status: d.data.status, invoiceNumber: d.data.invoiceNumber })
+        }
+      })
+      .catch(() => {})
+  }, [approved, deal.id])
+
+  async function generateInvoice() {
+    if (!promotorSettings?.bankName || !promotorSettings?.companyName) {
+      setInvoiceError("Lengkapi data rekening di halaman Invoice > Pengaturan terlebih dahulu.")
+      return
+    }
+    setInvoiceError(null)
+    setGeneratingInvoice(true)
+    try {
+      const res = await fetch(`${API_BASE}/invoices/generate`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", ...authHeaders() },
+        body: JSON.stringify({
+          dealId: deal.id,
+          promotorName: promotorSettings.companyName,
+          bankName: promotorSettings.bankName,
+          bankAccount: promotorSettings.bankAccount,
+          accountHolder: promotorSettings.accountHolder,
+        }),
+      })
+      const d = await safeJson(res)
+      if (d.success && d.data) {
+        const data = d.data as Record<string, unknown>
+        setInvoiceState({
+          id: data.id as string,
+          status: "Belum Dibayar",
+          invoiceNumber: data.invoiceNumber as string,
+        })
+      } else {
+        setInvoiceError((d.message as string) ?? "Gagal generate invoice.")
+      }
+    } catch {
+      setInvoiceError("Tidak dapat terhubung ke server.")
+    } finally {
+      setGeneratingInvoice(false)
+    }
+  }
+
+  async function updateInvoiceStatus(status: string) {
+    if (!invoiceState) return
+    try {
+      const res = await fetch(`${API_BASE}/invoices/${invoiceState.id}/status`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json", ...authHeaders() },
+        body: JSON.stringify({ status }),
+      })
+      const d = await safeJson(res)
+      if (d.success) setInvoiceState((prev) => (prev ? { ...prev, status } : null))
+    } catch {}
+  }
 
   return (
     <article
       className={cn(
         "flex flex-col gap-4 rounded-2xl border bg-white p-5 transition-colors",
-        approved ? "border-emerald-800/30" : "border-slate-200",
+        approved ? "border-emerald-800/30" : rejected ? "border-red-200" : "border-slate-200",
       )}
     >
       <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
@@ -489,7 +691,7 @@ function DealCard({
           <span
             className={cn(
               "flex size-10 shrink-0 items-center justify-center rounded-xl text-sm font-semibold",
-              approved ? "bg-emerald-50 text-emerald-800" : "bg-slate-100 text-slate-600",
+              approved ? "bg-emerald-50 text-emerald-800" : rejected ? "bg-red-50 text-red-600" : "bg-slate-100 text-slate-600",
             )}
           >
             {deal.sponsorName.slice(0, 2).toUpperCase()}
@@ -513,6 +715,20 @@ function DealCard({
               {new Date(deal.createdAt).toLocaleDateString("id-ID", { dateStyle: "medium" })}
             </p>
 
+            {Number(deal.totalValue) > 0 && (
+              <p className="mt-1.5 font-mono text-sm font-semibold text-emerald-700">
+                {currencyIDR.format(Number(deal.totalValue))}
+                <span className="ml-2 font-sans text-[11px] font-normal text-slate-400">
+                  {deal.packageId ? "Paket" : "À La Carte"}
+                </span>
+              </p>
+            )}
+            {deal.dealBenefits?.length > 0 && (
+              <p className="mt-0.5 text-xs text-slate-500">
+                📦 {deal.dealBenefits.map((item) => `${item.qty}× ${item.benefit.name}`).join(" · ")}
+              </p>
+            )}
+
             {creds && (
               <div className="mt-3 rounded-xl border border-emerald-800/20 bg-emerald-50 p-3">
                 <p className="mb-1.5 flex items-center gap-1.5 text-xs font-semibold text-emerald-800">
@@ -525,12 +741,37 @@ function DealCard({
                 <p className="font-mono text-xs text-slate-700">
                   Password: <span className="font-semibold">{creds.password}</span>
                 </p>
+                <div className="mt-3 flex gap-2">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const pesan = `Selamat! Pengajuan sponsorship Anda telah kami setujui. 🎉\n\nSilakan login ke dashboard sponsor Anda:\n🔗 ${window.location.origin}/sponsor-dashboard\n\n👤 Username: ${creds.username}\n🔑 Password: ${creds.password}\n\nMohon simpan informasi ini dengan aman.`
+                      window.open(`https://wa.me/?text=${encodeURIComponent(pesan)}`, "_blank")
+                    }}
+                    className="flex flex-1 items-center justify-center gap-1.5 rounded-lg bg-emerald-600 px-3 py-2 text-xs font-medium text-white transition-colors hover:bg-emerald-700"
+                  >
+                    <MessageCircle className="size-3.5" />
+                    Kirim via WhatsApp
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const subjek = "Akses Dashboard Sponsor - Kredensial Login Anda"
+                      const isi = `Selamat!\n\nPengajuan sponsorship Anda telah kami setujui.\n\nSilakan login ke dashboard sponsor:\nLink: ${window.location.origin}/sponsor-dashboard\nUsername: ${creds.username}\nPassword: ${creds.password}\n\nMohon simpan informasi ini dengan aman.\n\nSalam,\nTim Kemitraan`
+                      window.open(`mailto:?subject=${encodeURIComponent(subjek)}&body=${encodeURIComponent(isi)}`, "_blank")
+                    }}
+                    className="flex flex-1 items-center justify-center gap-1.5 rounded-lg bg-slate-700 px-3 py-2 text-xs font-medium text-white transition-colors hover:bg-slate-800"
+                  >
+                    <Mail className="size-3.5" />
+                    Kirim via Email
+                  </button>
+                </div>
               </div>
             )}
           </div>
         </div>
 
-        <div className="flex shrink-0 items-center gap-3 sm:pt-0.5">
+        <div className="flex shrink-0 flex-wrap items-center gap-2 sm:pt-0.5">
           {approved ? (
             <>
               <span className="flex items-center gap-1.5 text-sm font-medium text-emerald-800">
@@ -545,21 +786,77 @@ function DealCard({
               >
                 Lihat Dashboard →
               </a>
-            </>
-          ) : (
-            <Button
-              type="button"
-              disabled={approving}
-              onClick={() => onApprove(deal)}
-              className="gap-2 bg-emerald-800 text-white hover:bg-emerald-900"
-            >
-              {approving ? (
-                <RotateCw className="size-4 animate-spin" />
+
+              {invoiceState ? (
+                <>
+                  <span className="flex items-center gap-1.5 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-1.5 text-xs font-medium text-emerald-700">
+                    <Check className="size-3.5" />
+                    {invoiceState.invoiceNumber}
+                  </span>
+                  <select
+                    value={invoiceState.status}
+                    onChange={(e) => updateInvoiceStatus(e.target.value)}
+                    className="rounded-lg border border-slate-200 bg-white px-2 py-1.5 text-xs text-slate-700 outline-none focus:border-emerald-800"
+                  >
+                    <option value="Belum Dibayar">Belum Dibayar</option>
+                    <option value="Sudah Dibayar">Sudah Dibayar</option>
+                    <option value="Jatuh Tempo">Jatuh Tempo</option>
+                  </select>
+                </>
               ) : (
-                <Check className="size-4" />
+                <button
+                  type="button"
+                  onClick={generateInvoice}
+                  disabled={generatingInvoice}
+                  className="flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-medium text-slate-700 transition-colors hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60"
+                >
+                  {generatingInvoice ? (
+                    <RotateCw className="size-3.5 animate-spin" />
+                  ) : (
+                    <FileText className="size-3.5" />
+                  )}
+                  {generatingInvoice ? "Membuat..." : "Generate Invoice"}
+                </button>
               )}
-              Setujui
-            </Button>
+              {invoiceError && (
+                <p className="w-full text-xs text-red-600">{invoiceError}</p>
+              )}
+            </>
+          ) : rejected ? (
+            <span className="flex items-center gap-1.5 text-sm font-medium text-red-600">
+              <X className="size-4" />
+              Ditolak
+            </span>
+          ) : (
+            <>
+              <Button
+                type="button"
+                disabled={approving || rejecting}
+                onClick={() => onApprove(deal)}
+                className="gap-2 bg-emerald-800 text-white hover:bg-emerald-900"
+              >
+                {approving ? (
+                  <RotateCw className="size-4 animate-spin" />
+                ) : (
+                  <Check className="size-4" />
+                )}
+                Setujui
+              </Button>
+              <Button
+                type="button"
+                variant="outline"
+                disabled={approving || rejecting}
+                onClick={() => onReject(deal)}
+                className="gap-2 border-red-200 text-red-600 hover:bg-red-50 hover:text-red-700"
+              >
+                {rejecting ? (
+                  <RotateCw className="size-4 animate-spin" />
+                ) : (
+                  <X className="size-4" />
+                )}
+                Tolak
+              </Button>
+            </>
           )}
         </div>
       </div>
@@ -573,12 +870,19 @@ function DealTracker() {
   const [deals, setDeals] = useState<Deal[]>([])
   const [loading, setLoading] = useState(true)
   const [approving, setApproving] = useState<string | null>(null)
+  const [rejecting, setRejecting] = useState<string | null>(null)
   const [creds, setCreds] = useState<GeneratedCreds | null>(null)
+  const [promotorSettings, setPromotorSettings] = useState<PromoterSettings | null>(null)
 
   useEffect(() => {
-    fetch(`${API_BASE}/sponsor/deals`, { headers: authHeaders() })
-      .then((r) => safeJson(r))
-      .then((data) => { if (data.success) setDeals((data.data as Deal[]) ?? []) })
+    Promise.all([
+      fetch(`${API_BASE}/sponsor/deals`, { headers: authHeaders() }).then(safeJson),
+      fetch(`${API_BASE}/settings/promoter`, { headers: authHeaders() }).then(safeJson),
+    ])
+      .then(([dealsData, settingsData]) => {
+        if (dealsData.success) setDeals((dealsData.data as Deal[]) ?? [])
+        if (settingsData.success && settingsData.data) setPromotorSettings(settingsData.data as PromoterSettings)
+      })
       .catch(() => {})
       .finally(() => setLoading(false))
   }, [])
@@ -609,19 +913,40 @@ function DealTracker() {
           tier: deal.tier,
         }),
       })
-      const accountData = await accountRes.json()
-      const returnedPassword: string = accountData?.data?.password ?? password
+      const accountData = await safeJson(accountRes)
 
       setDeals((prev) =>
         prev.map((d) =>
           d.id === deal.id ? { ...d, status: "Disetujui", account: { id: "created" } } : d,
         ),
       )
-      setCreds({ dealId: deal.id, username, password: returnedPassword })
+
+      if (accountData.success && accountData.data) {
+        const d = accountData.data as { username: string; password: string }
+        setCreds({ dealId: deal.id, username: d.username, password: d.password })
+      }
     } catch {
       // silently ignore — user can retry
     } finally {
       setApproving(null)
+    }
+  }
+
+  async function handleReject(deal: Deal) {
+    setRejecting(deal.id)
+    try {
+      await fetch(`${API_BASE}/sponsor/deals/${deal.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json", ...authHeaders() },
+        body: JSON.stringify({ status: "Ditolak" }),
+      })
+      setDeals((prev) =>
+        prev.map((d) => d.id === deal.id ? { ...d, status: "Ditolak" } : d),
+      )
+    } catch {
+      // silently ignore
+    } finally {
+      setRejecting(null)
     }
   }
 
@@ -669,8 +994,11 @@ function DealTracker() {
               key={deal.id}
               deal={deal}
               onApprove={handleApprove}
+              onReject={handleReject}
               approving={approving === deal.id}
+              rejecting={rejecting === deal.id}
               creds={creds?.dealId === deal.id ? creds : null}
+              promotorSettings={promotorSettings}
             />
           ))}
         </div>
@@ -680,9 +1008,15 @@ function DealTracker() {
 }
 
 // ─── BenefitBuilder ───────────────────────────────────────────────────────────
-function BenefitBuilder() {
-  const [benefits, setBenefits] = useState<ApiBenefit[]>([])
-  const [loading, setLoading] = useState(true)
+function BenefitBuilder({
+  benefits,
+  loading,
+  onBenefitChange,
+}: {
+  benefits: ApiBenefit[]
+  loading: boolean
+  onBenefitChange: () => void
+}) {
   const [adding, setAdding] = useState(false)
   const [saving, setSaving] = useState(false)
   const [form, setForm] = useState({
@@ -690,15 +1024,8 @@ function BenefitBuilder() {
     category: "Branding",
     description: "",
     price: "",
+    maxQty: "1",
   })
-
-  useEffect(() => {
-    fetch(`${API_BASE}/sponsor/benefits`, { headers: authHeaders() })
-      .then((r) => safeJson(r))
-      .then((d) => { if (d.success) setBenefits((d.data as ApiBenefit[]) ?? []) })
-      .catch(() => {})
-      .finally(() => setLoading(false))
-  }, [])
 
   async function handleAdd() {
     if (!form.name || !form.price) return
@@ -712,12 +1039,13 @@ function BenefitBuilder() {
           category: form.category,
           description: form.description,
           price: parseRupiah(form.price),
+          maxQty: Number(form.maxQty) || 1,
         }),
       })
       const d = await safeJson(res)
       if (d.success) {
-        setBenefits((prev) => [d.data as ApiBenefit, ...prev])
-        setForm({ name: "", category: "Branding", description: "", price: "" })
+        onBenefitChange()
+        setForm({ name: "", category: "Branding", description: "", price: "", maxQty: "1" })
         setAdding(false)
       }
     } catch {}
@@ -730,7 +1058,7 @@ function BenefitBuilder() {
         method: "DELETE",
         headers: authHeaders(),
       })
-      setBenefits((prev) => prev.filter((b) => b.id !== id))
+      onBenefitChange()
     } catch {}
   }
 
@@ -811,6 +1139,18 @@ function BenefitBuilder() {
             </div>
             <div className="flex flex-col gap-1.5">
               <Label className="text-xs font-medium uppercase tracking-wider text-slate-500">
+                Stok Maksimal (pcs)
+              </Label>
+              <Input
+                type="number"
+                min={1}
+                value={form.maxQty}
+                onChange={(e) => setForm((f) => ({ ...f, maxQty: e.target.value }))}
+                placeholder="1"
+              />
+            </div>
+            <div className="flex flex-col gap-1.5 sm:col-span-2">
+              <Label className="text-xs font-medium uppercase tracking-wider text-slate-500">
                 Deskripsi
               </Label>
               <Input
@@ -860,37 +1200,49 @@ function BenefitBuilder() {
         </div>
       ) : (
         <div className="mt-8 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
-          {benefits.map((b) => (
-            <article
-              key={b.id}
-              className="relative flex flex-col rounded-2xl border border-slate-200 bg-white p-5"
-            >
-              <div className="flex items-start justify-between gap-3">
-                <Badge
-                  variant="outline"
-                  className="border-emerald-800/30 bg-emerald-50 text-[0.7rem] text-emerald-800"
-                >
-                  {b.category}
-                </Badge>
-                <button
-                  type="button"
-                  onClick={() => handleDelete(b.id)}
-                  aria-label={`Hapus ${b.name}`}
-                  className="shrink-0 text-slate-400 transition-colors hover:text-red-500"
-                >
-                  <Trash2 className="size-4" />
-                </button>
-              </div>
-              <h3 className="mt-3 text-base font-semibold text-slate-900">{b.name}</h3>
-              {b.description && (
-                <p className="mt-1 text-sm leading-relaxed text-slate-500">{b.description}</p>
-              )}
-              <p className="mt-4 font-mono text-xl font-semibold text-slate-900">
-                {currencyIDR.format(Number(b.price))}
-              </p>
-              <p className="text-xs text-slate-500">per sponsor slot</p>
-            </article>
-          ))}
+          {benefits.map((b) => {
+            const available = (b.maxQty ?? 1) - (b.usedQty ?? 0) - (b.heldQty ?? 0)
+            return (
+              <article
+                key={b.id}
+                className="relative flex flex-col rounded-2xl border border-slate-200 bg-white p-5"
+              >
+                <div className="flex items-start justify-between gap-3">
+                  <Badge
+                    variant="outline"
+                    className="border-emerald-800/30 bg-emerald-50 text-[0.7rem] text-emerald-800"
+                  >
+                    {b.category}
+                  </Badge>
+                  <button
+                    type="button"
+                    onClick={() => handleDelete(b.id)}
+                    aria-label={`Hapus ${b.name}`}
+                    className="shrink-0 text-slate-400 transition-colors hover:text-red-500"
+                  >
+                    <Trash2 className="size-4" />
+                  </button>
+                </div>
+                <h3 className="mt-3 text-base font-semibold text-slate-900">{b.name}</h3>
+                {b.description && (
+                  <p className="mt-1 text-sm leading-relaxed text-slate-500">{b.description}</p>
+                )}
+                <p className="mt-4 font-mono text-xl font-semibold text-slate-900">
+                  {currencyIDR.format(Number(b.price))}
+                </p>
+                <p className="text-xs text-slate-500">per unit</p>
+                <div className="mt-2 flex items-center gap-1.5 text-xs">
+                  <span className="text-slate-500">Stok:</span>
+                  <span className={cn("font-medium", available > 0 ? "text-emerald-700" : "text-red-600")}>
+                    {available}/{b.maxQty ?? 1} tersedia
+                  </span>
+                  {(b.heldQty ?? 0) > 0 && (
+                    <span className="text-amber-600">({b.heldQty} ditahan)</span>
+                  )}
+                </div>
+              </article>
+            )
+          })}
         </div>
       )}
     </section>
@@ -898,68 +1250,84 @@ function BenefitBuilder() {
 }
 
 // ─── PackageBuilder ───────────────────────────────────────────────────────────
-function PackageBuilder() {
+function PackageBuilder({ benefits }: { benefits: ApiBenefit[] }) {
   const [packages, setPackages] = useState<ApiPackage[]>([])
-  const [benefits, setBenefits] = useState<ApiBenefit[]>([])
+  const [thresholds, setThresholds] = useState<ApiThreshold[]>([])
   const [loading, setLoading] = useState(true)
   const [adding, setAdding] = useState(false)
   const [saving, setSaving] = useState(false)
+  const [saveError, setSaveError] = useState<string | null>(null)
+  const [selectedTierName, setSelectedTierName] = useState("")
   const [form, setForm] = useState({
-    name: "",
     slots: "1",
-    selectedBenefitIds: [] as string[],
+    benefitQtys: {} as Record<string, number>,
   })
+
+  async function handleDeletePackage(id: string) {
+    try {
+      await fetch(`${API_BASE}/sponsor/packages/${id}`, {
+        method: "DELETE",
+        headers: authHeaders(),
+      })
+      setPackages((prev) => prev.filter((p) => p.id !== id))
+    } catch {}
+  }
 
   useEffect(() => {
     Promise.all([
-      fetch(`${API_BASE}/sponsor/benefits`, { headers: authHeaders() }).then((r) => safeJson(r)),
       fetch(`${API_BASE}/sponsor/packages`, { headers: authHeaders() }).then((r) => safeJson(r)),
+      fetch(`${API_BASE}/sponsor/thresholds`).then((r) => safeJson(r)),
     ])
-      .then(([benefitsData, packagesData]) => {
-        if (benefitsData.success) setBenefits((benefitsData.data as ApiBenefit[]) ?? [])
+      .then(([packagesData, thresholdsData]) => {
         if (packagesData.success) setPackages((packagesData.data as ApiPackage[]) ?? [])
+        if (thresholdsData.success) setThresholds((thresholdsData.data as ApiThreshold[]) ?? [])
       })
       .catch(() => {})
       .finally(() => setLoading(false))
   }, [])
 
-  const autoPrice = useMemo(() => {
-    return benefits
-      .filter((b) => form.selectedBenefitIds.includes(b.id))
-      .reduce((sum, b) => sum + Number(b.price), 0)
-  }, [benefits, form.selectedBenefitIds])
-
-  function toggleBenefit(id: string) {
+  function setQty(benefitId: string, qty: number) {
+    const benefit = benefits.find((b) => b.id === benefitId)
+    const maxAllowed = benefit?.maxQty ?? 1
     setForm((f) => ({
       ...f,
-      selectedBenefitIds: f.selectedBenefitIds.includes(id)
-        ? f.selectedBenefitIds.filter((x) => x !== id)
-        : [...f.selectedBenefitIds, id],
+      benefitQtys: { ...f.benefitQtys, [benefitId]: Math.min(Math.max(0, qty), maxAllowed) },
     }))
   }
 
+  const selectedThreshold = thresholds.find((t) => t.tierName === selectedTierName)
+  const packagePrice = selectedThreshold ? Number(selectedThreshold.minPrice) : 0
+
   async function handleCreate() {
-    if (!form.name) return
+    if (!selectedTierName) return
+    const selectedBenefits = Object.entries(form.benefitQtys)
+      .filter(([, qty]) => qty > 0)
+      .map(([benefitId, qty]) => ({ benefitId, qty }))
     setSaving(true)
+    setSaveError(null)
     try {
       const res = await fetch(`${API_BASE}/sponsor/packages`, {
         method: "POST",
         headers: { "Content-Type": "application/json", ...authHeaders() },
         body: JSON.stringify({
-          name: form.name,
+          name: selectedTierName,
           slots: Number(form.slots),
-          price: autoPrice,
-          benefitIds: form.selectedBenefitIds,
+          price: packagePrice,
+          benefits: selectedBenefits,
           description: "",
         }),
       })
       const d = await safeJson(res)
       if (d.success) {
         setPackages((prev) => [d.data as ApiPackage, ...prev])
-        setForm({ name: "", slots: "1", selectedBenefitIds: [] })
+        setSelectedTierName("")
+        setForm({ slots: "1", benefitQtys: {} })
+        setSaveError(null)
         setAdding(false)
+      } else {
+        setSaveError((d.message as string) ?? "Gagal menyimpan paket.")
       }
-    } catch {}
+    } catch { setSaveError("Tidak dapat terhubung ke server.") }
     finally { setSaving(false) }
   }
 
@@ -981,7 +1349,7 @@ function PackageBuilder() {
             Paket Sponsorship
           </h2>
           <p className="mt-2 max-w-xl text-pretty leading-relaxed text-slate-500">
-            Susun paket dari benefit yang sudah dibuat. Harga paket dihitung otomatis dari total benefit yang dipilih.
+            Susun paket dari benefit yang sudah dibuat. Harga dihitung otomatis dari qty × harga satuan.
           </p>
         </div>
         <Button
@@ -1000,13 +1368,20 @@ function PackageBuilder() {
           <div className="grid gap-4 sm:grid-cols-2">
             <div className="flex flex-col gap-1.5">
               <Label className="text-xs font-medium uppercase tracking-wider text-slate-500">
-                Nama Paket
+                Pilih Tier
               </Label>
-              <Input
-                value={form.name}
-                onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))}
-                placeholder="cth. Platinum Package"
-              />
+              <select
+                value={selectedTierName}
+                onChange={(e) => setSelectedTierName(e.target.value)}
+                className="h-10 rounded-md border border-input bg-background px-3 text-sm outline-none focus:border-emerald-800 focus:ring-1 focus:ring-emerald-800/30"
+              >
+                <option value="">— Pilih tier —</option>
+                {thresholds.map((t) => (
+                  <option key={t.tierName} value={t.tierName}>
+                    {t.tierName}
+                  </option>
+                ))}
+              </select>
             </div>
             <div className="flex flex-col gap-1.5">
               <Label className="text-xs font-medium uppercase tracking-wider text-slate-500">
@@ -1023,45 +1398,68 @@ function PackageBuilder() {
 
           <div className="mt-4 flex flex-col gap-1.5">
             <Label className="text-xs font-medium uppercase tracking-wider text-slate-500">
-              Pilih Benefit yang Termasuk
+              Benefit & Kuantitas
             </Label>
             {benefits.length === 0 ? (
               <p className="text-sm text-slate-500">
                 Belum ada benefit tersedia. Buat benefit dahulu di bagian di atas.
               </p>
             ) : (
-              <div className="grid gap-2 sm:grid-cols-2">
+              <div className="flex flex-col gap-2">
                 {benefits.map((b) => {
-                  const selected = form.selectedBenefitIds.includes(b.id)
+                  const qty = form.benefitQtys[b.id] ?? 0
+                  const selected = qty > 0
+                  const atMax = qty >= b.maxQty
                   return (
-                    <label
+                    <div
                       key={b.id}
                       className={cn(
-                        "flex cursor-pointer items-center gap-3 rounded-xl border p-3 transition-colors",
+                        "flex items-center gap-3 rounded-xl border p-3 transition-colors",
                         selected
                           ? "border-emerald-800/50 bg-emerald-50"
-                          : "border-slate-200 bg-white hover:border-emerald-800/30",
+                          : "border-slate-200 bg-white",
                       )}
                     >
-                      <span
-                        className={cn(
-                          "flex size-5 shrink-0 items-center justify-center rounded-[5px] border transition-all",
-                          selected ? "border-emerald-800 bg-emerald-800 text-white" : "border-slate-300",
-                        )}
-                      >
-                        {selected && <Check className="size-3" strokeWidth={3} />}
-                      </span>
-                      <input
-                        type="checkbox"
-                        className="sr-only"
-                        checked={selected}
-                        onChange={() => toggleBenefit(b.id)}
-                      />
-                      <div className="min-w-0">
+                      <div className="min-w-0 flex-1">
                         <p className="truncate text-sm font-medium text-slate-900">{b.name}</p>
-                        <p className="text-xs text-slate-500">{currencyIDR.format(Number(b.price))}</p>
+                        <p className="text-xs text-slate-500">
+                          {currencyIDR.format(Number(b.price))} / unit
+                          {selected && (
+                            <span className="ml-2 font-medium text-emerald-700">
+                              = {currencyIDR.format(Number(b.price) * qty)}
+                            </span>
+                          )}
+                        </p>
                       </div>
-                    </label>
+                      <div className="flex shrink-0 items-center gap-1.5">
+                        <button
+                          type="button"
+                          onClick={() => setQty(b.id, qty - 1)}
+                          disabled={qty <= 0}
+                          className="flex size-7 items-center justify-center rounded-md border border-slate-200 text-slate-600 transition-colors hover:border-emerald-800/40 disabled:opacity-30"
+                        >
+                          −
+                        </button>
+                        <input
+                          type="number"
+                          min={0}
+                          max={b.maxQty}
+                          value={qty}
+                          onChange={(e) => setQty(b.id, Number(e.target.value))}
+                          className="w-10 rounded-md border border-slate-200 bg-white px-1 py-0.5 text-center text-sm font-semibold text-slate-900 outline-none focus:border-emerald-800"
+                        />
+                        <button
+                          type="button"
+                          onClick={() => setQty(b.id, qty + 1)}
+                          disabled={atMax}
+                          title={atMax ? "Batas maksimal stok benefit ini" : undefined}
+                          className="flex size-7 items-center justify-center rounded-md border border-slate-200 text-slate-600 transition-colors hover:border-emerald-800/40 disabled:cursor-not-allowed disabled:opacity-30"
+                        >
+                          +
+                        </button>
+                        <span className="text-[11px] text-slate-400">/ maks {b.maxQty}</span>
+                      </div>
+                    </div>
                   )
                 })}
               </div>
@@ -1069,16 +1467,21 @@ function PackageBuilder() {
           </div>
 
           <div className="mt-4 flex items-center justify-between rounded-xl border border-emerald-800/20 bg-white px-4 py-3">
-            <span className="text-sm text-slate-500">Total harga paket (otomatis)</span>
+            <div>
+              <p className="text-sm text-slate-700">Harga Paket</p>
+              <p className="text-[11px] text-slate-400">Dari threshold tier — benefit menentukan isi paket</p>
+            </div>
             <span className="font-mono text-xl font-semibold text-emerald-800">
-              {currencyIDR.format(autoPrice)}
+              {selectedTierName
+                ? currencyIDR.format(packagePrice)
+                : <span className="text-base font-normal text-slate-400">— Pilih tier dulu —</span>}
             </span>
           </div>
 
           <div className="mt-4 flex gap-3">
             <Button
               type="button"
-              disabled={!form.name || saving}
+              disabled={!selectedTierName || saving}
               onClick={handleCreate}
               className="gap-2 bg-emerald-800 text-white hover:bg-emerald-900"
             >
@@ -1092,12 +1495,15 @@ function PackageBuilder() {
             <Button
               type="button"
               variant="outline"
-              onClick={() => setAdding(false)}
+              onClick={() => { setAdding(false); setSaveError(null) }}
               className="gap-2"
             >
               Batal
             </Button>
           </div>
+          {saveError && (
+            <p className="mt-2 text-sm text-red-600" role="alert">{saveError}</p>
+          )}
         </div>
       )}
 
@@ -1120,31 +1526,54 @@ function PackageBuilder() {
               key={pkg.id}
               className="rounded-2xl border border-slate-200 bg-white p-5"
             >
-              <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
-                <div className="min-w-0">
-                  <p className="text-lg font-semibold text-slate-900">{pkg.name}</p>
-                  <p className="mt-0.5 text-sm text-slate-500">{pkg.slots} slot tersedia</p>
-                  {pkg.benefits.length > 0 && (
-                    <div className="mt-3 flex flex-wrap gap-2">
-                      {pkg.benefits.map(({ benefit }) => (
-                        <Badge
-                          key={benefit.id}
-                          variant="outline"
-                          className="border-slate-200 text-[0.7rem] text-slate-600"
-                        >
-                          {benefit.name}
-                        </Badge>
-                      ))}
-                    </div>
-                  )}
+              <div className="flex items-start justify-between gap-4">
+                <div className="min-w-0 flex-1">
+                  <div className="flex items-center gap-2">
+                    <Badge variant="outline" className="border-emerald-800/30 bg-emerald-50 text-emerald-800">
+                      {pkg.name}
+                    </Badge>
+                  </div>
+                  <p className="mt-1.5 text-sm text-slate-500">{pkg.slots} slot tersedia</p>
                 </div>
-                <div className="shrink-0 text-right">
-                  <p className="font-mono text-2xl font-semibold text-emerald-800">
-                    {currencyIDR.format(Number(pkg.price))}
-                  </p>
-                  <p className="text-xs text-slate-500">total paket</p>
+                <div className="flex shrink-0 items-start gap-3">
+                  <div className="text-right">
+                    <p className="font-mono text-2xl font-semibold text-emerald-800">
+                      {currencyIDR.format(Number(pkg.price))}
+                    </p>
+                    <p className="text-xs text-slate-500">total paket</p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => handleDeletePackage(pkg.id)}
+                    aria-label={`Hapus paket ${pkg.name}`}
+                    className="mt-0.5 text-slate-400 transition-colors hover:text-red-500"
+                  >
+                    <Trash2 className="size-4" />
+                  </button>
                 </div>
               </div>
+              {pkg.benefits.length > 0 && (
+                <div className="mt-4 space-y-2 border-t border-slate-100 pt-4">
+                  {pkg.benefits.map(({ benefit, qty }) => (
+                    <div key={benefit.id} className="flex items-center justify-between">
+                      <div className="flex items-center gap-2">
+                        <span className="size-1.5 rounded-full bg-emerald-800/50" />
+                        <span className="text-sm font-medium text-slate-600">{qty}×</span>
+                        <span className="text-sm text-slate-700">{benefit.name}</span>
+                        <Badge
+                          variant="outline"
+                          className="border-slate-200 text-[0.65rem] text-slate-500"
+                        >
+                          {benefit.category}
+                        </Badge>
+                      </div>
+                      <span className="font-mono text-sm text-slate-600">
+                        {currencyIDR.format(Number(benefit.price) * qty)}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              )}
             </article>
           ))}
         </div>
@@ -1337,6 +1766,19 @@ function ThresholdSettings() {
 
 // ─── Page ─────────────────────────────────────────────────────────────────────
 export default function SponsorManagementPage() {
+  const [benefits, setBenefits] = useState<ApiBenefit[]>([])
+  const [benefitsLoading, setBenefitsLoading] = useState(true)
+
+  function fetchBenefits() {
+    fetch(`${API_BASE}/sponsor/benefits`, { headers: authHeaders() })
+      .then((r) => safeJson(r))
+      .then((d) => { if (d.success) setBenefits((d.data as ApiBenefit[]) ?? []) })
+      .catch(() => {})
+      .finally(() => setBenefitsLoading(false))
+  }
+
+  useEffect(() => { fetchBenefits() }, []) // eslint-disable-line react-hooks/exhaustive-deps
+
   return (
     <div className="mx-auto flex w-full max-w-5xl flex-col gap-6">
       <div className="mb-4">
@@ -1353,8 +1795,8 @@ export default function SponsorManagementPage() {
 
       <InvitationCodeGenerator />
       <DealTracker />
-      <BenefitBuilder />
-      <PackageBuilder />
+      <BenefitBuilder benefits={benefits} loading={benefitsLoading} onBenefitChange={fetchBenefits} />
+      <PackageBuilder benefits={benefits} />
       <ThresholdSettings />
     </div>
   )

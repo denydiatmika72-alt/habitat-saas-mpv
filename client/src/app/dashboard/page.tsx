@@ -1,6 +1,7 @@
 "use client"
 
 import { useState, useEffect } from "react"
+import { useRouter } from "next/navigation"
 import axios from "axios"
 import { StatCards } from "@/components/dashboard/stat-cards"
 import { DocumentTable } from "@/components/dashboard/document-table"
@@ -13,7 +14,7 @@ const CX = 72
 const CY = 72
 const C  = 2 * Math.PI * R // ≈ 351.86
 
-const API_BASE = `${process.env.NEXT_PUBLIC_API_URL}/api`
+const API_BASE = "/api"
 const getToken = () =>
   typeof window !== "undefined" ? (localStorage.getItem("token") ?? "") : ""
 const authHeaders = () => ({ Authorization: `Bearer ${getToken()}` })
@@ -112,6 +113,7 @@ function BudgetDonutChart({ segments }: { segments: ChartSegment[] }) {
 
 // ─── Page ─────────────────────────────────────────────────────────────────────
 export default function DashboardPage() {
+  const router = useRouter()
   const [events,               setEvents]               = useState<EventItem[]>([])
   const [selectedChartEventId, setSelectedChartEventId] = useState<string>("")
   const [chartSegments,        setChartSegments]        = useState<ChartSegment[]>(DEFAULT_SEGMENTS)
@@ -247,9 +249,9 @@ export default function DashboardPage() {
           </Button>
           <Button
             className="gap-2 bg-emerald-800 text-white hover:bg-emerald-900 print:hidden"
-            onClick={() => alert("Fitur Invoice Segera Hadir di V2")}
+            onClick={() => router.push("/dashboard/invoice")}
           >
-            Buat Invoice
+            Buat Dokumen
           </Button>
         </div>
       </div>

@@ -1,4 +1,4 @@
-// ============================================================
+﻿// ============================================================
 // Test Script: POST /api/auth/login
 // Jalankan dengan: node test-login.js
 // (Pastikan server sudah running di terminal lain)
@@ -12,7 +12,7 @@ async function testLogin() {
   // --- Test 1: Login dengan kredensial VALID ---
   console.log('📋 Test 1: Login dengan kredensial yang benar');
   await sendLoginRequest({
-    email: 'test@habitat.com',
+    email: 'test@nexevent.com',
     password: 'password123',
   });
 
@@ -21,7 +21,7 @@ async function testLogin() {
   // --- Test 2: Login dengan PASSWORD SALAH ---
   console.log('📋 Test 2: Login dengan password yang salah');
   await sendLoginRequest({
-    email: 'test@habitat.com',
+    email: 'test@nexevent.com',
     password: 'wrongpassword',
   });
 
@@ -30,7 +30,7 @@ async function testLogin() {
   // --- Test 3: Login dengan EMAIL TIDAK TERDAFTAR ---
   console.log('📋 Test 3: Login dengan email tidak terdaftar');
   await sendLoginRequest({
-    email: 'notfound@habitat.com',
+    email: 'notfound@nexevent.com',
     password: 'password123',
   });
 }

@@ -18,4 +18,4 @@ const protect = (req, res, next) => {
   }
 };
 
-module.exports = { protect };
+module.exports = { protect, verifyToken: protect };
