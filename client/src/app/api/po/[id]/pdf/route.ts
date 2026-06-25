@@ -7,7 +7,8 @@ export async function GET(
   const { id } = await params
   const token = request.headers.get('Authorization') || ''
 
-  const backendUrl = `http://localhost:5000/api/po/${id}/pdf`
+  const base = process.env.BACKEND_URL ?? process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:5000'
+  const backendUrl = `${base}/api/po/${id}/pdf`
 
   try {
     const response = await fetch(backendUrl, {
