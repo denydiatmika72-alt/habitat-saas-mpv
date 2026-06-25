@@ -72,7 +72,7 @@ export default function CreateEventPage() {
   };
 
   return (
-    <div className="min-h-screen bg-slate-50 p-8">
+    <div className="min-h-screen bg-slate-50 p-4 sm:p-8">
       <div className="max-w-2xl mx-auto">
         {/* TOMBOL BACK UPDATE: router.back() dan print:hidden */}
         <button 
@@ -109,7 +109,7 @@ export default function CreateEventPage() {
                   required 
                 />
               </div>
-              <div className="grid grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div>
                   <Label>Target Profit (Rp)</Label>
                   <Input 

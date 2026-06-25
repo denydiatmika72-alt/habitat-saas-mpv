@@ -238,7 +238,7 @@ export default function DashboardPage() {
           </p>
         </div>
 
-        <div className="flex shrink-0 items-center gap-2">
+        <div className="flex flex-wrap shrink-0 items-center gap-2">
           <Button
             variant="outline"
             className="gap-2 border-slate-200 bg-white text-slate-900 hover:bg-slate-100 hover:text-slate-900 print:hidden"

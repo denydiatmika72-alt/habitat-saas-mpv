@@ -878,16 +878,27 @@ function DealTracker() {
   const [promotorSettings, setPromotorSettings] = useState<PromoterSettings | null>(null)
 
   useEffect(() => {
-    Promise.all([
-      fetch(`${API_BASE}/sponsor/deals`, { headers: authHeaders() }).then(safeJson),
-      fetch(`${API_BASE}/settings/promoter`, { headers: authHeaders() }).then(safeJson),
-    ])
-      .then(([dealsData, settingsData]) => {
-        if (dealsData.success) setDeals((dealsData.data as Deal[]) ?? [])
-        if (settingsData.success && settingsData.data) setPromotorSettings(settingsData.data as PromoterSettings)
-      })
-      .catch(() => {})
-      .finally(() => setLoading(false))
+    function fetchDeals() {
+      Promise.all([
+        fetch(`${API_BASE}/sponsor/deals`, { headers: authHeaders() }).then(safeJson),
+        fetch(`${API_BASE}/settings/promoter`, { headers: authHeaders() }).then(safeJson),
+      ])
+        .then(([dealsData, settingsData]) => {
+          if (dealsData.success) setDeals((dealsData.data as Deal[]) ?? [])
+          if (settingsData.success && settingsData.data) setPromotorSettings(settingsData.data as PromoterSettings)
+        })
+        .catch(() => {})
+        .finally(() => setLoading(false))
+    }
+
+    fetchDeals()
+
+    function handleVisibilityChange() {
+      if (document.visibilityState === "visible") fetchDeals()
+    }
+
+    document.addEventListener("visibilitychange", handleVisibilityChange)
+    return () => document.removeEventListener("visibilitychange", handleVisibilityChange)
   }, [])
 
   async function handleApprove(deal: Deal) {
@@ -1163,7 +1174,7 @@ function BenefitBuilder({
               />
             </div>
           </div>
-          <div className="mt-4 flex gap-3">
+          <div className="mt-4 flex flex-wrap gap-3">
             <Button
               type="button"
               disabled={!form.name || !form.price || saving}
@@ -1253,9 +1264,8 @@ function BenefitBuilder({
 }
 
 // ─── PackageBuilder ───────────────────────────────────────────────────────────
-function PackageBuilder({ benefits }: { benefits: ApiBenefit[] }) {
+function PackageBuilder({ benefits, thresholds }: { benefits: ApiBenefit[]; thresholds: ApiThreshold[] }) {
   const [packages, setPackages] = useState<ApiPackage[]>([])
-  const [thresholds, setThresholds] = useState<ApiThreshold[]>([])
   const [loading, setLoading] = useState(true)
   const [adding, setAdding] = useState(false)
   const [saving, setSaving] = useState(false)
@@ -1277,14 +1287,9 @@ function PackageBuilder({ benefits }: { benefits: ApiBenefit[] }) {
   }
 
   useEffect(() => {
-    Promise.all([
-      fetch(`${API_BASE}/sponsor/packages`, { headers: authHeaders() }).then((r) => safeJson(r)),
-      fetch(`${API_BASE}/sponsor/thresholds`).then((r) => safeJson(r)),
-    ])
-      .then(([packagesData, thresholdsData]) => {
-        if (packagesData.success) setPackages((packagesData.data as ApiPackage[]) ?? [])
-        if (thresholdsData.success) setThresholds((thresholdsData.data as ApiThreshold[]) ?? [])
-      })
+    fetch(`${API_BASE}/sponsor/packages`, { headers: authHeaders() })
+      .then((r) => safeJson(r))
+      .then((d) => { if (d.success) setPackages((d.data as ApiPackage[]) ?? []) })
       .catch(() => {})
       .finally(() => setLoading(false))
   }, [])
@@ -1481,7 +1486,7 @@ function PackageBuilder({ benefits }: { benefits: ApiBenefit[] }) {
             </span>
           </div>
 
-          <div className="mt-4 flex gap-3">
+          <div className="mt-4 flex flex-wrap gap-3">
             <Button
               type="button"
               disabled={!selectedTierName || saving}
@@ -1586,7 +1591,7 @@ function PackageBuilder({ benefits }: { benefits: ApiBenefit[] }) {
 }
 
 // ─── ThresholdSettings ────────────────────────────────────────────────────────
-function ThresholdSettings() {
+function ThresholdSettings({ onThresholdChange }: { onThresholdChange: () => void }) {
   const [rows, setRows] = useState<ApiThreshold[]>(
     DEFAULT_TIERS.map((t) => ({ tierName: t, minPrice: 0 })),
   )
@@ -1635,6 +1640,7 @@ function ThresholdSettings() {
       const d = await safeJson(res)
       if (d.success) {
         setSaved(true)
+        onThresholdChange()
         window.setTimeout(() => setSaved(false), 2000)
       }
     } catch {}
@@ -1771,6 +1777,7 @@ function ThresholdSettings() {
 export default function SponsorManagementPage() {
   const [benefits, setBenefits] = useState<ApiBenefit[]>([])
   const [benefitsLoading, setBenefitsLoading] = useState(true)
+  const [thresholds, setThresholds] = useState<ApiThreshold[]>([])
 
   function fetchBenefits() {
     fetch(`${API_BASE}/sponsor/benefits`, { headers: authHeaders() })
@@ -1780,7 +1787,14 @@ export default function SponsorManagementPage() {
       .finally(() => setBenefitsLoading(false))
   }
 
-  useEffect(() => { fetchBenefits() }, []) // eslint-disable-line react-hooks/exhaustive-deps
+  function fetchThresholds() {
+    fetch(`${API_BASE}/sponsor/thresholds`)
+      .then((r) => safeJson(r))
+      .then((d) => { if (d.success) setThresholds((d.data as ApiThreshold[]) ?? []) })
+      .catch(() => {})
+  }
+
+  useEffect(() => { fetchBenefits(); fetchThresholds() }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
   return (
     <div className="mx-auto flex w-full max-w-5xl flex-col gap-6">
@@ -1799,8 +1813,8 @@ export default function SponsorManagementPage() {
       <InvitationCodeGenerator />
       <DealTracker />
       <BenefitBuilder benefits={benefits} loading={benefitsLoading} onBenefitChange={fetchBenefits} />
-      <PackageBuilder benefits={benefits} />
-      <ThresholdSettings />
+      <PackageBuilder benefits={benefits} thresholds={thresholds} />
+      <ThresholdSettings onThresholdChange={fetchThresholds} />
     </div>
   )
 }

@@ -288,33 +288,37 @@ export default function RABPage() {
                 </CardHeader>
 
                 <CardContent className="pt-4 space-y-1">
-                  <div className="grid grid-cols-12 gap-4 mb-2 text-sm font-medium text-slate-500 border-b pb-2">
-                    <div className="col-span-5">Deskripsi Item</div>
-                    <div className="col-span-2 text-center">Qty</div>
-                    <div className="col-span-2 text-right">Harga Satuan</div>
-                    <div className="col-span-2 text-right">Subtotal</div>
-                    <div className="col-span-1 text-right">Aksi</div>
-                  </div>
-
-                  {cat.items.map((item, idx) => (
-                    <div key={item.id} className={`grid grid-cols-12 gap-4 items-center py-2.5 text-sm ${idx < cat.items.length - 1 ? 'border-b border-slate-50' : ''}`}>
-                      <div className="col-span-5 text-slate-700 font-medium truncate">{item.name}</div>
-                      <div className="col-span-2 text-center text-slate-500">{item.qty ? formatRibuan(String(item.qty)) : "-"}</div>
-                      <div className="col-span-2 text-right text-slate-500">{item.hargaSatuan ? formatRp(Number(item.hargaSatuan)) : "-"}</div>
-                      <div className="col-span-2 text-right font-semibold text-slate-800">{formatRp(item.estimatedCost)}</div>
-                      <div className="col-span-1 flex justify-end">
-                        <button onClick={() => handleDeleteItem(item.id)} className="text-slate-300 hover:text-red-500 p-1.5"><Trash2 className="w-4 h-4" /></button>
+                  <div className="overflow-x-auto">
+                    <div className="min-w-[480px]">
+                      <div className="grid grid-cols-12 gap-4 mb-2 text-sm font-medium text-slate-500 border-b pb-2">
+                        <div className="col-span-5">Deskripsi Item</div>
+                        <div className="col-span-2 text-center">Qty</div>
+                        <div className="col-span-2 text-right">Harga Satuan</div>
+                        <div className="col-span-2 text-right">Subtotal</div>
+                        <div className="col-span-1 text-right">Aksi</div>
                       </div>
-                    </div>
-                  ))}
 
-                  {/* Form Input */}
-                  <div className="grid grid-cols-12 gap-2 items-center pt-3 mt-1 border-t border-dashed border-slate-200">
-                    <div className="col-span-4"><Input placeholder="Nama Item" value={form?.name || ''} onChange={(e) => setItemFormField(cat.id, 'name', e.target.value)} className="h-8" /></div>
-                    <div className="col-span-2"><Input placeholder="Qty" value={form?.qty ? formatRibuan(form.qty) : ''} onChange={(e) => setItemFormField(cat.id, 'qty', e.target.value.replace(/\D/g, ''))} className="h-8 text-center" /></div>
-                    <div className="col-span-3"><Input placeholder="Harga Satuan" value={form?.hargaSatuan ? formatRibuan(form.hargaSatuan) : ''} onChange={(e) => setItemFormField(cat.id, 'hargaSatuan', e.target.value.replace(/\D/g, ''))} className="h-8 text-right" /></div>
-                    <div className="col-span-3 flex justify-end">
-                      <Button size="sm" onClick={() => handleAddItem(cat.id)} disabled={saving || !form?.name?.trim() || Number(rawQty) <= 0 || Number(rawHarga) <= 0} className="h-8 px-3 bg-emerald-800 text-white">Tambah</Button>
+                      {cat.items.map((item, idx) => (
+                        <div key={item.id} className={`grid grid-cols-12 gap-4 items-center py-2.5 text-sm ${idx < cat.items.length - 1 ? 'border-b border-slate-50' : ''}`}>
+                          <div className="col-span-5 text-slate-700 font-medium truncate">{item.name}</div>
+                          <div className="col-span-2 text-center text-slate-500">{item.qty ? formatRibuan(String(item.qty)) : "-"}</div>
+                          <div className="col-span-2 text-right text-slate-500">{item.hargaSatuan ? formatRp(Number(item.hargaSatuan)) : "-"}</div>
+                          <div className="col-span-2 text-right font-semibold text-slate-800">{formatRp(item.estimatedCost)}</div>
+                          <div className="col-span-1 flex justify-end">
+                            <button onClick={() => handleDeleteItem(item.id)} className="text-slate-300 hover:text-red-500 p-1.5"><Trash2 className="w-4 h-4" /></button>
+                          </div>
+                        </div>
+                      ))}
+
+                    </div>
+                  </div>
+                  {/* Form Input — responsive: full-width name on mobile, all 4 in a row on sm+ */}
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 items-end pt-3 mt-1 border-t border-dashed border-slate-200">
+                    <div className="col-span-2 sm:col-span-1"><Input placeholder="Nama Item" value={form?.name || ''} onChange={(e) => setItemFormField(cat.id, 'name', e.target.value)} className="h-8" /></div>
+                    <div className="col-span-1"><Input placeholder="Qty" value={form?.qty ? formatRibuan(form.qty) : ''} onChange={(e) => setItemFormField(cat.id, 'qty', e.target.value.replace(/\D/g, ''))} className="h-8 text-center" /></div>
+                    <div className="col-span-1"><Input placeholder="Harga Satuan" value={form?.hargaSatuan ? formatRibuan(form.hargaSatuan) : ''} onChange={(e) => setItemFormField(cat.id, 'hargaSatuan', e.target.value.replace(/\D/g, ''))} className="h-8 text-right" /></div>
+                    <div className="col-span-2 sm:col-span-1">
+                      <Button size="sm" onClick={() => handleAddItem(cat.id)} disabled={saving || !form?.name?.trim() || Number(rawQty) <= 0 || Number(rawHarga) <= 0} className="h-8 w-full bg-emerald-800 text-white">Tambah</Button>
                     </div>
                   </div>
                   {previewTotal > 0 && <p className="text-xs text-emerald-700 font-medium text-right pt-1">Subtotal: {formatRp(previewTotal)}</p>}

@@ -13,6 +13,13 @@ import {
 } from "lucide-react"
 import { cn } from "@/lib/utils"
 
+const mobileNavItems = [
+  { label: "Dashboard", icon: LayoutDashboard, href: "/dashboard" },
+  { label: "Simulasi", icon: Calculator, href: "/dashboard/simulasi" },
+  { label: "Sponsor", icon: Handshake, href: "/dashboard/sponsor" },
+  { label: "Invoice", icon: ReceiptText, href: "/dashboard/invoice" },
+]
+
 type NavItem =
   | { label: string; icon: React.ElementType; href: string; onClick?: never }
   | { label: string; icon: React.ElementType; onClick: () => void; href?: never }
@@ -104,5 +111,31 @@ export function Sidebar() {
         </Link>
       </div>
     </aside>
+  )
+}
+
+export function MobileNav() {
+  const pathname = usePathname()
+
+  return (
+    <nav className="print:hidden fixed bottom-0 inset-x-0 z-40 flex lg:hidden border-t border-slate-200 bg-white shadow-[0_-1px_4px_rgba(0,0,0,0.06)]">
+      {mobileNavItems.map((item) => {
+        const isActive = pathname === item.href
+        return (
+          <Link
+            key={item.label}
+            href={item.href}
+            aria-current={isActive ? "page" : undefined}
+            className={cn(
+              "flex flex-1 flex-col items-center gap-1 py-2.5 text-[10px] font-medium transition-colors",
+              isActive ? "text-emerald-800" : "text-slate-500 hover:text-slate-700",
+            )}
+          >
+            <item.icon className={cn("size-5", isActive && "stroke-[2.5]")} />
+            <span>{item.label}</span>
+          </Link>
+        )
+      })}
+    </nav>
   )
 }
