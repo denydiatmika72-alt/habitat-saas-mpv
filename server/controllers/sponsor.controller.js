@@ -14,12 +14,14 @@ const generateCode = async (req, res) => {
   console.log('[GENERATE CODE] hit by user:', req.user?.id);
   try {
     const { eventId } = req.body;
-    let code, attempt = 0;
-    while (attempt < 5) {
-      code = makeCodeString();
-      const exists = await prisma.inviteCode.findUnique({ where: { code } });
-      if (!exists) break;
-      attempt++;
+    let code = null;
+    for (let attempt = 0; attempt < 5; attempt++) {
+      const candidate = makeCodeString();
+      const exists = await prisma.inviteCode.findUnique({ where: { code: candidate } });
+      if (!exists) { code = candidate; break; }
+    }
+    if (!code) {
+      return res.status(500).json({ success: false, message: 'Gagal generate kode unik, coba lagi.' });
     }
     const inviteCode = await prisma.inviteCode.create({
       data: { code, createdBy: req.user.id, isActive: true, eventId: eventId ?? null },

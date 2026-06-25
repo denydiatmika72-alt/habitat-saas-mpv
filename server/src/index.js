@@ -69,7 +69,10 @@ app.use('/api/invoices', invoiceRoutes);
 app.use('/api/settings', settingsRoutes);
 app.use('/api/po',       purchaseOrderRoutes);
 
-app.use((req, res) => res.status(404).json({ success: false, message: `Route ${req.method} ${req.originalUrl} tidak ditemukan.` }));
+app.use((req, res) => {
+  console.warn('[404] Route tidak ditemukan:', req.method, req.originalUrl);
+  res.status(404).json({ success: false, message: `Route ${req.method} ${req.originalUrl} tidak ditemukan.` });
+});
 
 app.use((err, req, res, next) => {
   console.error('[ERROR]', err.stack);
