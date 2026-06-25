@@ -2,16 +2,24 @@ import { NextRequest, NextResponse } from 'next/server';
 
 export const dynamic = 'force-dynamic';
 
-const BACKEND_URL = process.env.BACKEND_URL ?? process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:5000';
+// Strip trailing /api or /api/ to prevent double-/api when env var already contains the prefix.
+// Priority: BACKEND_URL (server-only) → NEXT_PUBLIC_API_URL (inlined at build, may also exist at runtime) → localhost fallback.
+const RAW_BACKEND = process.env.BACKEND_URL ?? process.env.NEXT_PUBLIC_API_URL ?? '';
+const BACKEND_URL = RAW_BACKEND.replace(/\/api\/?$/, '').replace(/\/+$/, '') || 'http://localhost:5000';
 
-// Log env values once at module init so they appear in Vercel runtime logs
-console.log('[PROXY INIT] BACKEND_URL env:', process.env.BACKEND_URL ?? '(not set)');
-console.log('[PROXY INIT] NEXT_PUBLIC_API_URL env:', process.env.NEXT_PUBLIC_API_URL ?? '(not set)');
-console.log('[PROXY INIT] Resolved BACKEND_URL:', BACKEND_URL);
+// Printed once at module init — visible in Vercel Runtime Logs under the function invocation.
+console.log('[PROXY INIT] process.env.BACKEND_URL        :', process.env.BACKEND_URL ?? '(not set)');
+console.log('[PROXY INIT] process.env.NEXT_PUBLIC_API_URL:', process.env.NEXT_PUBLIC_API_URL ?? '(not set)');
+console.log('[PROXY INIT] RAW_BACKEND (before strip)     :', RAW_BACKEND || '(empty — using localhost fallback)');
+console.log('[PROXY INIT] BACKEND_URL (after strip)      :', BACKEND_URL);
+console.log('[PROXY INIT] Sample target URL              :', `${BACKEND_URL}/api/auth/login`);
+if (BACKEND_URL === 'http://localhost:5000') {
+  console.warn('[PROXY WARN] BACKEND_URL tidak di-set di Vercel env vars! Semua proxy request AKAN GAGAL di production.');
+}
 
 function buildUrl(backend: string, path: string, search = ''): string {
-  const base = backend.replace(/\/+$/, ''); // strip trailing slash
-  return `${base}/api/${path}${search}`;
+  // backend sudah di-strip dari trailing /api, jadi aman ditambah /api/ di sini.
+  return `${backend}/api/${path}${search}`;
 }
 
 function forwardHeaders(req: NextRequest): Record<string, string> {
