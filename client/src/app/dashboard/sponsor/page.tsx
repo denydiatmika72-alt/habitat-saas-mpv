@@ -148,6 +148,9 @@ function InvitationCodeGenerator() {
   async function generate() {
     setSpinning(true)
     setError(null)
+    const token = getToken()
+    console.log('[GENERATE CODE] url:', `${API_BASE}/sponsor/codes`)
+    console.log('[GENERATE CODE] token:', token ? `Bearer ${token.slice(0, 20)}...` : 'MISSING — user not logged in?')
     try {
       const res = await fetch(`${API_BASE}/sponsor/codes`, {
         method: "POST",

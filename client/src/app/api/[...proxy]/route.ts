@@ -9,6 +9,8 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ pro
   const path = proxy.join('/');
   const text = await req.text();
   const body = text ? text : '{}';
+  const hasAuth = !!req.headers.get('authorization');
+  console.log(`[PROXY] POST /api/${path} — auth:${hasAuth} → ${BACKEND_URL}`);
 
   try {
     const res = await fetch(`${BACKEND_URL}/api/${path}`, {
@@ -20,12 +22,14 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ pro
       body,
     });
 
+    console.log(`[PROXY] POST /api/${path} → ${res.status}`);
     const resText = await res.text();
     let data: unknown = {};
     try { data = resText ? JSON.parse(resText) : {}; } catch { data = { message: resText }; }
     return NextResponse.json(data, { status: res.status });
   } catch (err) {
     const msg = err instanceof Error ? err.message : 'Backend tidak dapat dijangkau.';
+    console.error(`[PROXY] POST /api/${path} FAILED:`, msg);
     return NextResponse.json({ success: false, message: msg }, { status: 503 });
   }
 }
