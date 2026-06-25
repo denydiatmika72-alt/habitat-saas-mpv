@@ -29,9 +29,9 @@ const generateCode = async (req, res) => {
       success: true,
       data: { code: inviteCode.code, id: inviteCode.id, createdAt: inviteCode.createdAt, eventId: inviteCode.eventId },
     });
-  } catch (err) {
-    console.error('[GENERATE CODE ERROR]', err);
-    return res.status(500).json({ success: false, message: err.message });
+  } catch (error) {
+    console.error('[SPONSOR ERROR]', error.message, error.stack);
+    return res.status(500).json({ success: false, message: error.message });
   }
 };
 
@@ -52,9 +52,9 @@ const validateInviteCode = async (req, res) => {
       data: { isActive: false, usedAt: new Date() },
     });
     return res.status(200).json({ success: true, data: { code: inviteCode.code, eventId: inviteCode.eventId ?? null } });
-  } catch (err) {
-    console.error('[VALIDATE CODE ERROR]', err);
-    return res.status(500).json({ success: false, message: err.message });
+  } catch (error) {
+    console.error('[SPONSOR ERROR]', error.message, error.stack);
+    return res.status(500).json({ success: false, message: error.message });
   }
 };
 
@@ -64,9 +64,9 @@ const getBenefits = async (req, res) => {
   try {
     const benefits = await prisma.sponsorBenefit.findMany({ orderBy: { createdAt: 'asc' } });
     return res.status(200).json({ success: true, data: benefits });
-  } catch (err) {
-    console.error('[GET BENEFITS ERROR]', err);
-    return res.status(500).json({ success: false, message: err.message });
+  } catch (error) {
+    console.error('[SPONSOR ERROR]', error.message, error.stack);
+    return res.status(500).json({ success: false, message: error.message });
   }
 };
 
@@ -86,9 +86,9 @@ const createBenefit = async (req, res) => {
       },
     });
     return res.status(201).json({ success: true, data: benefit });
-  } catch (err) {
-    console.error('[CREATE BENEFIT ERROR]', err);
-    return res.status(500).json({ success: false, message: err.message });
+  } catch (error) {
+    console.error('[SPONSOR ERROR]', error.message, error.stack);
+    return res.status(500).json({ success: false, message: error.message });
   }
 };
 
@@ -97,9 +97,9 @@ const deleteBenefit = async (req, res) => {
     const { id } = req.params;
     await prisma.sponsorBenefit.delete({ where: { id } });
     return res.status(200).json({ success: true });
-  } catch (err) {
-    console.error('[DELETE BENEFIT ERROR]', err);
-    return res.status(500).json({ success: false, message: err.message });
+  } catch (error) {
+    console.error('[SPONSOR ERROR]', error.message, error.stack);
+    return res.status(500).json({ success: false, message: error.message });
   }
 };
 
@@ -124,9 +124,9 @@ const getDeals = async (req, res) => {
       return { ...deal, totalValue: computed };
     });
     return res.status(200).json({ success: true, data: normalized });
-  } catch (err) {
-    console.error('[GET DEALS ERROR]', err);
-    return res.status(500).json({ success: false, message: err.message });
+  } catch (error) {
+    console.error('[SPONSOR ERROR]', error.message, error.stack);
+    return res.status(500).json({ success: false, message: error.message });
   }
 };
 
@@ -204,9 +204,9 @@ const createDeal = async (req, res) => {
     }
 
     return res.status(201).json({ success: true, data: deal });
-  } catch (err) {
-    console.error('[CREATE DEAL ERROR]', err);
-    return res.status(500).json({ success: false, message: err.message });
+  } catch (error) {
+    console.error('[SPONSOR ERROR]', error.message, error.stack);
+    return res.status(500).json({ success: false, message: error.message });
   }
 };
 
@@ -269,9 +269,9 @@ const updateDealStatus = async (req, res) => {
     }
 
     return res.status(200).json({ success: true, data: deal });
-  } catch (err) {
-    console.error('[UPDATE DEAL STATUS ERROR]', err);
-    return res.status(500).json({ success: false, message: err.message });
+  } catch (error) {
+    console.error('[SPONSOR ERROR]', error.message, error.stack);
+    return res.status(500).json({ success: false, message: error.message });
   }
 };
 
@@ -286,9 +286,9 @@ const getPackages = async (req, res) => {
       },
     });
     return res.status(200).json({ success: true, data: packages });
-  } catch (err) {
-    console.error('[GET PACKAGES ERROR]', err);
-    return res.status(500).json({ success: false, message: err.message });
+  } catch (error) {
+    console.error('[SPONSOR ERROR]', error.message, error.stack);
+    return res.status(500).json({ success: false, message: error.message });
   }
 };
 
@@ -335,9 +335,9 @@ const createPackage = async (req, res) => {
       },
     });
     return res.status(201).json({ success: true, data: pkg });
-  } catch (err) {
-    console.error('[CREATE PACKAGE ERROR]', err);
-    return res.status(500).json({ success: false, message: err.message });
+  } catch (error) {
+    console.error('[SPONSOR ERROR]', error.message, error.stack);
+    return res.status(500).json({ success: false, message: error.message });
   }
 };
 
@@ -346,9 +346,9 @@ const deletePackage = async (req, res) => {
     const { id } = req.params;
     await prisma.sponsorPackage.delete({ where: { id } });
     return res.status(200).json({ success: true });
-  } catch (err) {
-    console.error('[DELETE PACKAGE ERROR]', err);
-    return res.status(500).json({ success: false, message: err.message });
+  } catch (error) {
+    console.error('[SPONSOR ERROR]', error.message, error.stack);
+    return res.status(500).json({ success: false, message: error.message });
   }
 };
 
@@ -358,9 +358,9 @@ const getThresholds = async (req, res) => {
   try {
     const thresholds = await prisma.sponsorThreshold.findMany({ orderBy: { minPrice: 'asc' } });
     return res.status(200).json({ success: true, data: thresholds });
-  } catch (err) {
-    console.error('[GET THRESHOLDS ERROR]', err);
-    return res.status(500).json({ success: false, message: err.message });
+  } catch (error) {
+    console.error('[SPONSOR ERROR]', error.message, error.stack);
+    return res.status(500).json({ success: false, message: error.message });
   }
 };
 
@@ -380,9 +380,9 @@ const saveThresholds = async (req, res) => {
       ),
     );
     return res.status(200).json({ success: true, data: results });
-  } catch (err) {
-    console.error('[SAVE THRESHOLDS ERROR]', err);
-    return res.status(500).json({ success: false, message: err.message });
+  } catch (error) {
+    console.error('[SPONSOR ERROR]', error.message, error.stack);
+    return res.status(500).json({ success: false, message: error.message });
   }
 };
 
@@ -411,9 +411,9 @@ const createAccount = async (req, res) => {
       success: true,
       data: { id: account.id, username: account.username, password },
     });
-  } catch (err) {
-    console.error('[CREATE ACCOUNT ERROR]', err);
-    return res.status(500).json({ success: false, message: err.message });
+  } catch (error) {
+    console.error('[SPONSOR ERROR]', error.message, error.stack);
+    return res.status(500).json({ success: false, message: error.message });
   }
 };
 
@@ -435,9 +435,9 @@ const verifyAccount = async (req, res) => {
       success: true,
       data: { sponsorName: account.sponsorName, tier: account.tier, dealId: account.dealId },
     });
-  } catch (err) {
-    console.error('[VERIFY ACCOUNT ERROR]', err);
-    return res.status(500).json({ success: false, message: err.message });
+  } catch (error) {
+    console.error('[SPONSOR ERROR]', error.message, error.stack);
+    return res.status(500).json({ success: false, message: error.message });
   }
 };
 
@@ -480,9 +480,9 @@ const getDeliverables = async (req, res) => {
     }));
 
     return res.status(200).json({ success: true, data });
-  } catch (err) {
-    console.error('[GET DELIVERABLES ERROR]', err);
-    return res.status(500).json({ success: false, message: err.message });
+  } catch (error) {
+    console.error('[SPONSOR ERROR]', error.message, error.stack);
+    return res.status(500).json({ success: false, message: error.message });
   }
 };
 
@@ -496,9 +496,9 @@ const createDeliverable = async (req, res) => {
       data: { dealId, title, category, status: status ?? 'Planning' },
     });
     return res.status(201).json({ success: true, data: item });
-  } catch (err) {
-    console.error('[CREATE DELIVERABLE ERROR]', err);
-    return res.status(500).json({ success: false, message: err.message });
+  } catch (error) {
+    console.error('[SPONSOR ERROR]', error.message, error.stack);
+    return res.status(500).json({ success: false, message: error.message });
   }
 };
 
@@ -519,9 +519,9 @@ const updateDeliverable = async (req, res) => {
       },
     });
     return res.status(200).json({ success: true, data: item });
-  } catch (err) {
-    console.error('[UPDATE DELIVERABLE ERROR]', err);
-    return res.status(500).json({ success: false, message: err.message });
+  } catch (error) {
+    console.error('[SPONSOR ERROR]', error.message, error.stack);
+    return res.status(500).json({ success: false, message: error.message });
   }
 };
 
