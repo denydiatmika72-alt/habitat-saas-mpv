@@ -136,6 +136,7 @@ function RabImportModal({
       name: r.name,
       qty: r.qty,
       unitPrice: r.hargaSatuan,
+      _unitPriceDisplay: formatRupiah(String(r.hargaSatuan)),
       totalPrice: r.qty * r.hargaSatuan,
       sourceRabItemId: r.id,
     }))

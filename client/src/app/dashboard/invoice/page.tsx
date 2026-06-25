@@ -1208,7 +1208,7 @@ function InvoicePage() {
           onClose={() => setPreview(null)}
           onDownload={async () => {
             // Preview mode — generate actual PDF
-            await handleGenerate(tab === "from-deal")
+            await handleGenerate(tab === "sponsorship")
             setPreview(null)
           }}
           downloading={generating}
