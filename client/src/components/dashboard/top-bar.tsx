@@ -12,7 +12,7 @@ export function TopBar() {
   const handleLogout = () => {
     if (confirm("Apakah Anda yakin ingin keluar dari Workspace?")) {
       localStorage.removeItem("token")
-      router.push("/login")
+      router.push("/")
     }
   }
 

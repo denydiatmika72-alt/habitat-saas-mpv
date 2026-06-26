@@ -1,9 +1,18 @@
 'use client'
 
+import { useState, useEffect } from 'react'
 import Link from 'next/link'
-import { Crown, Search } from 'lucide-react'
+import { useRouter } from 'next/navigation'
+import { Crown, Search, LayoutDashboard } from 'lucide-react'
 
 export function Navbar() {
+  const router = useRouter()
+  const [isLoggedIn, setIsLoggedIn] = useState(false)
+
+  useEffect(() => {
+    setIsLoggedIn(!!localStorage.getItem('token'))
+  }, [])
+
   return (
     <header className="sticky top-0 z-50 border-b border-slate-200 bg-white/80 backdrop-blur-md">
       <div className="mx-auto flex h-16 max-w-7xl items-center gap-4 px-4">
@@ -26,18 +35,30 @@ export function Navbar() {
 
         {/* Auth buttons */}
         <div className="ml-auto flex shrink-0 items-center gap-2">
-          <Link
-            href="/login"
-            className="rounded-lg border border-slate-200 px-3 py-1.5 text-sm font-medium text-slate-700 transition-colors hover:bg-slate-50"
-          >
-            Login Promotor
-          </Link>
-          <Link
-            href="/login?role=sponsor"
-            className="rounded-lg bg-emerald-800 px-3 py-1.5 text-sm font-medium text-white transition-colors hover:bg-emerald-900"
-          >
-            Masuk Sponsor
-          </Link>
+          {isLoggedIn ? (
+            <button
+              onClick={() => router.push('/dashboard')}
+              className="flex items-center gap-2 rounded-lg bg-emerald-800 px-3 py-1.5 text-sm font-medium text-white transition-colors hover:bg-emerald-900"
+            >
+              <LayoutDashboard className="size-4" />
+              Dashboard →
+            </button>
+          ) : (
+            <>
+              <Link
+                href="/login"
+                className="rounded-lg border border-slate-200 px-3 py-1.5 text-sm font-medium text-slate-700 transition-colors hover:bg-slate-50"
+              >
+                Login Promotor
+              </Link>
+              <Link
+                href="/login?role=sponsor"
+                className="rounded-lg bg-emerald-800 px-3 py-1.5 text-sm font-medium text-white transition-colors hover:bg-emerald-900"
+              >
+                Masuk Sponsor
+              </Link>
+            </>
+          )}
         </div>
       </div>
     </header>
