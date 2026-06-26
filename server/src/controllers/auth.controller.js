@@ -19,11 +19,16 @@ const register = async (req, res) => {
     const hashed = await bcrypt.hash(password, 10);
 
     const user = await prisma.user.create({
-      data: { name, email, password: hashed },
-      select: { id: true, name: true, email: true, createdAt: true },
+      data: { name, email, password: hashed, status: 'pending' },
+      select: { id: true, name: true, email: true, status: true, createdAt: true },
     });
 
-    return res.status(201).json({ success: true, message: 'Registrasi berhasil!', data: user });
+    return res.status(201).json({
+      success: true,
+      message: 'Pendaftaran berhasil! Akun kamu sedang direview oleh admin.',
+      status: 'pending',
+      data: user,
+    });
   } catch (err) {
     console.error('[REGISTER ERROR]', err);
     return res.status(500).json({ success: false, message: 'Server error.' });
@@ -44,6 +49,12 @@ const login = async (req, res) => {
     const valid = await bcrypt.compare(password, user.password);
     if (!valid)
       return res.status(401).json({ success: false, message: 'Email atau password salah.' });
+
+    if (user.status === 'pending')
+      return res.status(403).json({ success: false, message: 'Akun kamu belum diaktifkan. Hubungi admin untuk konfirmasi.' });
+
+    if (user.status === 'suspended')
+      return res.status(403).json({ success: false, message: 'Akun kamu telah disuspend. Hubungi admin.' });
 
     const token = jwt.sign(
       { id: user.id, email: user.email, name: user.name },
