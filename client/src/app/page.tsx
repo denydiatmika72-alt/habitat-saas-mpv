@@ -9,24 +9,33 @@ import { EventCard, type PublicEvent } from '@/components/events/EventCard'
 const API_URL = `${process.env.NEXT_PUBLIC_API_URL ?? ''}/api`
 
 export default function HomePage() {
-  const [events,    setEvents]    = useState<PublicEvent[]>([])
-  const [loading,   setLoading]   = useState(true)
-  const [searching, setSearching] = useState(false)
-  const [searchQ,   setSearchQ]   = useState('')
-  const [cityFilter,setCityFilter] = useState('')
-  const [dateFilter,setDateFilter] = useState('')
+  const [events,     setEvents]     = useState<PublicEvent[]>([])
+  const [loading,    setLoading]    = useState(true)
+  const [searchQ,    setSearchQ]    = useState('')
+  const [cityFilter, setCityFilter] = useState('')
+  const [dateFilter, setDateFilter] = useState('')
+
+  const fetchEvents = async () => {
+    try {
+      const res = await fetch(`${API_URL}/events/public`)
+      const data = await res.json()
+      setEvents(data.data ?? [])
+    } catch (err) {
+      console.error('Failed to fetch events:', err)
+    } finally {
+      setLoading(false)
+    }
+  }
 
   useEffect(() => {
-    fetch(`${API_URL}/events/public`)
-      .then(r => r.json())
-      .then(d => setEvents(d.data ?? []))
-      .catch(() => setEvents([]))
-      .finally(() => setLoading(false))
-  }, [])
+    fetchEvents()
+    const interval = setInterval(fetchEvents, 30_000)
+    return () => clearInterval(interval)
+  }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
   const handleSearch = async (e: React.FormEvent) => {
     e.preventDefault()
-    setSearching(true)
+    setLoading(true)
     try {
       const params = new URLSearchParams()
       if (searchQ)    params.set('q',    searchQ)
@@ -38,8 +47,16 @@ export default function HomePage() {
     } catch {
       // keep existing events on error
     } finally {
-      setSearching(false)
+      setLoading(false)
     }
+  }
+
+  const handleReset = () => {
+    setSearchQ('')
+    setCityFilter('')
+    setDateFilter('')
+    setLoading(true)
+    fetchEvents()
   }
 
   return (
@@ -70,13 +87,23 @@ export default function HomePage() {
                   className="w-full rounded-xl bg-white py-3 pl-10 pr-4 text-sm text-slate-900 placeholder:text-slate-400 outline-none focus:ring-2 focus:ring-emerald-400"
                 />
               </div>
-              <button
-                type="submit"
-                disabled={searching}
-                className="rounded-xl bg-emerald-500 px-7 py-3 text-sm font-semibold text-white transition-colors hover:bg-emerald-400 disabled:opacity-70"
-              >
-                {searching ? 'Mencari...' : 'Cari Event'}
-              </button>
+              <div className="flex gap-2">
+                <button
+                  type="submit"
+                  disabled={loading}
+                  className="rounded-xl bg-emerald-500 px-7 py-3 text-sm font-semibold text-white transition-colors hover:bg-emerald-400 disabled:opacity-70"
+                >
+                  {loading ? 'Mencari...' : 'Cari Event'}
+                </button>
+                <button
+                  type="button"
+                  onClick={handleReset}
+                  disabled={loading}
+                  className="rounded-xl border border-white/30 bg-white/10 px-4 py-3 text-sm font-medium text-white transition-colors hover:bg-white/20 disabled:opacity-50"
+                >
+                  Reset
+                </button>
+              </div>
             </div>
 
             {/* Filter chips */}
@@ -108,7 +135,9 @@ export default function HomePage() {
       <section className="mx-auto max-w-7xl px-4 py-16">
         <div className="mb-8 flex items-baseline justify-between">
           <h2 className="text-2xl font-semibold tracking-tight text-slate-900">Event Tersedia</h2>
-          <span className="text-sm text-slate-500">{events.length} event ditemukan</span>
+          <span className="text-sm text-slate-500">
+            {loading ? 'Memuat...' : `${events.length} event ditemukan`}
+          </span>
         </div>
 
         {loading ? (
