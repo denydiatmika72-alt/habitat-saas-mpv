@@ -118,7 +118,7 @@ export function MobileNav() {
   const pathname = usePathname()
 
   return (
-    <nav className="print:hidden fixed bottom-0 inset-x-0 z-40 flex lg:hidden border-t border-slate-200 bg-white shadow-[0_-1px_4px_rgba(0,0,0,0.06)]">
+    <nav className="print:hidden fixed bottom-0 inset-x-0 z-[9999] flex h-16 lg:hidden border-t border-slate-200 bg-white shadow-[0_-1px_4px_rgba(0,0,0,0.06)]">
       {mobileNavItems.map((item) => {
         const isActive = pathname === item.href
         return (

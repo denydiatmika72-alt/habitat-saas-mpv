@@ -177,7 +177,7 @@ export function DocumentTable() {
               <TableHead className="text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-500">
                 Status
               </TableHead>
-              <TableHead className="pr-5 text-right text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-500">
+              <TableHead className="sticky right-0 bg-white z-10 pr-5 text-right text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-500">
                 Aksi
               </TableHead>
             </TableRow>
@@ -220,7 +220,7 @@ export function DocumentTable() {
               events.length === 0 ? (
                 <TableRow>
                   <TableCell colSpan={colSpan} className="py-16 text-center">
-                    <div className="flex flex-col items-center gap-3">
+                    <div className="flex flex-col items-center justify-center min-h-[300px] gap-4">
                       <p className="text-sm text-slate-500">Belum ada event. Silakan buat Event pertama Anda.</p>
                       <Link href="/dashboard/create-event">
                         <Button className="h-9 bg-emerald-800 text-white hover:bg-emerald-900">Buat Event</Button>
@@ -372,7 +372,7 @@ function InvoiceDirectRow({
       </TableCell>
 
       {/* Aksi */}
-      <TableCell className="pr-5">
+      <TableCell className="sticky right-0 bg-white z-10 pr-5">
         <div className="flex items-center justify-end gap-1.5">
           {invoice.pdfUrl && (
             <>
@@ -518,7 +518,7 @@ function EventTableRow({
       </TableCell>
 
       {/* Aksi */}
-      <TableCell className="pr-5">
+      <TableCell className="sticky right-0 bg-white z-10 pr-5">
         <div className="flex items-center justify-end gap-1.5">
           <Link href={`/dashboard/rab/${event.id}`}>
             <Button size="sm" className="h-8 bg-emerald-800 text-white hover:bg-emerald-900">
