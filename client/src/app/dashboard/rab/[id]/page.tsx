@@ -8,6 +8,7 @@ import { Trash2, Loader2, ArrowLeft, PlusCircle, FolderPlus, Printer, Pencil } f
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Switch } from '@/components/ui/switch';
 
 const API = "/api";
 
@@ -34,6 +35,8 @@ export default function RABPage() {
 
   const [budget, setBudget] = useState<Budget | null>(null);
   const [eventTitle, setEventTitle] = useState('');
+  const [isPublished, setIsPublished] = useState(false);
+  const [publishLoading, setPublishLoading] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
 
@@ -55,6 +58,7 @@ export default function RABPage() {
       try {
         const evRes = await axios.get(`${API}/events/${eventId}`, { headers: authHeaders() });
         setEventTitle(evRes.data.data?.title ?? `Event #${eventId}`);
+        setIsPublished(evRes.data.data?.is_published ?? false);
       } catch { setEventTitle(`Event #${eventId}`); }
     } catch (e: any) { setError('Gagal memuat data RAB.'); } finally { setLoading(false); }
   };
@@ -110,6 +114,19 @@ export default function RABPage() {
   const handleDeleteCategory = async (categoryId: string) => {
     if (!confirm('Yakin hapus kategori ini?')) return;
     try { await axios.delete(`${API}/budgets/categories/${categoryId}`, { headers: authHeaders() }); await refreshBudget(); } catch { alert('Gagal menghapus kategori.'); }
+  };
+
+  const handleTogglePublish = async (value: boolean) => {
+    setIsPublished(value);
+    setPublishLoading(true);
+    try {
+      await axios.patch(`${API}/events/${eventId}/publish`, { is_published: value }, { headers: authHeaders() });
+    } catch {
+      setIsPublished(!value);
+      alert('Gagal mengubah status publish. Coba lagi.');
+    } finally {
+      setPublishLoading(false);
+    }
   };
 
   const setItemFormField = (categoryId: string, field: keyof ItemForm, value: string) =>
@@ -248,6 +265,21 @@ export default function RABPage() {
           <div>
             <p className="text-xs font-medium uppercase tracking-[0.2em] text-emerald-700">Rencana Anggaran Biaya</p>
             <h1 className="mt-1 text-2xl font-semibold tracking-tight text-slate-900 md:text-3xl">Detail RAB Event</h1>
+          </div>
+
+          {/* Publish toggle */}
+          <div className="flex items-center justify-between rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+            <div>
+              <p className="text-sm font-medium text-slate-900">Tampilkan di Homepage</p>
+              <p className="mt-0.5 text-xs text-slate-500">
+                {isPublished ? 'Event terlihat oleh pengunjung publik' : 'Event tersembunyi dari publik'}
+              </p>
+            </div>
+            <Switch
+              checked={isPublished}
+              onCheckedChange={handleTogglePublish}
+              disabled={publishLoading}
+            />
           </div>
 
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">

@@ -81,4 +81,30 @@ const deleteEvent = async (req, res) => {
   }
 };
 
-module.exports = { getEvents, createEvent, getEventById, deleteEvent };
+// PATCH /api/events/:id/publish — Toggle is_published
+const togglePublish = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { is_published } = req.body;
+
+    const event = await prisma.event.findFirst({
+      where: { id, promotor_id: req.user.id },
+    });
+
+    if (!event) {
+      return res.status(404).json({ success: false, message: 'Event tidak ditemukan.' });
+    }
+
+    const updated = await prisma.event.update({
+      where: { id },
+      data: { is_published: Boolean(is_published) },
+    });
+
+    return res.json({ success: true, message: `Event ${updated.is_published ? 'dipublish' : 'disembunyikan'}.`, data: updated });
+  } catch (err) {
+    console.error('[TOGGLE PUBLISH ERROR]', err);
+    return res.status(500).json({ success: false, message: err.message });
+  }
+};
+
+module.exports = { getEvents, createEvent, getEventById, deleteEvent, togglePublish };

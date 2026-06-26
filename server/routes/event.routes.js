@@ -4,7 +4,8 @@ const {
   createEvent,
   getEvents,
   getEventById,
-  deleteEvent
+  deleteEvent,
+  togglePublish,
 } = require('../controllers/event.controller');
 const { getRabItemsByEvent } = require('../controllers/budget.controller');
 
@@ -18,6 +19,7 @@ router.get('/', verifyToken, getEvents);
 router.get('/:eventId/rab-items', verifyToken, getRabItemsByEvent);
 
 router.get('/:id', verifyToken, getEventById);
+router.patch('/:id/publish', verifyToken, togglePublish);
 router.delete('/:id', verifyToken, deleteEvent);
 
 module.exports = router;

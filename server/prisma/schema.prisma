@@ -34,6 +34,7 @@ model Event {
   target_profit      Decimal  @db.Decimal(15, 2)
   target_sponsorship Decimal  @db.Decimal(15, 2)
   status             String   @default("DRAFT")
+  is_published       Boolean  @default(false)
 
   createdAt          DateTime @default(now()) @map("created_at")
   updatedAt          DateTime @updatedAt      @map("updated_at")
