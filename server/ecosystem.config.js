@@ -3,9 +3,9 @@ module.exports = {
     name: 'nexevent-api',
     script: 'src/index.js',
     cwd: '/var/www/nexevent/server',
-    env_file: '.env',
     env: {
-      NODE_ENV: 'production'
+      NODE_ENV: 'production',
+      ADMIN_EMAILS: 'denydiatmika72@gmail.com'
     }
   }]
 }
