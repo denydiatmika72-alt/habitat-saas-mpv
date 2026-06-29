@@ -76,21 +76,43 @@ export default function AdminPage() {
   useEffect(() => {
     const checkAdmin = async () => {
       const token = localStorage.getItem('token')
-      if (!token) { router.replace('/'); return }
+      console.log('[ADMIN DEBUG] token exists:', !!token)
+      console.log('[ADMIN DEBUG] token value:', token)
+
+      if (!token) {
+        console.log('[ADMIN DEBUG] no token → redirect')
+        router.replace('/')
+        return
+      }
 
       try {
-        const res = await fetch(`${API_URL}/admin/stats`, {
+        const url = `${API_URL}/admin/stats`
+        console.log('[ADMIN DEBUG] fetching:', url)
+
+        const res = await fetch(url, {
           headers: { Authorization: `Bearer ${token}` }
         })
-        if (res.status === 401 || res.status === 403) { router.replace('/'); return }
+
+        console.log('[ADMIN DEBUG] response status:', res.status)
+        const data = await res.json()
+        console.log('[ADMIN DEBUG] response body:', data)
+
+        if (res.status === 401 || res.status === 403) {
+          console.log('[ADMIN DEBUG] not authorized → redirect')
+          router.replace('/')
+          return
+        }
+
         if (res.ok) {
-          const d = await res.json()
-          if (d.success) setStats(d.data)
+          console.log('[ADMIN DEBUG] authorized ✅')
+          if (data.success) setStats(data.data)
           setAuthorized(true)
         } else {
+          console.log('[ADMIN DEBUG] unexpected status → redirect')
           router.replace('/')
         }
-      } catch {
+      } catch (err) {
+        console.log('[ADMIN DEBUG] fetch error:', err)
         router.replace('/')
       } finally {
         setCheckingAuth(false)
