@@ -1,4 +1,5 @@
-﻿require('dotenv/config');
+﻿require('dotenv').config({ path: require('path').resolve(__dirname, '../.env') })
+console.log('[ENV CHECK] ADMIN_EMAILS:', process.env.ADMIN_EMAILS)
 
 if (process.env.NODE_ENV !== 'production') {
   process.env.NODE_TLS_REJECT_UNAUTHORIZED = '0';

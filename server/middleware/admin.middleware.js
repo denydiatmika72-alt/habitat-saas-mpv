@@ -1,20 +1,23 @@
 const adminMiddleware = (req, res, next) => {
-  const adminEmails = (process.env.ADMIN_EMAILS || '').split(',').map(e => e.trim()).filter(Boolean);
-  console.log('[ADMIN MIDDLEWARE] user email from JWT:', req.user?.email)
-  console.log('[ADMIN MIDDLEWARE] allowed emails:', adminEmails)
-  console.log('[ADMIN MIDDLEWARE] is admin:', adminEmails.includes(req.user?.email))
+  const rawEmails = process.env.ADMIN_EMAILS || ''
+  const ADMIN_EMAILS = rawEmails.split(',').map(e => e.trim().toLowerCase())
+  const userEmail = (req.user?.email || '').toLowerCase().trim()
 
-  if (!req.user || !adminEmails.includes(req.user.email)) {
+  console.log('[ADMIN MIDDLEWARE] userEmail:', userEmail)
+  console.log('[ADMIN MIDDLEWARE] adminEmails:', ADMIN_EMAILS)
+  console.log('[ADMIN MIDDLEWARE] isAdmin:', ADMIN_EMAILS.includes(userEmail))
+
+  if (!userEmail || !ADMIN_EMAILS.includes(userEmail)) {
     return res.status(403).json({
       success: false,
-      message: 'Akses ditolak. Hanya admin yang diizinkan.',
+      message: 'Akses ditolak. Hanya admin yang bisa mengakses ini.',
       debug: {
-        yourEmail: req.user?.email,
-        adminEmails
+        yourEmail: userEmail,
+        adminEmails: ADMIN_EMAILS
       }
-    });
+    })
   }
-  next();
-};
+  next()
+}
 
-module.exports = adminMiddleware;
+module.exports = adminMiddleware
