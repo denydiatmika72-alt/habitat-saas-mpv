@@ -37,6 +37,8 @@ function StatusBadge({ status }: { status: string }) {
 
 export default function AdminPage() {
   const router = useRouter()
+  const [authorized, setAuthorized] = useState(false)
+  const [checkingAuth, setCheckingAuth] = useState(true)
   const [stats, setStats] = useState<Stats | null>(null)
   const [users, setUsers] = useState<User[]>([])
   const [tab, setTab] = useState<'pending' | 'all'>('pending')
@@ -72,14 +74,34 @@ export default function AdminPage() {
   }, [tab, filterStatus, router])
 
   useEffect(() => {
-    const token = localStorage.getItem('token')
-    if (!token) { router.replace('/login'); return }
-    fetchStats()
-  }, [fetchStats, router])
+    const checkAdmin = async () => {
+      const token = localStorage.getItem('token')
+      if (!token) { router.replace('/'); return }
+
+      try {
+        const res = await fetch(`${API_URL}/admin/stats`, {
+          headers: { Authorization: `Bearer ${token}` }
+        })
+        if (res.status === 401 || res.status === 403) { router.replace('/'); return }
+        if (res.ok) {
+          const d = await res.json()
+          if (d.success) setStats(d.data)
+          setAuthorized(true)
+        } else {
+          router.replace('/')
+        }
+      } catch {
+        router.replace('/')
+      } finally {
+        setCheckingAuth(false)
+      }
+    }
+    checkAdmin()
+  }, [router])
 
   useEffect(() => {
-    fetchUsers()
-  }, [fetchUsers])
+    if (authorized) fetchUsers()
+  }, [fetchUsers, authorized])
 
   const handleApprove = async (id: string) => {
     setActionLoading(id + '_approve')
@@ -116,6 +138,14 @@ export default function AdminPage() {
     localStorage.removeItem('token')
     router.push('/')
   }
+
+  if (checkingAuth) return (
+    <div className="flex items-center justify-center min-h-screen">
+      <p className="text-gray-500">Memuat admin panel...</p>
+    </div>
+  )
+
+  if (!authorized) return null
 
   return (
     <div className="min-h-screen bg-slate-50">
