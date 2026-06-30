@@ -21,7 +21,7 @@ const register = async (req, res) => {
 
     const user = await prisma.user.create({
       data: { name, email, password: hashed, phone: phone ?? null, status: 'pending' },
-      select: { id: true, name: true, email: true, phone: true, status: true, createdAt: true },
+      select: { id: true, name: true, email: true, phone: true, status: true, plan: true, createdAt: true },
     });
 
     sendNewUserNotification(user); // fire-and-forget — jangan await agar tidak blokir response
@@ -69,7 +69,7 @@ const login = async (req, res) => {
       success: true,
       message: 'Login berhasil!',
       token,
-      data: { id: user.id, name: user.name, email: user.email },
+      data: { id: user.id, name: user.name, email: user.email, plan: user.plan },
     });
   } catch (err) {
     console.error('[LOGIN ERROR]', err);
@@ -77,4 +77,20 @@ const login = async (req, res) => {
   }
 };
 
-module.exports = { register, login };
+const getMe = async (req, res) => {
+  try {
+    const user = await prisma.user.findUnique({
+      where: { id: req.user.id },
+      select: { id: true, name: true, email: true, phone: true, status: true, plan: true, createdAt: true },
+    });
+
+    if (!user) return res.status(404).json({ success: false, message: 'User tidak ditemukan.' });
+
+    return res.status(200).json({ success: true, data: user });
+  } catch (err) {
+    console.error('[GET ME ERROR]', err);
+    return res.status(500).json({ success: false, message: 'Server error.' });
+  }
+};
+
+module.exports = { register, login, getMe };

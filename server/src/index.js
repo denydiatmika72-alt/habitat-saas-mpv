@@ -17,6 +17,7 @@ const sponsorRoutes       = require('../routes/sponsor.routes');
 const invoiceRoutes       = require('../routes/invoice.routes');
 const settingsRoutes      = require('../routes/settings.routes');
 const purchaseOrderRoutes = require('../routes/purchaseOrder.routes');
+const usersRoutes         = require('../routes/users.routes');
 
 const app = express();
 const PORT = process.env.PORT || 5000;
@@ -72,6 +73,7 @@ app.use('/api/sponsor',       sponsorRoutes);
 app.use('/api/invoices',      invoiceRoutes);
 app.use('/api/settings',      settingsRoutes);
 app.use('/api/po',            purchaseOrderRoutes);
+app.use('/api/users',         usersRoutes);
 
 app.use((req, res) => {
   console.warn('[404] Route tidak ditemukan:', req.method, req.originalUrl);

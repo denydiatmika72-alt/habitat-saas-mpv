@@ -28,6 +28,7 @@ export default function LoginPage() {
 
       if (res.ok && data.token) {
         localStorage.setItem('token', data.token);
+        if (data.data?.plan) localStorage.setItem('user_plan', data.data.plan);
         router.push('/dashboard');
       } else {
         alert('❌ ' + (data.message || 'Gagal Login'));
