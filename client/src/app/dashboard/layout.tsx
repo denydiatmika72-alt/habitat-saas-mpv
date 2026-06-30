@@ -1,5 +1,6 @@
 import { Sidebar, MobileNav } from "@/components/dashboard/sidebar"
 import { TopBar } from "@/components/dashboard/top-bar"
+import { DashboardGuard } from "@/components/dashboard/dashboard-guard"
 
 export default function DashboardLayout({
   children,
@@ -7,7 +8,7 @@ export default function DashboardLayout({
   children: React.ReactNode
 }) {
   return (
-    <>
+    <DashboardGuard>
       <div className="flex min-h-screen bg-slate-50 text-slate-900">
         {/* Persistent Sidebar — desktop only */}
         <Sidebar />
@@ -26,6 +27,6 @@ export default function DashboardLayout({
 
       {/* Bottom navigation — mobile only, outside the flex container */}
       <MobileNav />
-    </>
+    </DashboardGuard>
   )
 }
