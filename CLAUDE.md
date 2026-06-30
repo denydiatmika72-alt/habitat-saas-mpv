@@ -76,3 +76,29 @@ Semua route file import `{ verifyToken }`.
 
 1. **PATCH /api/invoices/:id/status → 500**: Karena `verifyToken` tidak ada di export middleware (hanya `protect`). Fix: tambah `verifyToken: protect` sebagai alias.
 2. **Invoice tidak muncul di tab Invoice** (deals lama punya `eventId = null`): Fix: tab Invoice sekarang menampilkan semua invoice langsung tanpa filter per event. `document-table.tsx` ditulis ulang.
+
+## Deployment
+
+- Backend deploy via: `cd /var/www/nexevent/server && bash deploy.sh`
+- Frontend deploy: otomatis via Vercel setiap git push
+- Jangan pakai Render — sudah tidak aktif, backend di Hostinger VPS
+
+## Infrastruktur Production
+
+- Frontend: https://nexeventapp.tech (Vercel)
+- Backend: http://145.79.12.170:3001 (Hostinger VPS, PM2)
+- Nginx: port 3001 → proxy ke Express port 5000
+- Docker okupasi port 80 dan 8080 — jangan pakai port ini untuk Nginx
+- Database: Supabase PostgreSQL
+
+## Email
+
+- Provider: Resend v6
+- Sender: `onboarding@resend.dev` (domain nexeventapp.tech belum diverifikasi di Resend)
+- Jangan ganti sender sampai domain diverifikasi
+
+## Aturan Tambahan
+
+- Setiap selesai coding, selalu commit + push + deploy.sh
+- Prisma singleton wajib — jangan `new PrismaClient()`
+- Auth middleware: `server/src/middleware/auth.middleware.js` — return 401 bukan 404
