@@ -4,7 +4,8 @@ import { useState, useEffect, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
 import { Users, Clock, CheckCircle, ShieldOff, Calendar, LogOut } from 'lucide-react'
 
-const API_URL = `${process.env.NEXT_PUBLIC_API_URL ?? ''}/api`
+// Selalu pakai relative URL agar lewat Next.js proxy → tidak kena mixed-content block di production
+const API_URL = '/api'
 
 interface User {
   id: string
