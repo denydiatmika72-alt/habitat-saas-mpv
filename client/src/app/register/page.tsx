@@ -5,12 +5,15 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Label } from "@/components/ui/label";
-import { CheckCircle, MessageCircle, Mail } from 'lucide-react';
+import { CheckCircle, MessageCircle, Mail, Crown, HardHat } from 'lucide-react';
+
+type Role = 'promotor' | 'crew';
 
 export default function RegisterPage() {
   const [isLoading, setIsLoading] = useState(false);
   const [isSuccess, setIsSuccess] = useState(false);
   const [errorMsg, setErrorMsg] = useState('');
+  const [role, setRole] = useState<Role>('promotor');
   const [formData, setFormData] = useState({
     name: '',
     company_name: '',
@@ -18,6 +21,8 @@ export default function RegisterPage() {
     phone: '',
     password: ''
   });
+
+  const isCrew = role === 'crew';
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     setFormData({ ...formData, [e.target.name]: e.target.value });
@@ -32,7 +37,7 @@ export default function RegisterPage() {
       const res = await fetch('/api/auth/register', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(formData),
+        body: JSON.stringify({ ...formData, role }),
       });
 
       const data = await res.json();
@@ -64,6 +69,11 @@ export default function RegisterPage() {
               <p className="mt-2 text-sm text-slate-500 leading-relaxed">
                 Akun kamu sedang direview oleh admin. Kamu akan mendapat konfirmasi setelah akun diaktifkan.
               </p>
+              {isCrew && (
+                <p className="mt-2 text-sm font-medium text-emerald-700">
+                  Setelah diaktifkan, login via <span className="font-bold">nexeventapp.tech/field</span>
+                </p>
+              )}
             </div>
             <div className="rounded-xl bg-amber-50 border border-amber-200 p-4 text-left space-y-3">
               <p className="text-xs font-semibold text-amber-800 uppercase tracking-wide">Hubungi Admin</p>
@@ -101,10 +111,50 @@ export default function RegisterPage() {
       <Card className="w-full max-w-sm shadow-lg border-slate-200">
         <CardHeader className="text-center">
           <CardTitle className="text-2xl font-bold text-slate-900">Daftar Akun Baru</CardTitle>
-          <CardDescription>Buat workspace untuk EO / Promotor Anda.</CardDescription>
+          <CardDescription>
+            {isCrew ? "Buat akun Field Crew untuk event." : "Buat workspace untuk EO / Promotor Anda."}
+          </CardDescription>
         </CardHeader>
         <CardContent>
           <form onSubmit={handleRegister} className="space-y-4">
+
+            {/* Role selector */}
+            <div className="space-y-2">
+              <Label>Daftar sebagai</Label>
+              <div className="grid grid-cols-2 gap-2">
+                <button
+                  type="button"
+                  onClick={() => setRole('promotor')}
+                  className={`flex items-center gap-2 rounded-lg border px-3 py-2.5 text-sm font-medium transition-colors ${
+                    role === 'promotor'
+                      ? 'border-emerald-600 bg-emerald-50 text-emerald-800'
+                      : 'border-slate-200 bg-white text-slate-600 hover:bg-slate-50'
+                  }`}
+                >
+                  <Crown className="size-4 shrink-0" />
+                  Promotor Event
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setRole('crew')}
+                  className={`flex items-center gap-2 rounded-lg border px-3 py-2.5 text-sm font-medium transition-colors ${
+                    role === 'crew'
+                      ? 'border-emerald-600 bg-emerald-50 text-emerald-800'
+                      : 'border-slate-200 bg-white text-slate-600 hover:bg-slate-50'
+                  }`}
+                >
+                  <HardHat className="size-4 shrink-0" />
+                  Crew Lapangan
+                </button>
+              </div>
+              {isCrew && (
+                <p className="text-xs text-slate-500 bg-slate-50 rounded-lg px-3 py-2 border border-slate-200">
+                  Akun crew hanya bisa diakses via{' '}
+                  <span className="font-medium text-emerald-700">nexeventapp.tech/field</span>
+                </p>
+              )}
+            </div>
+
             <div className="space-y-2">
               <Label>Nama Lengkap</Label>
               <Input
@@ -114,15 +164,19 @@ export default function RegisterPage() {
                 required
               />
             </div>
-            <div className="space-y-2">
-              <Label>Nama Promotor / EO</Label>
-              <Input
-                name="company_name"
-                placeholder="Misal: Live Nation Indonesia"
-                onChange={handleChange}
-                required
-              />
-            </div>
+
+            {!isCrew && (
+              <div className="space-y-2">
+                <Label>Nama Promotor / EO</Label>
+                <Input
+                  name="company_name"
+                  placeholder="Misal: Live Nation Indonesia"
+                  onChange={handleChange}
+                  required
+                />
+              </div>
+            )}
+
             <div className="space-y-2">
               <Label>Nomor WhatsApp</Label>
               <Input
@@ -134,11 +188,11 @@ export default function RegisterPage() {
               />
             </div>
             <div className="space-y-2">
-              <Label>Email Kerja</Label>
+              <Label>Email</Label>
               <Input
                 name="email"
                 type="email"
-                placeholder="promotor@event.com"
+                placeholder={isCrew ? "email@kamu.com" : "promotor@event.com"}
                 onChange={handleChange}
                 required
               />
