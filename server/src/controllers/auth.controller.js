@@ -1,9 +1,10 @@
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const prisma = require('../lib/prisma');
+const { sendNewUserNotification } = require('../../services/email.service');
 
 const register = async (req, res) => {
-  const { name, email, password } = req.body;
+  const { name, email, password, phone } = req.body;
 
   if (!name || !email || !password)
     return res.status(400).json({ success: false, message: 'name, email, dan password wajib diisi.' });
@@ -19,9 +20,11 @@ const register = async (req, res) => {
     const hashed = await bcrypt.hash(password, 10);
 
     const user = await prisma.user.create({
-      data: { name, email, password: hashed, status: 'pending' },
-      select: { id: true, name: true, email: true, status: true, createdAt: true },
+      data: { name, email, password: hashed, phone: phone ?? null, status: 'pending' },
+      select: { id: true, name: true, email: true, phone: true, status: true, createdAt: true },
     });
+
+    sendNewUserNotification(user); // fire-and-forget — jangan await agar tidak blokir response
 
     return res.status(201).json({
       success: true,

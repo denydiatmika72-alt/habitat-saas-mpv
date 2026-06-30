@@ -193,7 +193,7 @@ function SponsorForm({
   packages = [],
   benefits = [],
 }: {
-  onSubmit: (data: SponsorSubmission) => void
+  onSubmit: (data: SponsorSubmission) => Promise<void>
   packages?: ApiPackage[]
   benefits?: ApiBenefit[]
 }) {
@@ -259,16 +259,20 @@ function SponsorForm({
       totalValue = selectedBenefits.reduce((sum, { qty, unitPrice }) => sum + qty * unitPrice, 0)
     }
 
-    setTimeout(() => {
-      onSubmit({
-        company: form.company.trim(),
-        contactName: form.contactName.trim(),
-        email: form.email.trim(),
-        tier: tierName,
-        packageId: activeTab === "packages" ? selectedPackageId : undefined,
-        selectedBenefits,
-        totalValue,
-      })
+    setTimeout(async () => {
+      try {
+        await onSubmit({
+          company: form.company.trim(),
+          contactName: form.contactName.trim(),
+          email: form.email.trim(),
+          tier: tierName,
+          packageId: activeTab === "packages" ? selectedPackageId : undefined,
+          selectedBenefits,
+          totalValue,
+        })
+      } catch {
+        setSubmitting(false)
+      }
     }, 1100)
   }
 
@@ -781,7 +785,7 @@ export default function SponsorPortalPage() {
   }, [isVerified])
 
   async function handleSubmit(data: SponsorSubmission) {
-    await fetch("/api/sponsor/deals", {
+    const res = await fetch("/api/sponsor/deals", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
@@ -795,7 +799,11 @@ export default function SponsorPortalPage() {
         totalValue: data.totalValue,
         eventId: unlockedEventId,
       }),
-    }).catch(() => {})
+    })
+    if (!res.ok) {
+      const body = await res.json().catch(() => ({}))
+      throw new Error((body as { message?: string }).message || "Gagal mengirim data ke server")
+    }
     setSubmission(data)
     setStep("success")
   }

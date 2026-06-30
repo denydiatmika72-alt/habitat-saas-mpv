@@ -15,6 +15,7 @@ export default function RegisterPage() {
     name: '',
     company_name: '',
     email: '',
+    phone: '',
     password: ''
   });
 
@@ -118,6 +119,16 @@ export default function RegisterPage() {
               <Input
                 name="company_name"
                 placeholder="Misal: Live Nation Indonesia"
+                onChange={handleChange}
+                required
+              />
+            </div>
+            <div className="space-y-2">
+              <Label>Nomor WhatsApp</Label>
+              <Input
+                name="phone"
+                type="tel"
+                placeholder="08xxxxxxxxxx"
                 onChange={handleChange}
                 required
               />
