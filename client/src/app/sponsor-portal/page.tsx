@@ -201,6 +201,7 @@ function SponsorForm({
   const [selectedPackageId, setSelectedPackageId] = useState<string>("")
   const [alaCarteQtys, setAlaCarteQtys] = useState<Record<string, number>>({})
   const [submitting, setSubmitting] = useState(false)
+  const [submitError, setSubmitError] = useState<string | null>(null)
   const [form, setForm] = useState({
     company: "",
     contactName: "",
@@ -259,6 +260,7 @@ function SponsorForm({
       totalValue = selectedBenefits.reduce((sum, { qty, unitPrice }) => sum + qty * unitPrice, 0)
     }
 
+    setSubmitError(null)
     setTimeout(async () => {
       try {
         await onSubmit({
@@ -270,8 +272,9 @@ function SponsorForm({
           selectedBenefits,
           totalValue,
         })
-      } catch {
+      } catch (err) {
         setSubmitting(false)
+        setSubmitError(err instanceof Error ? err.message : "Gagal mengirim pendaftaran. Coba lagi.")
       }
     }, 1100)
   }
@@ -618,6 +621,12 @@ function SponsorForm({
             </>
           )}
         </button>
+
+        {submitError && (
+          <p className="mt-4 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+            {submitError}
+          </p>
+        )}
       </div>
     </form>
   )
