@@ -266,3 +266,13 @@ File ini adalah log permanen bug yang sudah pernah terjadi di project ini besert
   - Bungkus teks button dalam `<span>` agar flex centering konsisten
   - Ganti label type dari `<p className="capitalize text-slate-400">` ke conditional: topup → `text-blue-600`, expense → `text-red-500`, return → `text-emerald-600` dengan label kapitalisasi manual ("Topup"/"Expense"/"Return")
 - Tag: #field-crew #ui #button #icon-alignment #mobile-ux
+
+---
+
+## [2026-07-01] /field page — icon pada action button tidak bisa di-center dengan benar
+
+- Gejala: Setelah penambahan `shrink-0` dan `<span>`, icon pada button "CATAT PENGELUARAN" masih terlihat tidak center secara visual di berbagai ukuran layar mobile.
+- Root cause: Kombinasi flex + icon + teks pendek dalam grid 2-kolom rentan terhadap distribusi ruang yang tidak simetris di browser mobile. Tidak ada solusi CSS tunggal yang bisa diandalkan.
+- File terkait: `client/src/app/field/page.tsx`
+- Fix: Hapus icon sepenuhnya dari kedua action button ("CATAT PENGELUARAN" dan "KEMBALIKAN SISA") — teks saja sudah cukup dan tampilan lebih rapi di mobile. Hapus juga import `Send` dan `RotateCcw` dari lucide-react karena sudah tidak terpakai.
+- Tag: #field-crew #ui #button #icon #mobile-ux
