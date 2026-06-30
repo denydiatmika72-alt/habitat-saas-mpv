@@ -182,3 +182,19 @@ File ini adalah log permanen bug yang sudah pernah terjadi di project ini besert
   - Route ordering: `GET /crew/my-events` harus didaftarkan SEBELUM `DELETE /crew/:crewId` agar tidak ketubruk wildcard
   - `/field` halaman standalone (bukan di bawah `/dashboard`) — tidak pakai layout dashboard, dark theme OK
 - Tag: #field-crew #petty-cash #prisma #schema #role #mobile-ui #pro-feature
+
+---
+
+## [2026-07-01] POST /api/crew/invite → 403 "Hanya promotor" padahal user adalah promotor
+
+- Gejala: User yang sudah login sebagai promotor mendapat HTTP 403 "Hanya promotor yang bisa invite crew" saat POST `/api/crew/invite`. `req.user.role` adalah `undefined` meskipun DB user punya `role = "promotor"`.
+- Root cause: JWT token user digenerate **sebelum** field `role` ditambahkan ke `jwt.sign()` payload (sebelum deploy Field Crew feature). Token lama tidak mengandung field `role`, sehingga `jwt.verify()` menghasilkan decoded tanpa `role`, dan `req.user.role === "promotor"` selalu `false` (undefined !== "promotor"). User tidak perlu re-login karena token masih valid (belum expired 7 hari).
+- File terkait: `server/src/middleware/auth.middleware.js`
+- Fix: Middleware diubah menjadi `async`. Setelah `jwt.verify()`, jika `decoded.role === undefined`, lakukan DB lookup ke tabel `users` untuk ambil `role` yang sebenarnya dan inject ke `decoded.role` sebelum `req.user = decoded`. Ini handles semua token lama tanpa memaksa re-login.
+  ```js
+  if (decoded.role === undefined) {
+    const user = await prisma.user.findUnique({ where: { id: decoded.id }, select: { role: true } });
+    decoded.role = user?.role ?? 'promotor';
+  }
+  ```
+- Tag: #auth #middleware #jwt #role #403 #field-crew
