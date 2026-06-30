@@ -1,7 +1,7 @@
 "use client"
 
 import { useEffect, useState } from "react"
-import { Wallet, ArrowLeft, CheckCircle, Send, RotateCcw, LogIn } from "lucide-react"
+import { Wallet, ArrowLeft, CheckCircle, LogIn } from "lucide-react"
 import Link from "next/link"
 
 type Assignment = {
@@ -400,18 +400,16 @@ export default function FieldPage() {
         <div className="mb-6 grid grid-cols-2 gap-3">
           <button
             onClick={() => { setView("expense-form"); setTxAmount(""); setTxDescription(""); setTxError("") }}
-            className="flex min-h-[64px] items-center justify-center gap-2 rounded-xl bg-emerald-800 text-sm font-bold text-white transition-colors hover:bg-emerald-900 active:scale-[0.97]"
+            className="flex min-h-[64px] items-center justify-center rounded-xl bg-emerald-800 text-sm font-bold text-white transition-colors hover:bg-emerald-900 active:scale-[0.97]"
           >
-            <Send className="h-5 w-5 shrink-0" />
-            <span>CATAT PENGELUARAN</span>
+            CATAT PENGELUARAN
           </button>
           <button
             onClick={() => { setView("return-form"); setTxAmount(""); setTxDescription(""); setTxError("") }}
             disabled={balance <= 0}
-            className="flex min-h-[64px] items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white text-sm font-bold text-slate-700 transition-colors hover:bg-slate-50 active:scale-[0.97] disabled:opacity-40"
+            className="flex min-h-[64px] items-center justify-center rounded-xl border border-slate-200 bg-white text-sm font-bold text-slate-700 transition-colors hover:bg-slate-50 active:scale-[0.97] disabled:opacity-40"
           >
-            <RotateCcw className="h-5 w-5 shrink-0" />
-            <span>KEMBALIKAN SISA</span>
+            KEMBALIKAN SISA
           </button>
         </div>
 
