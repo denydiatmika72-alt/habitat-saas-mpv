@@ -7,7 +7,6 @@ import { Navbar } from '@/components/layout/Navbar'
 import { EventCard, type PublicEvent } from '@/components/events/EventCard'
 
 const API_URL = `${(process.env.NEXT_PUBLIC_API_URL ?? '').replace(/[\uFEFF\u200B-\u200D]/g, '').trim().replace(/\/+$/, '')}/api`
-  ((process.env.NEXT_PUBLIC_API_URL ?? '').replace(/[\uFEFF\u200B-\u200D]/g, '').trim().replace(/\/+$/, ''))}/api`
 
 export default function HomePage() {
   const [events,     setEvents]     = useState<PublicEvent[]>([])
