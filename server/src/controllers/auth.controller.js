@@ -4,13 +4,16 @@ const prisma = require('../lib/prisma');
 const { sendNewUserNotification } = require('../../services/email.service');
 
 const register = async (req, res) => {
-  const { name, email, password, phone } = req.body;
+  const { name, email, password, phone, role } = req.body;
 
   if (!name || !email || !password)
     return res.status(400).json({ success: false, message: 'name, email, dan password wajib diisi.' });
 
   if (password.length < 6)
     return res.status(400).json({ success: false, message: 'Password minimal 6 karakter.' });
+
+  const validRoles = ['promotor', 'crew'];
+  const userRole = validRoles.includes(role) ? role : 'promotor';
 
   try {
     const existing = await prisma.user.findUnique({ where: { email } });
@@ -20,8 +23,8 @@ const register = async (req, res) => {
     const hashed = await bcrypt.hash(password, 10);
 
     const user = await prisma.user.create({
-      data: { name, email, password: hashed, phone: phone ?? null, status: 'pending' },
-      select: { id: true, name: true, email: true, phone: true, status: true, plan: true, createdAt: true },
+      data: { name, email, password: hashed, phone: phone ?? null, status: 'pending', role: userRole },
+      select: { id: true, name: true, email: true, phone: true, status: true, plan: true, role: true, createdAt: true },
     });
 
     sendNewUserNotification(user); // fire-and-forget — jangan await agar tidak blokir response
@@ -60,7 +63,7 @@ const login = async (req, res) => {
       return res.status(403).json({ success: false, message: 'Akun kamu telah disuspend. Hubungi admin.' });
 
     const token = jwt.sign(
-      { id: user.id, email: user.email, name: user.name },
+      { id: user.id, email: user.email, name: user.name, role: user.role },
       process.env.JWT_SECRET,
       { expiresIn: process.env.JWT_EXPIRES_IN || '7d' }
     );
@@ -69,7 +72,7 @@ const login = async (req, res) => {
       success: true,
       message: 'Login berhasil!',
       token,
-      data: { id: user.id, name: user.name, email: user.email, plan: user.plan },
+      data: { id: user.id, name: user.name, email: user.email, plan: user.plan, role: user.role },
     });
   } catch (err) {
     console.error('[LOGIN ERROR]', err);
@@ -81,7 +84,7 @@ const getMe = async (req, res) => {
   try {
     const user = await prisma.user.findUnique({
       where: { id: req.user.id },
-      select: { id: true, name: true, email: true, phone: true, status: true, plan: true, createdAt: true },
+      select: { id: true, name: true, email: true, phone: true, status: true, plan: true, role: true, createdAt: true },
     });
 
     if (!user) return res.status(404).json({ success: false, message: 'User tidak ditemukan.' });

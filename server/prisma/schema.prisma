@@ -19,12 +19,15 @@ model User {
   phone     String?
   status    String   @default("pending")
   plan      String   @default("starter")
+  role      String   @default("promotor")
 
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @updatedAt      @map("updated_at")
 
-  events    Event[]
-  expenses  Expense[]
+  events            Event[]
+  expenses          Expense[]
+  eventCrew         EventCrew[]
+  pettyCashAccounts PettyCashAccount[]
 
   @@map("users")
 }
@@ -48,6 +51,8 @@ model Event {
   budget             Budget?
   purchaseOrders     PurchaseOrder[]
   expenses           Expense[]
+  crew               EventCrew[]
+  pettyCashAccounts  PettyCashAccount[]
 
   @@map("events")
 }
@@ -305,4 +310,47 @@ model PromoterSettings {
   updatedAt     DateTime @updatedAt @map("updated_at")
 
   @@map("promoter_settings")
+}
+
+model EventCrew {
+  id        String   @id @default(uuid())
+  eventId   String   @map("event_id")
+  userId    String   @map("user_id")
+  division  String
+  createdAt DateTime @default(now()) @map("created_at")
+
+  event     Event    @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([eventId, userId])
+  @@map("event_crew")
+}
+
+model PettyCashAccount {
+  id           String                 @id @default(uuid())
+  eventId      String                 @map("event_id")
+  userId       String                 @map("user_id")
+  division     String
+  createdAt    DateTime               @default(now()) @map("created_at")
+
+  event        Event                  @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  user         User                   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  transactions PettyCashTransaction[]
+
+  @@unique([eventId, userId])
+  @@map("petty_cash_accounts")
+}
+
+model PettyCashTransaction {
+  id          String           @id @default(uuid())
+  accountId   String           @map("account_id")
+  type        String           // "topup" | "expense" | "return"
+  amount      Float
+  description String
+  createdAt   DateTime         @default(now()) @map("created_at")
+  createdBy   String           @map("created_by")
+
+  account     PettyCashAccount @relation(fields: [accountId], references: [id], onDelete: Cascade)
+
+  @@map("petty_cash_transactions")
 }

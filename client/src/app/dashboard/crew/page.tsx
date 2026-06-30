@@ -1,0 +1,380 @@
+"use client"
+
+import { useEffect, useState } from "react"
+import { Lock, Users, Plus, Trash2, ChevronDown, ChevronUp, ArrowUpCircle } from "lucide-react"
+import Link from "next/link"
+import { useUser } from "@/hooks/useUser"
+
+type Event = { id: string; title: string }
+
+type CrewMember = {
+  accountId: string
+  crewId: string
+  name: string
+  email: string
+  division: string
+  balance: number
+  totalTopup: number
+  totalExpense: number
+  totalReturn: number
+}
+
+const IDR = new Intl.NumberFormat("id-ID", {
+  style: "currency",
+  currency: "IDR",
+  maximumFractionDigits: 0,
+})
+
+const getToken = () =>
+  typeof window !== "undefined" ? (localStorage.getItem("token") ?? "") : ""
+const authHeaders = () => ({
+  Authorization: `Bearer ${getToken()}`,
+  "Content-Type": "application/json",
+})
+
+export default function CrewPage() {
+  const { isPro, loading: userLoading } = useUser()
+
+  const [events, setEvents] = useState<Event[]>([])
+  const [selectedEventId, setSelectedEventId] = useState("")
+  const [crew, setCrew] = useState<CrewMember[]>([])
+  const [fetchingCrew, setFetchingCrew] = useState(false)
+
+  // Invite form
+  const [inviteEmail, setInviteEmail] = useState("")
+  const [inviteDivision, setInviteDivision] = useState("")
+  const [inviting, setInviting] = useState(false)
+  const [inviteError, setInviteError] = useState("")
+
+  // Topup state per crew (accountId → amount)
+  const [topupAmounts, setTopupAmounts] = useState<Record<string, string>>({})
+  const [toppingUp, setToppingUp] = useState<Record<string, boolean>>({})
+  const [expandedCrew, setExpandedCrew] = useState<Record<string, boolean>>({})
+
+  useEffect(() => {
+    fetch("/api/events", { headers: authHeaders() })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((data) => { if (data?.success) setEvents(data.data) })
+      .catch(() => {})
+  }, [])
+
+  useEffect(() => {
+    if (!selectedEventId || !isPro) return
+    setFetchingCrew(true)
+    fetch(`/api/crew?eventId=${selectedEventId}`, { headers: authHeaders() })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((data) => { if (data?.success) setCrew(data.crew) })
+      .catch(() => {})
+      .finally(() => setFetchingCrew(false))
+  }, [selectedEventId, isPro])
+
+  const handleInvite = async (e: React.FormEvent) => {
+    e.preventDefault()
+    setInviteError("")
+    if (!inviteEmail || !inviteDivision || !selectedEventId) return
+    setInviting(true)
+    try {
+      const res = await fetch("/api/crew/invite", {
+        method: "POST",
+        headers: authHeaders(),
+        body: JSON.stringify({ email: inviteEmail, division: inviteDivision, eventId: selectedEventId }),
+      })
+      const data = await res.json()
+      if (data.success) {
+        setInviteEmail("")
+        setInviteDivision("")
+        // Refresh crew list
+        const refresh = await fetch(`/api/crew?eventId=${selectedEventId}`, { headers: authHeaders() })
+        const refreshData = await refresh.json()
+        if (refreshData.success) setCrew(refreshData.crew)
+      } else {
+        setInviteError(data.message ?? "Gagal menambahkan crew.")
+      }
+    } catch {
+      setInviteError("Gagal menghubungi server.")
+    } finally {
+      setInviting(false)
+    }
+  }
+
+  const handleTopup = async (accountId: string, crewUserId: string) => {
+    const raw = topupAmounts[accountId] ?? ""
+    const amt = parseFloat(raw.replace(/[^0-9]/g, ""))
+    if (isNaN(amt) || amt <= 0) return
+    setToppingUp((prev) => ({ ...prev, [accountId]: true }))
+    try {
+      const res = await fetch("/api/petty-cash/topup", {
+        method: "POST",
+        headers: authHeaders(),
+        body: JSON.stringify({ accountId, amount: amt, description: "Top-up kas dari promotor" }),
+      })
+      const data = await res.json()
+      if (data.success) {
+        setTopupAmounts((prev) => ({ ...prev, [accountId]: "" }))
+        setCrew((prev) =>
+          prev.map((c) =>
+            c.accountId === accountId
+              ? { ...c, balance: data.balance, totalTopup: c.totalTopup + amt }
+              : c
+          )
+        )
+      }
+    } finally {
+      setToppingUp((prev) => ({ ...prev, [accountId]: false }))
+    }
+  }
+
+  const handleRemoveCrew = async (crewUserId: string) => {
+    if (!confirm("Hapus crew ini dari event? Semua data kas mereka akan ikut terhapus.")) return
+    try {
+      await fetch(`/api/crew/${crewUserId}?eventId=${selectedEventId}`, {
+        method: "DELETE",
+        headers: authHeaders(),
+      })
+      setCrew((prev) => prev.filter((c) => c.crewId !== crewUserId))
+    } catch {}
+  }
+
+  const toggleExpand = (accountId: string) => {
+    setExpandedCrew((prev) => ({ ...prev, [accountId]: !prev[accountId] }))
+  }
+
+  if (userLoading) {
+    return (
+      <div className="flex min-h-[60vh] items-center justify-center">
+        <div className="h-8 w-8 animate-spin rounded-full border-2 border-emerald-800 border-t-transparent" />
+      </div>
+    )
+  }
+
+  return (
+    <div className="mx-auto flex w-full max-w-7xl flex-col gap-6">
+      {/* Header */}
+      <div className="flex items-start gap-4">
+        <div className="flex size-11 items-center justify-center rounded-xl bg-emerald-50 text-emerald-800">
+          <Users className="size-5" />
+        </div>
+        <div>
+          <div className="flex items-center gap-2">
+            <h1 className="text-2xl font-semibold tracking-tight text-slate-900">
+              Field Crew
+            </h1>
+            <span className="rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-bold text-amber-800">
+              PRO
+            </span>
+          </div>
+          <p className="mt-0.5 text-sm text-slate-500">
+            Kelola kas lapangan crew dan pantau pengeluaran per divisi.
+          </p>
+        </div>
+      </div>
+
+      {/* Event selector */}
+      <div>
+        <label className="mb-1.5 block text-sm font-medium text-slate-700">Pilih Event</label>
+        <select
+          value={selectedEventId}
+          onChange={(e) => {
+            setSelectedEventId(e.target.value)
+            setCrew([])
+          }}
+          className="max-w-sm truncate rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-700 outline-none transition-colors focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500/30"
+        >
+          <option value="">-- Pilih event --</option>
+          {events.map((ev) => (
+            <option key={ev.id} value={ev.id}>
+              {ev.title}
+            </option>
+          ))}
+        </select>
+      </div>
+
+      {/* No event */}
+      {!selectedEventId && (
+        <div className="rounded-xl border border-slate-200 bg-white py-14 text-center">
+          <Users className="mx-auto mb-3 size-10 text-slate-300" />
+          <p className="text-sm text-slate-400">Pilih event untuk mengelola field crew.</p>
+        </div>
+      )}
+
+      {selectedEventId && (
+        !isPro ? (
+          <div className="rounded-xl border border-slate-200 bg-white p-10 text-center">
+            <div className="flex flex-col items-center gap-4">
+              <div className="flex size-14 items-center justify-center rounded-xl bg-emerald-50">
+                <Lock className="size-7 text-emerald-800" />
+              </div>
+              <div>
+                <p className="text-lg font-semibold text-slate-900">🔒 Fitur Pro</p>
+                <p className="mx-auto mt-2 max-w-xs text-sm leading-relaxed text-slate-500">
+                  Field Crew Management tersedia untuk pengguna Pro. Upgrade untuk mengelola kas lapangan crew.
+                </p>
+              </div>
+              <Link
+                href="/dashboard/upgrade"
+                className="mt-2 inline-flex items-center gap-2 rounded-lg bg-emerald-800 px-6 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-emerald-900"
+              >
+                Upgrade ke Pro →
+              </Link>
+            </div>
+          </div>
+        ) : (
+          <div className="grid gap-6 lg:grid-cols-5">
+            {/* Left: Invite form */}
+            <div className="lg:col-span-2">
+              <div className="rounded-xl border border-slate-200 bg-white p-5">
+                <p className="mb-1 text-sm font-semibold text-slate-900">Tambah Crew ke Event</p>
+                <p className="mb-4 text-xs text-slate-400">
+                  Crew harus sudah daftar di nexeventapp.tech terlebih dahulu dengan role "crew".
+                </p>
+                <form onSubmit={handleInvite} className="space-y-3">
+                  <div>
+                    <label className="mb-1 block text-xs font-medium text-slate-500">Email Crew</label>
+                    <input
+                      type="email"
+                      value={inviteEmail}
+                      onChange={(e) => setInviteEmail(e.target.value)}
+                      placeholder="crew@email.com"
+                      required
+                      className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2.5 text-sm text-slate-900 placeholder:text-slate-400 outline-none transition-colors focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500/30"
+                    />
+                  </div>
+                  <div>
+                    <label className="mb-1 block text-xs font-medium text-slate-500">Divisi</label>
+                    <input
+                      type="text"
+                      value={inviteDivision}
+                      onChange={(e) => setInviteDivision(e.target.value)}
+                      placeholder="Produksi / Operasional / Logistik…"
+                      required
+                      className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2.5 text-sm text-slate-900 placeholder:text-slate-400 outline-none transition-colors focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500/30"
+                    />
+                  </div>
+                  {inviteError && (
+                    <p className="rounded-lg bg-red-50 px-3 py-2 text-xs text-red-600">{inviteError}</p>
+                  )}
+                  <button
+                    type="submit"
+                    disabled={inviting}
+                    className="flex w-full items-center justify-center gap-2 rounded-lg bg-emerald-800 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-emerald-900 disabled:opacity-50"
+                  >
+                    <Plus className="size-4" />
+                    {inviting ? "Menambahkan..." : "Invite ke Event"}
+                  </button>
+                </form>
+              </div>
+            </div>
+
+            {/* Right: Crew list */}
+            <div className="lg:col-span-3">
+              <div className="rounded-xl border border-slate-200 bg-white p-5">
+                <p className="mb-4 text-sm font-semibold text-slate-900">
+                  Daftar Crew ({crew.length})
+                </p>
+
+                {fetchingCrew ? (
+                  <div className="flex justify-center py-8">
+                    <div className="h-6 w-6 animate-spin rounded-full border-2 border-emerald-800 border-t-transparent" />
+                  </div>
+                ) : crew.length === 0 ? (
+                  <p className="py-8 text-center text-sm text-slate-400">
+                    Belum ada crew di event ini.
+                  </p>
+                ) : (
+                  <ul className="space-y-3">
+                    {crew.map((c) => (
+                      <li key={c.accountId} className="rounded-xl border border-slate-100 bg-slate-50 p-4">
+                        {/* Crew header */}
+                        <div className="flex items-start justify-between gap-3">
+                          <div>
+                            <div className="flex items-center gap-2">
+                              <p className="text-sm font-semibold text-slate-900">{c.name}</p>
+                              <span className="rounded-full bg-emerald-100 px-2 py-0.5 text-[10px] font-medium text-emerald-700">
+                                {c.division}
+                              </span>
+                            </div>
+                            <p className="mt-0.5 text-xs text-slate-400">{c.email}</p>
+                            <p className="mt-2 text-xl font-bold text-emerald-800">
+                              {IDR.format(c.balance)}
+                              <span className="ml-1.5 text-xs font-normal text-slate-500">saldo kas</span>
+                            </p>
+                          </div>
+                          <div className="flex items-center gap-2">
+                            <button
+                              onClick={() => toggleExpand(c.accountId)}
+                              className="flex size-8 items-center justify-center rounded-lg text-slate-400 transition-colors hover:bg-slate-200 hover:text-slate-700"
+                            >
+                              {expandedCrew[c.accountId] ? (
+                                <ChevronUp className="size-4" />
+                              ) : (
+                                <ChevronDown className="size-4" />
+                              )}
+                            </button>
+                            <button
+                              onClick={() => handleRemoveCrew(c.crewId)}
+                              className="flex size-8 items-center justify-center rounded-lg text-slate-400 transition-colors hover:bg-red-50 hover:text-red-500"
+                            >
+                              <Trash2 className="size-4" />
+                            </button>
+                          </div>
+                        </div>
+
+                        {/* Expanded: topup form */}
+                        {expandedCrew[c.accountId] && (
+                          <div className="mt-4 space-y-3 border-t border-slate-200 pt-4">
+                            {/* Stats */}
+                            <div className="grid grid-cols-3 gap-2">
+                              {[
+                                { label: "Total Topup", value: c.totalTopup, color: "text-blue-600" },
+                                { label: "Total Expense", value: c.totalExpense, color: "text-red-600" },
+                                { label: "Total Return", value: c.totalReturn, color: "text-slate-600" },
+                              ].map((s) => (
+                                <div key={s.label} className="rounded-lg bg-white p-2 text-center">
+                                  <p className={`text-sm font-semibold ${s.color}`}>{IDR.format(s.value)}</p>
+                                  <p className="text-[10px] text-slate-400">{s.label}</p>
+                                </div>
+                              ))}
+                            </div>
+
+                            {/* Topup form */}
+                            <div className="flex items-center gap-2">
+                              <input
+                                type="text"
+                                inputMode="numeric"
+                                value={
+                                  topupAmounts[c.accountId]
+                                    ? Number(topupAmounts[c.accountId]).toLocaleString("id-ID")
+                                    : ""
+                                }
+                                onChange={(e) =>
+                                  setTopupAmounts((prev) => ({
+                                    ...prev,
+                                    [c.accountId]: e.target.value.replace(/[^0-9]/g, ""),
+                                  }))
+                                }
+                                placeholder="Nominal top-up…"
+                                className="flex-1 rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 placeholder:text-slate-400 outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500/30"
+                              />
+                              <button
+                                onClick={() => handleTopup(c.accountId, c.crewId)}
+                                disabled={toppingUp[c.accountId]}
+                                className="flex items-center gap-1.5 rounded-lg bg-blue-600 px-4 py-2 text-sm font-semibold text-white transition-colors hover:bg-blue-700 disabled:opacity-50"
+                              >
+                                <ArrowUpCircle className="size-4" />
+                                {toppingUp[c.accountId] ? "..." : "Top-up"}
+                              </button>
+                            </div>
+                          </div>
+                        )}
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </div>
+            </div>
+          </div>
+        )
+      )}
+    </div>
+  )
+}
