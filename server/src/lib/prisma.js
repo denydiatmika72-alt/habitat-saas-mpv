@@ -1,13 +1,14 @@
-const { Pool } = require('pg');
-const { PrismaPg } = require('@prisma/adapter-pg');
-const { PrismaClient } = require('@prisma/client');
+const { PrismaClient } = require('@prisma/client')
 
-const pool = new Pool({
-  connectionString: process.env.DATABASE_URL,
-  ssl: { rejectUnauthorized: false },
-});
+const prisma = global.prisma || new PrismaClient({
+  datasources: {
+    db: {
+      url: process.env.DATABASE_URL
+    }
+  },
+  log: ['error']
+})
 
-const adapter = new PrismaPg(pool);
-const prisma = new PrismaClient({ adapter });
+if (process.env.NODE_ENV !== 'production') global.prisma = prisma
 
-module.exports = prisma;
+module.exports = prisma

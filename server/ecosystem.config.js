@@ -3,6 +3,9 @@ module.exports = {
     name: 'nexevent-api',
     script: 'src/index.js',
     cwd: '/var/www/nexevent/server',
-    env_file: '/var/www/nexevent/server/.env'
+    env_file: '/var/www/nexevent/server/.env',
+    env: {
+      NODE_TLS_REJECT_UNAUTHORIZED: '0'
+    }
   }]
 }
