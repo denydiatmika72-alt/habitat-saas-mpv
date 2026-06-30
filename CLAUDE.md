@@ -42,7 +42,8 @@ Semua route file import `{ verifyToken }`.
 - Gunakan `PrismaPg` adapter (bukan engine bawaan Prisma)
 - Semua controller gunakan: `const prisma = require('../src/lib/prisma')`
 - **Jangan buat `new PrismaClient()` langsung di controller**
-- Migration: `npm run migrate` (di folder server)
+- Migration: **selalu gunakan `npx prisma db push`** (bukan `prisma migrate dev` — project tidak punya migration history, akan error drift detection)
+- Setelah `db push`, wajib jalankan `npx prisma generate` di VPS
 
 ## Fitur Utama
 
@@ -88,6 +89,33 @@ Lihat **`docs/known-bugs.md`** untuk daftar lengkap bug yang sudah pernah terjad
 - Backend deploy via: `cd /var/www/nexevent/server && bash deploy.sh`
 - Frontend deploy: otomatis via Vercel setiap git push
 - Jangan pakai Render — sudah tidak aktif, backend di Hostinger VPS
+- **Urutan wajib deploy**: `git push` → verifikasi commit SHA di GitHub → baru jalankan `deploy.sh` di VPS (hindari race condition)
+
+## Akses VPS
+
+- **SSH command**: `ssh root@145.79.12.170`
+- **Akses**: passwordless via SSH key (sudah di-setup di PC rumah — tidak perlu password)
+- **User**: `root`
+- **Path project backend**: `/var/www/nexevent/server`
+- **Process manager**: PM2 — restart backend dengan `pm2 restart nexevent-api`
+- **Cek log real-time**: `pm2 logs nexevent-api`
+
+### Batasan otonom Claude Code di VPS
+
+**Boleh dilakukan sendiri (tanpa konfirmasi):**
+- `git pull` untuk sync kode terbaru
+- `npm install` untuk install dependencies baru
+- `npx prisma generate` untuk regenerate Prisma client
+- `npx prisma db push` untuk apply schema changes
+- `pm2 restart nexevent-api` untuk restart backend
+- `pm2 logs nexevent-api` untuk cek log error
+
+**Wajib konfirmasi ke Mandor dulu sebelum dilakukan:**
+- Modifikasi file konfigurasi Nginx
+- Perubahan apapun yang menyentuh port atau firewall
+- Menghapus file atau folder di VPS
+- Operasi database langsung (DROP, DELETE tanpa WHERE, ALTER TABLE manual)
+- Install package system-level (apt install, dll)
 
 ## Infrastruktur Production
 
@@ -113,11 +141,84 @@ Lihat **`docs/known-bugs.md`** untuk daftar lengkap bug yang sudah pernah terjad
 - Koneksi ke Supabase via PrismaPg adapter wajib pakai opsi `ssl: { rejectUnauthorized: false }`
 - Tanpa opsi ini, koneksi akan gagal (lihat known-bugs.md untuk histori)
 
+## Petty Cash System — Aturan Akuntansi (WAJIB DIBACA SEBELUM CODING)
+
+### Konteks
+Petty Cash adalah sistem kas lapangan harian untuk Field Crew.
+Promotor top-up kas ke crew → crew belanja di lapangan → sisa dikembalikan ke promotor.
+Siklus ini berulang setiap hari event berlangsung.
+
+### 3 Jenis Transaksi (WAJIB DIBEDAKAN)
+
+| Type | Arah | Deskripsi | Masuk P&L? |
+|------|------|-----------|------------|
+| `"topup"` | Promotor → Crew | Promotor kasih uang kas ke crew | ❌ TIDAK — mutasi internal |
+| `"expense"` | Crew → Vendor/Kebutuhan | Crew belanja/bayar sesuatu | ✅ YA — biaya nyata event |
+| `"return"` | Crew → Promotor | Crew kembalikan sisa kas | ❌ TIDAK — mutasi internal |
+
+### Aturan Kritis
+
+1. **P&L Report HANYA boleh menghitung transaksi `type: "expense"`**
+   - Jangan pakai `direction: "out"` sebagai filter — tidak cukup
+   - `"topup"` dan `"return"` sama-sama ada `direction` tapi BUKAN biaya
+
+2. **Saldo crew dihitung sebagai:**
+   ```
+   Saldo Crew = total topup - total expense - total return
+   ```
+
+3. **Kas utama promotor dihitung sebagai:**
+   ```
+   Kas Promotor = pemasukan event - total topup + total return
+   ```
+   (topup mengurangi kas promotor, return menambah kas promotor kembali)
+
+4. **JANGAN campur tabel `expenses` dengan petty cash**
+   - Tabel `expenses`: pengeluaran resmi event yang diinput promotor langsung
+   - Tabel `petty_cash_transactions`: semua transaksi kas lapangan crew
+   - P&L Report menggabungkan keduanya, tapi dari tabel yang berbeda
+
+### Arsitektur Tabel yang Direncanakan
+
+```
+petty_cash_accounts
+  id, eventId, userId (crew), role (nama divisi: "Produksi", "Operasional", dll)
+  balance (saldo saat ini — derived, bisa dihitung dari transactions)
+  createdAt
+
+petty_cash_transactions
+  id, accountId (FK ke petty_cash_accounts)
+  type: "topup" | "expense" | "return"  ← FIELD PALING KRITIS
+  amount, description, category?
+  createdAt, createdBy (userId — promotor atau crew)
+```
+
+### Field Crew Role System
+
+- Field Crew adalah user nexEvent dengan role berbeda dari Promotor
+- Promotor invite crew ke event dengan menyebut divisi mereka
+- Contoh divisi: "Produksi", "Operasional", "Talent", "Logistik", "Security"
+- Satu event bisa punya banyak crew dari divisi berbeda
+- Crew hanya bisa lihat event yang mereka di-assign
+- UI crew: mobile-only, super simpel — hanya 2 fungsi:
+  1. Catat pengeluaran (type: `"expense"`)
+  2. Catat pengembalian sisa (type: `"return"`)
+- Top-up (type: `"topup"`) HANYA bisa dilakukan oleh Promotor dari dashboard
+
+### Yang BELUM dibangun (jangan implementasi dulu tanpa instruksi)
+- Tabel `petty_cash_accounts` dan `petty_cash_transactions`
+- UI mobile untuk Field Crew
+- Sistem invite crew ke event
+- Integrasi petty cash ke P&L Report
+
 ## Next Priority (Roadmap)
 
-1. Integrasi Midtrans payment gateway (Sprint 2 dimajukan)
-2. Ticketing storefront B2C dengan Row-Level Locking
-3. CRON Job booking timeout 15 menit
+1. Selesaikan Expense Tracker (warna + kategori RAB dinamis) ← sedang berjalan
+2. Petty Cash System (Promotor dashboard + Field Crew mobile UI)
+3. P&L Report otomatis (gabungkan expenses + petty cash type:`"expense"`)
+4. Integrasi Midtrans payment gateway
+5. Ticketing storefront B2C dengan Row-Level Locking
+6. CRON Job booking timeout 15 menit
 
 _Update bagian ini setiap prioritas berubah, supaya Claude Code dan Claude.ai selalu tahu fokus development saat ini._
 
