@@ -2,10 +2,14 @@ import { NextRequest, NextResponse } from 'next/server';
 
 export const dynamic = 'force-dynamic';
 
-// Strip trailing /api or /api/ to prevent double-/api when env var already contains the prefix.
-// Priority: BACKEND_URL (server-only) → NEXT_PUBLIC_API_URL (inlined at build, may also exist at runtime) → localhost fallback.
-const RAW_BACKEND = process.env.BACKEND_URL ?? process.env.NEXT_PUBLIC_API_URL ?? '';
-const BACKEND_URL = RAW_BACKEND.replace(/\/api\/?$/, '').replace(/\/+$/, '') || 'http://localhost:5000';
+// Strip BOM (﻿), whitespace, and trailing /api — PowerShell echo can inject BOM into stdin.
+// Priority: BACKEND_URL (server-only) → NEXT_PUBLIC_API_URL → localhost fallback.
+const RAW_BACKEND = (process.env.BACKEND_URL ?? process.env.NEXT_PUBLIC_API_URL ?? '')
+  .replace(/^﻿/, '')
+  .trim()
+  .replace(/\/api\/?$/, '')
+  .replace(/\/+$/, '');
+const BACKEND_URL = RAW_BACKEND || 'http://localhost:5000';
 
 // Printed once at module init — visible in Vercel Runtime Logs under the function invocation.
 console.log('[PROXY INIT] process.env.BACKEND_URL        :', process.env.BACKEND_URL ?? '(not set)');
