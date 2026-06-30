@@ -131,3 +131,21 @@ File ini adalah log permanen bug yang sudah pernah terjadi di project ini besert
   - Lock UI tampil di halaman (bukan redirect/hidden menu), tombol upgrade ke `/dashboard/upgrade`
   - Sidebar: item "Expense Tracker" selalu tampil untuk semua user, badge amber "Pro" di sebelah label
 - Tag: #expense-tracker #pro-feature #prisma #feature-gating
+
+---
+
+## [2026-06-30] Expense Tracker — color palette salah + kategori hardcoded
+
+- Gejala: Halaman `/dashboard/expenses` menggunakan dark theme (bg-neutral-950, amber accent) yang tidak konsisten dengan dashboard yang menggunakan light theme (bg-white, emerald accent). Category dropdown menampilkan daftar hardcoded, bukan kategori RAB dari event yang dipilih.
+- Root cause: Implementasi awal menggunakan palette yang berbeda dari design system nexEvent. Kategori harusnya diambil dari tabel `budget_categories` milik event yang dipilih, bukan dari konstanta hardcoded.
+- File terkait:
+  - `client/src/app/dashboard/expenses/page.tsx`
+  - `server/controllers/expenses.controller.js`
+  - `server/routes/expenses.routes.js`
+- Fix:
+  - Semua warna di-replace ke palette nexEvent: `bg-white`, `border-slate-200`, `text-slate-900`, `text-emerald-800` (accent), `focus:border-emerald-500`. Amber hanya untuk badge PRO (`bg-amber-100 text-amber-800`).
+  - Tambah `getBudgetCategories` di controller — query `Budget → BudgetCategory` via `eventId`, return `{ success, categories: string[] }`.
+  - Tambah `GET /api/expenses/budget-categories?eventId=xxx` di routes (WAJIB didaftarkan SEBELUM `/:id` agar tidak ketubruk wildcard).
+  - Frontend fetch kategori setiap event berubah; fallback ke DEFAULT_CATEGORIES jika event tidak punya RAB atau fetch gagal.
+  - Reset `category` ke `categories[0]` setiap `categories` list berubah.
+- Tag: #expense-tracker #ui #color-palette #dynamic-categories #rab
