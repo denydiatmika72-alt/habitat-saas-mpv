@@ -3,30 +3,16 @@
 import { useState, useEffect } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
-import { Crown, Search, LayoutDashboard, ShieldCheck } from 'lucide-react'
-
-function decodeJwtEmail(token: string): string | null {
-  try {
-    const payload = token.split('.')[1]
-    const decoded = JSON.parse(atob(payload.replace(/-/g, '+').replace(/_/g, '/')))
-    return decoded.email ?? null
-  } catch {
-    return null
-  }
-}
+import { Crown, Search, LayoutDashboard } from 'lucide-react'
 
 export function Navbar() {
   const router = useRouter()
   const [isLoggedIn, setIsLoggedIn] = useState(false)
-  const [isAdmin, setIsAdmin]       = useState(false)
 
   useEffect(() => {
     const token = localStorage.getItem('token')
     if (!token) return
     setIsLoggedIn(true)
-    const email = decodeJwtEmail(token)
-    const adminEmails = (process.env.NEXT_PUBLIC_ADMIN_EMAILS ?? '').split(',').map(e => e.trim()).filter(Boolean)
-    setIsAdmin(!!email && adminEmails.includes(email))
   }, [])
 
   return (
@@ -53,15 +39,6 @@ export function Navbar() {
         <div className="ml-auto flex shrink-0 items-center gap-2">
           {isLoggedIn ? (
             <>
-              {isAdmin && (
-                <button
-                  onClick={() => router.push('/admin')}
-                  className="flex items-center gap-2 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-1.5 text-sm font-medium text-emerald-800 transition-colors hover:bg-emerald-100"
-                >
-                  <ShieldCheck className="size-4" />
-                  Admin Panel
-                </button>
-              )}
               <button
                 onClick={() => router.push('/dashboard')}
                 className="flex items-center gap-2 rounded-lg bg-emerald-800 px-3 py-1.5 text-sm font-medium text-white transition-colors hover:bg-emerald-900"

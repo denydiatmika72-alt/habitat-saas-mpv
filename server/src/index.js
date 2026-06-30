@@ -1,5 +1,4 @@
 ﻿require('dotenv').config({ path: require('path').resolve(__dirname, '../.env'), override: true })
-console.log('[ENV CHECK] ADMIN_EMAILS:', process.env.ADMIN_EMAILS)
 
 if (process.env.NODE_ENV !== 'production') {
   process.env.NODE_TLS_REJECT_UNAUTHORIZED = '0';
@@ -10,12 +9,11 @@ const cors = require('cors');
 
 const path = require('path');
 const authRoutes          = require('./routes/auth.routes');
-const adminRoutes         = require('../routes/admin.routes');
 const publicEventsRoutes  = require('../routes/publicEvents.routes');
 const eventRoutes         = require('../routes/event.routes');
 const budgetRoutes        = require('../routes/budget.routes');
 const sponsorRoutes       = require('../routes/sponsor.routes');
-// const invoiceRoutes    = require('../routes/invoice.routes'); // DISABLED: pdfkit not installed on VPS
+const invoiceRoutes       = require('../routes/invoice.routes');
 const settingsRoutes      = require('../routes/settings.routes');
 const purchaseOrderRoutes = require('../routes/purchaseOrder.routes');
 
@@ -65,14 +63,13 @@ app.use('/public', express.static(path.join(__dirname, '..', 'public')));
 app.get('/', (req, res) => res.json({ success: true, message: '🎵 nexEvent API is running!' }));
 
 app.use('/api/auth',          authRoutes);
-app.use('/api/admin',         adminRoutes);
 app.use('/api/events/public', publicEventsRoutes);
 app.use('/api/events',        eventRoutes);
-app.use('/api/budgets',  budgetRoutes);
-app.use('/api/sponsor',  sponsorRoutes);
-// app.use('/api/invoices', invoiceRoutes); // DISABLED: pdfkit not installed on VPS
-app.use('/api/settings', settingsRoutes);
-app.use('/api/po',       purchaseOrderRoutes);
+app.use('/api/budgets',       budgetRoutes);
+app.use('/api/sponsor',       sponsorRoutes);
+app.use('/api/invoices',      invoiceRoutes);
+app.use('/api/settings',      settingsRoutes);
+app.use('/api/po',            purchaseOrderRoutes);
 
 app.use((req, res) => {
   console.warn('[404] Route tidak ditemukan:', req.method, req.originalUrl);
