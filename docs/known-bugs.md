@@ -149,3 +149,36 @@ File ini adalah log permanen bug yang sudah pernah terjadi di project ini besert
   - Frontend fetch kategori setiap event berubah; fallback ke DEFAULT_CATEGORIES jika event tidak punya RAB atau fetch gagal.
   - Reset `category` ke `categories[0]` setiap `categories` list berubah.
 - Tag: #expense-tracker #ui #color-palette #dynamic-categories #rab
+
+---
+
+## [2026-07-01] Field Crew System + Petty Cash — Implementasi baru
+
+- Gejala: (Bukan bug — catatan implementasi fitur baru)
+- Root cause: Platform butuh sistem manajemen kas lapangan (petty cash) untuk crew event, terpisah dari Expense Tracker promotor.
+- File terkait:
+  - `server/prisma/schema.prisma` — tambah field `role` ke User, model baru: `EventCrew`, `PettyCashAccount`, `PettyCashTransaction`
+  - `server/src/controllers/auth.controller.js` — register terima `role` param, login include `role` di JWT
+  - `server/controllers/crew.controller.js` — inviteCrew, getEventCrew, removeCrew, getMyCrew
+  - `server/controllers/pettycash.controller.js` — topupCrew (promotor), getMyAccount (crew), createTransaction (crew), getPromoterOverview (promotor)
+  - `server/routes/crew.routes.js` + `server/routes/pettycash.routes.js`
+  - `server/src/index.js` — register `/api/crew` dan `/api/petty-cash`
+  - `client/src/app/dashboard/crew/page.tsx` — Crew Management page (Pro-gated, promotor)
+  - `client/src/app/field/page.tsx` — Mobile UI untuk crew (standalone, dark theme, no dashboard layout)
+  - `client/src/components/dashboard/sidebar.tsx` — tambah "Field Crew" nav item dengan Pro badge
+- Fix/Implementasi:
+  - Schema: `User.role` default `"promotor"`, valid values `"promotor" | "crew"`
+  - Register: body accept `role` param, validasi whitelist `["promotor","crew"]`, default ke `"promotor"` jika tidak valid
+  - Login: `role` dimasukkan ke JWT payload → tersedia di `req.user.role` di semua controllers
+  - `POST /api/crew/invite` (promotor only): cek email exist → cek role crew → cek duplikat → buat EventCrew + PettyCashAccount dalam satu transaksi
+  - `GET /api/crew?eventId=xxx` (promotor): return list crew dengan balance (= topup - expense - return)
+  - `DELETE /api/crew/:crewId?eventId=xxx` (promotor): hapus EventCrew + PettyCashAccount (cascade hapus transactions)
+  - `GET /api/crew/my-events` (crew): return semua event assignments crew beserta balance
+  - `POST /api/petty-cash/topup` (promotor only): create transaction type="topup"
+  - `POST /api/petty-cash/transaction` (crew only): hanya type="expense" atau "return", type="topup" → 400
+  - `GET /api/petty-cash/my-account?eventId=xxx` (crew): return account + balance + transactions
+  - `GET /api/petty-cash/overview?eventId=xxx` (promotor): return all accounts + summary (totalTopup, totalExpense for P&L, totalReturn, netCashOut)
+  - KRITIS: P&L hanya boleh pakai `type:"expense"` — bukan `direction:"out"` (topup dan return bukan biaya nyata)
+  - Route ordering: `GET /crew/my-events` harus didaftarkan SEBELUM `DELETE /crew/:crewId` agar tidak ketubruk wildcard
+  - `/field` halaman standalone (bukan di bawah `/dashboard`) — tidak pakai layout dashboard, dark theme OK
+- Tag: #field-crew #petty-cash #prisma #schema #role #mobile-ui #pro-feature
