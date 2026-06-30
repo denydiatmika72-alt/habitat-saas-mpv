@@ -143,6 +143,10 @@ export default function ExpensesPage() {
           <p className="mt-0.5 text-sm text-slate-500">
             Catat dan pantau pengeluaran event secara real-time.
           </p>
+          <p className="mt-1 text-xs text-slate-400">
+            Pengeluaran ini dicatat langsung oleh promotor. Pengeluaran crew lapangan dapat dilihat di menu{" "}
+            <Link href="/dashboard/crew" className="font-medium text-emerald-700 hover:underline">Field Crew</Link>.
+          </p>
         </div>
       </div>
 

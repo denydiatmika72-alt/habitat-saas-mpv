@@ -166,6 +166,9 @@ export default function CrewPage() {
           <p className="mt-0.5 text-sm text-slate-500">
             Kelola kas lapangan crew dan pantau pengeluaran per divisi.
           </p>
+          <p className="mt-1 text-xs text-slate-400">
+            Pengeluaran crew lapangan akan digabungkan dengan expense tracker di Laporan P&amp;L otomatis.
+          </p>
         </div>
       </div>
 
