@@ -1,5 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server'
 
+function sanitizeUrl(val: string | undefined): string {
+  return (val ?? '').replace(/[\uFEFF\u200B-\u200D]/g, '').trim().replace(/\/+$/, '');
+}
+
 export async function GET(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
@@ -7,7 +11,7 @@ export async function GET(
   const { id } = await params
   const token = request.headers.get('Authorization') || ''
 
-  const base = process.env.BACKEND_URL ?? process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:5000'
+  const base = sanitizeUrl(process.env.BACKEND_URL ?? process.env.NEXT_PUBLIC_API_URL) || 'http://localhost:5000'
   const backendUrl = `${base}/api/po/${id}/pdf`
 
   try {

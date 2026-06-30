@@ -2,7 +2,10 @@ import { NextRequest, NextResponse } from 'next/server';
 
 export const dynamic = 'force-dynamic';
 
-const BACKEND_URL = process.env.BACKEND_URL ?? process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:5000';
+function sanitizeUrl(val: string | undefined): string {
+  return (val ?? '').replace(/[\uFEFF\u200B-\u200D]/g, '').trim().replace(/\/+$/, '');
+}
+const BACKEND_URL = sanitizeUrl(process.env.BACKEND_URL ?? process.env.NEXT_PUBLIC_API_URL) || 'http://localhost:5000';
 
 // GET /api/pdf?path=/public/invoices/xxx.pdf
 export async function GET(req: NextRequest) {
