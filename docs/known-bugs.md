@@ -66,3 +66,13 @@ File ini adalah log permanen bug yang sudah pernah terjadi di project ini besert
 - Fix: Gunakan port 3001 untuk Nginx (proxy ke Express port 5000), hindari port 80 dan 8080 yang sudah dipakai Docker.
 - Tag: #nginx #deployment #vps #port-conflict
 
+---
+
+## [2026-06-30] `prisma migrate dev` gagal — drift detection karena tidak ada migration files
+
+- Gejala: Menjalankan `npm run migrate` menghasilkan error "Drift detected: Your database schema is not in sync with your migration history" karena field `phone` ada di DB tapi tidak di migration history.
+- Root cause: Database di-setup menggunakan `prisma db push` (bukan `prisma migrate dev`), sehingga tidak ada migration files di `server/prisma/migrations/`. Ketika mencoba menambahkan field baru via `migrate dev`, Prisma mendeteksi drift antara schema file dan DB state.
+- File terkait: `server/prisma/schema.prisma`
+- Fix: Gunakan `npx prisma db push` untuk apply schema changes, lalu `npx prisma generate` untuk regenerate client. Jangan gunakan `prisma migrate dev` karena project ini tidak punya migration history.
+- Tag: #prisma #migration #db-push #schema
+
