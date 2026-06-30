@@ -13,26 +13,22 @@ _Last updated: 2026-06-30_
 - Email notification on register — Resend v6, fire-and-forget di auth.controller.js
 - `deploy.sh` created — script deployment konsisten untuk VPS
 - `CLAUDE.md` created — instruksi permanen untuk AI assistant
+- ✅ Bug #1 RESOLVED (2026-06-30) — Register "Server error" — fix: prisma generate via deploy.sh
+- ✅ Bug #2 RESOLVED (2026-06-30) — Sponsor deal tidak muncul di dashboard — fix: error handling di sponsor-portal handleSubmit + error message ditampilkan ke user
 
 ---
 
 ## Bugs Pending
 
-### 1. Register endpoint returns "Server error"
-- **Root cause**: `prisma generate` belum dijalankan setelah migrasi field `phone`
-- **Fix**: jalankan `deploy.sh` di VPS (sudah include `npx prisma generate` + `npm install`)
-
-### 2. Sponsor deal tidak muncul di dashboard setelah checkout
-- **Root cause**: `handleSubmit` di sponsor-portal sebelumnya swallow semua error (`.catch(() => {})`), deal gagal tersimpan ke DB tapi user tetap melihat halaman sukses
-- **Fix**: sudah di-commit (cek `res.ok`, throw on failure, reset `submitting` on error) — perlu deploy ke VPS
+— Tidak ada bug aktif —
 
 ---
 
 ## Next Priority
 
-1. **Fix register bug** — jalankan `deploy.sh` di VPS
-2. **Fix sponsor deal dashboard sync** — deploy commit terakhir ke VPS
-3. **Payment Gateway Midtrans** — dimajukan dari Sprint 2
+1. Integrasi Midtrans payment gateway (Sprint 2 dimajukan)
+2. Ticketing storefront B2C dengan Row-Level Locking
+3. CRON Job booking timeout 15 menit
 
 ---
 
