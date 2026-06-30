@@ -10,6 +10,7 @@ import {
   ReceiptText,
   BarChart2,
   Crown,
+  ShieldCheck,
 } from "lucide-react"
 import { cn } from "@/lib/utils"
 
@@ -31,6 +32,7 @@ const nav: NavItem[] = [
   { label: "Vendor & Talent", icon: Users, onClick: () => alert("Fitur Vendor Segera Hadir") },
   { label: "Invoice & Purchase Order", icon: ReceiptText, href: "/dashboard/invoice" },
   { label: "Laporan P&L", icon: BarChart2, onClick: () => alert("Fitur Laporan Segera Hadir") },
+  { label: "Approve User", icon: ShieldCheck, href: "/dashboard/admin" },
 ]
 
 export function Sidebar() {

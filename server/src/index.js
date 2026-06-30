@@ -9,6 +9,7 @@ const cors = require('cors');
 
 const path = require('path');
 const authRoutes          = require('./routes/auth.routes');
+const adminRoutes         = require('./routes/admin.routes');
 const publicEventsRoutes  = require('../routes/publicEvents.routes');
 const eventRoutes         = require('../routes/event.routes');
 const budgetRoutes        = require('../routes/budget.routes');
@@ -63,6 +64,7 @@ app.use('/public', express.static(path.join(__dirname, '..', 'public')));
 app.get('/', (req, res) => res.json({ success: true, message: '🎵 nexEvent API is running!' }));
 
 app.use('/api/auth',          authRoutes);
+app.use('/api/admin',         adminRoutes);
 app.use('/api/events/public', publicEventsRoutes);
 app.use('/api/events',        eventRoutes);
 app.use('/api/budgets',       budgetRoutes);
