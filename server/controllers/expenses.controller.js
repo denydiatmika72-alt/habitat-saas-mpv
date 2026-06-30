@@ -79,4 +79,29 @@ const deleteExpense = async (req, res) => {
   }
 };
 
-module.exports = { getExpenses, createExpense, deleteExpense };
+const getBudgetCategories = async (req, res) => {
+  const { eventId } = req.query;
+  if (!eventId)
+    return res.status(400).json({ success: false, message: 'eventId wajib diisi.' });
+
+  try {
+    const event = await prisma.event.findFirst({
+      where: { id: eventId, promotor_id: req.user.id },
+    });
+    if (!event)
+      return res.status(404).json({ success: false, message: 'Event tidak ditemukan.' });
+
+    const budget = await prisma.budget.findFirst({
+      where: { eventId },
+      select: { categories: { select: { name: true }, orderBy: { name: 'asc' } } },
+    });
+
+    const categories = budget?.categories.map((c) => c.name) ?? [];
+    return res.status(200).json({ success: true, categories });
+  } catch (err) {
+    console.error('[GET BUDGET CATEGORIES ERROR]', err);
+    return res.status(500).json({ success: false, message: 'Server error.' });
+  }
+};
+
+module.exports = { getExpenses, createExpense, deleteExpense, getBudgetCategories };

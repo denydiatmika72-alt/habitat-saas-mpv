@@ -20,7 +20,7 @@ const IDR = new Intl.NumberFormat("id-ID", {
   maximumFractionDigits: 0,
 })
 
-const CATEGORIES = ["Konsumsi", "Transportasi", "Logistik", "Operasional", "Lainnya"]
+const DEFAULT_CATEGORIES = ["Konsumsi", "Transportasi", "Logistik", "Operasional", "Lainnya"]
 
 const getToken = () =>
   typeof window !== "undefined" ? (localStorage.getItem("token") ?? "") : ""
@@ -37,11 +37,13 @@ export default function ExpensesPage() {
   const [expenses, setExpenses] = useState<Expense[]>([])
   const [fetchingExpenses, setFetchingExpenses] = useState(false)
 
+  const [categories, setCategories] = useState<string[]>(DEFAULT_CATEGORIES)
   const [description, setDescription] = useState("")
   const [amount, setAmount] = useState("")
-  const [category, setCategory] = useState(CATEGORIES[0])
+  const [category, setCategory] = useState(DEFAULT_CATEGORIES[0])
   const [submitting, setSubmitting] = useState(false)
 
+  // Fetch events on mount
   useEffect(() => {
     fetch("/api/events", { headers: authHeaders() })
       .then((r) => (r.ok ? r.json() : null))
@@ -49,6 +51,28 @@ export default function ExpensesPage() {
       .catch(() => {})
   }, [])
 
+  // Fetch RAB categories when event changes
+  useEffect(() => {
+    if (!selectedEventId) return
+    fetch(`/api/expenses/budget-categories?eventId=${selectedEventId}`, {
+      headers: authHeaders(),
+    })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((data) => {
+        const cats =
+          data?.success && data.categories.length > 0
+            ? data.categories
+            : DEFAULT_CATEGORIES
+        setCategories(cats)
+        setCategory(cats[0])
+      })
+      .catch(() => {
+        setCategories(DEFAULT_CATEGORIES)
+        setCategory(DEFAULT_CATEGORIES[0])
+      })
+  }, [selectedEventId])
+
+  // Fetch expenses when event selected and user is Pro
   useEffect(() => {
     if (!selectedEventId || !isPro) return
     setFetchingExpenses(true)
@@ -75,7 +99,7 @@ export default function ExpensesPage() {
         setExpenses((prev) => [data.data, ...prev])
         setDescription("")
         setAmount("")
-        setCategory(CATEGORIES[0])
+        setCategory(categories[0])
       }
     } finally {
       setSubmitting(false)
@@ -95,26 +119,28 @@ export default function ExpensesPage() {
   if (userLoading) {
     return (
       <div className="flex min-h-[60vh] items-center justify-center">
-        <div className="h-8 w-8 animate-spin rounded-full border-2 border-amber-500 border-t-transparent" />
+        <div className="h-8 w-8 animate-spin rounded-full border-2 border-emerald-800 border-t-transparent" />
       </div>
     )
   }
 
   return (
-    <div className="space-y-6">
+    <div className="mx-auto flex w-full max-w-7xl flex-col gap-6">
       {/* Header */}
       <div className="flex items-start gap-4">
-        <div className="flex size-12 items-center justify-center rounded-2xl bg-amber-500/10 text-amber-500">
-          <Receipt className="size-6" />
+        <div className="flex size-11 items-center justify-center rounded-xl bg-emerald-50 text-emerald-800">
+          <Receipt className="size-5" />
         </div>
         <div>
           <div className="flex items-center gap-2">
-            <h1 className="text-xl font-bold text-slate-900">Expense Tracker</h1>
-            <span className="rounded-full bg-amber-500 px-2 py-0.5 text-[10px] font-black text-neutral-950">
+            <h1 className="text-2xl font-semibold tracking-tight text-slate-900">
+              Expense Tracker
+            </h1>
+            <span className="rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-bold text-amber-800">
               PRO
             </span>
           </div>
-          <p className="text-sm text-slate-500">
+          <p className="mt-0.5 text-sm text-slate-500">
             Catat dan pantau pengeluaran event secara real-time.
           </p>
         </div>
@@ -129,7 +155,7 @@ export default function ExpensesPage() {
             setSelectedEventId(e.target.value)
             setExpenses([])
           }}
-          className="w-full max-w-sm rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm text-slate-900 shadow-sm focus:border-amber-500 focus:outline-none"
+          className="max-w-sm truncate rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-700 outline-none transition-colors focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500/30"
         >
           <option value="">-- Pilih event --</option>
           {events.map((ev) => (
@@ -140,11 +166,11 @@ export default function ExpensesPage() {
         </select>
       </div>
 
-      {/* No event selected placeholder */}
+      {/* No event selected */}
       {!selectedEventId && (
-        <div className="rounded-2xl border border-neutral-800 bg-neutral-900/20 py-12 text-center">
-          <TrendingDown className="mx-auto mb-3 size-10 text-neutral-600" />
-          <p className="text-sm text-neutral-500">Pilih event untuk mulai mencatat pengeluaran.</p>
+        <div className="rounded-xl border border-slate-200 bg-white py-14 text-center">
+          <TrendingDown className="mx-auto mb-3 size-10 text-slate-300" />
+          <p className="text-sm text-slate-400">Pilih event untuk mulai mencatat pengeluaran.</p>
         </div>
       )}
 
@@ -152,21 +178,21 @@ export default function ExpensesPage() {
       {selectedEventId && (
         !isPro ? (
           /* Starter lock UI */
-          <div className="rounded-2xl border border-neutral-800 bg-neutral-900/40 p-10 text-center">
+          <div className="rounded-xl border border-slate-200 bg-white p-10 text-center">
             <div className="flex flex-col items-center gap-4">
-              <div className="flex size-14 items-center justify-center rounded-2xl bg-amber-500/10">
-                <Lock className="size-7 text-amber-500" />
+              <div className="flex size-14 items-center justify-center rounded-xl bg-emerald-50">
+                <Lock className="size-7 text-emerald-800" />
               </div>
               <div>
-                <p className="text-lg font-bold text-white">🔒 Fitur Pro</p>
-                <p className="mx-auto mt-2 max-w-xs text-sm leading-relaxed text-neutral-400">
+                <p className="text-lg font-semibold text-slate-900">🔒 Fitur Pro</p>
+                <p className="mx-auto mt-2 max-w-xs text-sm leading-relaxed text-slate-500">
                   Expense Tracker tersedia untuk pengguna Pro. Upgrade ke Pro untuk mencatat
                   dan memantau pengeluaran event secara real-time.
                 </p>
               </div>
               <Link
                 href="/dashboard/upgrade"
-                className="mt-2 inline-flex items-center gap-2 rounded-xl bg-amber-500 px-6 py-2.5 text-sm font-black text-neutral-950 transition-colors hover:bg-amber-400"
+                className="mt-2 inline-flex items-center gap-2 rounded-lg bg-emerald-800 px-6 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-emerald-900"
               >
                 Upgrade ke Pro →
               </Link>
@@ -178,20 +204,20 @@ export default function ExpensesPage() {
             {/* Left: summary + form */}
             <div className="space-y-4 lg:col-span-2">
               {/* Summary */}
-              <div className="rounded-2xl border border-neutral-800 bg-neutral-900/40 p-5">
-                <p className="text-xs font-medium uppercase tracking-widest text-neutral-500">
+              <div className="rounded-xl border border-slate-200 bg-white p-5">
+                <p className="text-xs font-medium uppercase tracking-[0.18em] text-slate-500">
                   Total Pengeluaran
                 </p>
-                <p className="mt-1 text-2xl font-black text-amber-400">{IDR.format(total)}</p>
-                <p className="mt-1 text-xs text-neutral-500">{expenses.length} transaksi tercatat</p>
+                <p className="mt-1 text-2xl font-bold text-emerald-800">{IDR.format(total)}</p>
+                <p className="mt-1 text-xs text-slate-500">{expenses.length} transaksi tercatat</p>
               </div>
 
               {/* Form */}
-              <div className="rounded-2xl border border-neutral-800 bg-neutral-900/40 p-5">
-                <p className="mb-4 text-sm font-semibold text-white">Catat Pengeluaran</p>
+              <div className="rounded-xl border border-slate-200 bg-white p-5">
+                <p className="mb-4 text-sm font-semibold text-slate-900">Catat Pengeluaran</p>
                 <form onSubmit={handleSubmit} className="space-y-3">
                   <div>
-                    <label className="mb-1 block text-xs font-medium text-neutral-400">
+                    <label className="mb-1 block text-xs font-medium text-slate-500">
                       Deskripsi
                     </label>
                     <input
@@ -200,11 +226,11 @@ export default function ExpensesPage() {
                       onChange={(e) => setDescription(e.target.value)}
                       placeholder="Contoh: Sewa sound system"
                       required
-                      className="w-full rounded-xl border border-neutral-800 bg-neutral-950 px-3 py-2.5 text-sm text-white placeholder:text-neutral-600 focus:border-amber-500 focus:outline-none"
+                      className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2.5 text-sm text-slate-900 placeholder:text-slate-400 outline-none transition-colors focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500/30"
                     />
                   </div>
                   <div>
-                    <label className="mb-1 block text-xs font-medium text-neutral-400">
+                    <label className="mb-1 block text-xs font-medium text-slate-500">
                       Jumlah (IDR)
                     </label>
                     <input
@@ -214,19 +240,19 @@ export default function ExpensesPage() {
                       onChange={(e) => setAmount(e.target.value.replace(/[^0-9]/g, ""))}
                       placeholder="0"
                       required
-                      className="w-full rounded-xl border border-neutral-800 bg-neutral-950 px-3 py-2.5 text-sm text-white placeholder:text-neutral-600 focus:border-amber-500 focus:outline-none"
+                      className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2.5 text-sm text-slate-900 placeholder:text-slate-400 outline-none transition-colors focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500/30"
                     />
                   </div>
                   <div>
-                    <label className="mb-1 block text-xs font-medium text-neutral-400">
+                    <label className="mb-1 block text-xs font-medium text-slate-500">
                       Kategori
                     </label>
                     <select
                       value={category}
                       onChange={(e) => setCategory(e.target.value)}
-                      className="w-full rounded-xl border border-neutral-800 bg-neutral-950 px-3 py-2.5 text-sm text-white focus:border-amber-500 focus:outline-none"
+                      className="w-full rounded-lg border border-slate-200 bg-slate-50 px-3 py-2.5 text-sm text-slate-700 outline-none transition-colors focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500/30"
                     >
-                      {CATEGORIES.map((c) => (
+                      {categories.map((c) => (
                         <option key={c}>{c}</option>
                       ))}
                     </select>
@@ -234,7 +260,7 @@ export default function ExpensesPage() {
                   <button
                     type="submit"
                     disabled={submitting}
-                    className="flex w-full items-center justify-center gap-2 rounded-xl bg-amber-500 py-2.5 text-sm font-black text-neutral-950 transition-colors hover:bg-amber-400 disabled:opacity-50"
+                    className="flex w-full items-center justify-center gap-2 rounded-lg bg-emerald-800 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-emerald-900 disabled:opacity-50"
                   >
                     <Plus className="size-4" />
                     {submitting ? "Menyimpan..." : "Catat Pengeluaran"}
@@ -245,14 +271,14 @@ export default function ExpensesPage() {
 
             {/* Right: feed */}
             <div className="lg:col-span-3">
-              <div className="rounded-2xl border border-neutral-800 bg-neutral-900/40 p-5">
-                <p className="mb-4 text-sm font-semibold text-white">Riwayat Pengeluaran</p>
+              <div className="rounded-xl border border-slate-200 bg-white p-5">
+                <p className="mb-4 text-sm font-semibold text-slate-900">Riwayat Pengeluaran</p>
                 {fetchingExpenses ? (
                   <div className="flex justify-center py-8">
-                    <div className="h-6 w-6 animate-spin rounded-full border-2 border-amber-500 border-t-transparent" />
+                    <div className="h-6 w-6 animate-spin rounded-full border-2 border-emerald-800 border-t-transparent" />
                   </div>
                 ) : expenses.length === 0 ? (
-                  <p className="py-8 text-center text-sm text-neutral-500">
+                  <p className="py-8 text-center text-sm text-slate-400">
                     Belum ada pengeluaran tercatat.
                   </p>
                 ) : (
@@ -260,17 +286,17 @@ export default function ExpensesPage() {
                     {expenses.map((exp) => (
                       <li
                         key={exp.id}
-                        className="flex items-start justify-between gap-3 rounded-xl border border-neutral-800 bg-neutral-950/50 px-4 py-3"
+                        className="flex items-start justify-between gap-3 rounded-lg border border-slate-100 bg-slate-50 px-4 py-3"
                       >
                         <div className="min-w-0">
-                          <p className="truncate text-sm font-medium text-white">
+                          <p className="truncate text-sm font-medium text-slate-900">
                             {exp.description}
                           </p>
                           <div className="mt-1 flex items-center gap-2">
-                            <span className="rounded-full bg-neutral-800 px-2 py-0.5 text-[10px] text-neutral-400">
+                            <span className="rounded-full bg-slate-200 px-2 py-0.5 text-[10px] text-slate-600">
                               {exp.category}
                             </span>
-                            <span className="text-[10px] text-neutral-500">
+                            <span className="text-[10px] text-slate-400">
                               {new Date(exp.date).toLocaleDateString("id-ID", {
                                 day: "numeric",
                                 month: "short",
@@ -280,12 +306,12 @@ export default function ExpensesPage() {
                           </div>
                         </div>
                         <div className="flex shrink-0 items-center gap-3">
-                          <span className="text-sm font-bold text-amber-400">
+                          <span className="text-sm font-semibold text-emerald-700">
                             {IDR.format(exp.amount)}
                           </span>
                           <button
                             onClick={() => handleDelete(exp.id)}
-                            className="flex size-7 items-center justify-center rounded-lg text-neutral-500 transition-colors hover:bg-neutral-800 hover:text-red-400"
+                            className="flex size-7 items-center justify-center rounded-lg text-slate-400 transition-colors hover:bg-red-50 hover:text-red-500"
                           >
                             <X className="size-3.5" />
                           </button>
