@@ -253,3 +253,16 @@ File ini adalah log permanen bug yang sudah pernah terjadi di project ini besert
   - Tambah note info di `/dashboard/expenses`: "Pengeluaran ini dicatat langsung oleh promotor. Pengeluaran crew lapangan dapat dilihat di menu Field Crew."
   - Tambah note info di `/dashboard/crew`: "Pengeluaran crew lapangan akan digabungkan dengan expense tracker di Laporan P&L otomatis."
 - Tag: #field-crew #ui #color-palette #mobile-ux #consistency
+
+---
+
+## [2026-07-01] /field page — icon button tidak center + label transaksi plain text
+
+- Gejala: Icon pada button "CATAT PENGELUARAN" dan "KEMBALIKAN SISA" terlihat terlalu ke kiri dan tidak sejajar dengan teks, terutama saat teks button wrap di layar sempit. Label type transaksi di riwayat hari ini tampil sebagai plain text abu-abu tanpa warna yang membedakan topup/expense/return.
+- Root cause: Icon menggunakan `size-4` (Tailwind shorthand) tanpa `shrink-0`, sehingga bisa mengecil saat flex container kekurangan ruang. Teks button tidak dibungkus `<span>`, sehingga flex `items-center` tidak bisa bekerja optimal ketika teks multi-baris. Label type memakai `capitalize text-slate-400` saja tanpa conditional color.
+- File terkait: `client/src/app/field/page.tsx`
+- Fix:
+  - Ganti icon class dari `size-4` ke `h-5 w-5 shrink-0` pada kedua action button
+  - Bungkus teks button dalam `<span>` agar flex centering konsisten
+  - Ganti label type dari `<p className="capitalize text-slate-400">` ke conditional: topup → `text-blue-600`, expense → `text-red-500`, return → `text-emerald-600` dengan label kapitalisasi manual ("Topup"/"Expense"/"Return")
+- Tag: #field-crew #ui #button #icon-alignment #mobile-ux
