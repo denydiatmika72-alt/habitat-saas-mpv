@@ -214,3 +214,20 @@ File ini adalah log permanen bug yang sudah pernah terjadi di project ini besert
   - Success screen untuk crew menampilkan hint URL `/field`
   - Verifikasi end-to-end: register crew → activate → invite via /dashboard/crew → `GET /api/crew/my-events` return assignment dengan `balance: 0` → `POST /api/petty-cash/transaction` dengan `type:"topup"` return 400 (bukan 403 — sudah lolos auth check, ditolak karena business rule crew tidak bisa topup)
 - Tag: #register #role #field-crew #ui #ux
+
+---
+
+## [2026-07-01] Login redirect semua user ke /dashboard — crew tidak diarahkan ke /field
+
+- Gejala: User dengan role "crew" setelah login berhasil diarahkan ke `/dashboard` (halaman promotor) dan bisa mengakses seluruh dashboard. User dengan role "promotor" yang buka `/field` bisa masuk ke halaman crew.
+- Root cause: Login page (`login/page.tsx`) selalu memanggil `router.push('/dashboard')` tanpa memeriksa role dari response API. Dashboard layout tidak memiliki auth guard. Field page sudah ada wrong-role view tapi belum ada perlindungan di dashboard.
+- File terkait:
+  - `client/src/app/login/page.tsx`
+  - `client/src/components/dashboard/dashboard-guard.tsx` (file baru)
+  - `client/src/app/dashboard/layout.tsx`
+- Fix:
+  - **Login page**: setelah login berhasil, simpan `user_role` ke localStorage (`data.data.role`), lalu redirect berdasarkan role: `"crew"` → `/field`, selainnya → `/dashboard`. Ganti `alert()` dengan inline error message.
+  - **DashboardGuard** (komponen client baru): fast-path cek `localStorage.getItem("user_role")`, jika `"crew"` langsung redirect ke `/field`. Fallback: fetch `GET /api/auth/me` untuk token lama yang tidak punya `user_role` di localStorage; jika role `"crew"` → redirect ke `/field`, jika tidak ada token → redirect ke `/login`.
+  - **dashboard/layout.tsx**: wrap semua halaman dashboard dengan `<DashboardGuard>`. Layout tetap server component, Guard adalah client component.
+  - **field/page.tsx**: sudah ter-handle sejak Field Crew feature — jika `role !== "crew"` tampilkan "wrong-role" view dengan link ke `/dashboard` (tidak redirect otomatis, sesuai spec).
+- Tag: #auth #redirect #role #field-crew #login #dashboard-guard
