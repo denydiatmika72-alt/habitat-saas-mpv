@@ -13,14 +13,16 @@ nexevent-saas/
 │       ├── dashboard/         # Halaman promotor
 │       ├── sponsor-portal/    # Portal sponsor (public)
 │       └── api/[...proxy]/    # Proxy → backend Express
-└── server/          # Express backend
-    ├── src/
-    │   ├── index.js            # Entry point (port 5000)
-    │   ├── lib/prisma.js       # Prisma client (pakai adapter-pg)
-    │   └── middleware/auth.middleware.js  # Export: protect & verifyToken (alias)
-    ├── controllers/
-    ├── routes/
-    └── prisma/schema.prisma
+├── server/          # Express backend
+│   ├── src/
+│   │   ├── index.js            # Entry point (port 5000)
+│   │   ├── lib/prisma.js       # Prisma client (pakai adapter-pg)
+│   │   └── middleware/auth.middleware.js  # Export: protect & verifyToken (alias)
+│   ├── controllers/
+│   ├── routes/
+│   └── prisma/schema.prisma
+└── docs/
+    └── known-bugs.md   # Log bug & solusi — WAJIB dicek sebelum debugging baru
 ```
 
 ## Konfigurasi Dev
@@ -31,8 +33,8 @@ nexevent-saas/
 
 ## Penting: Auth Middleware
 
-File: `server/src/middleware/auth.middleware.js`  
-Export: `{ protect, verifyToken: protect }` — kedua nama adalah alias.  
+File: `server/src/middleware/auth.middleware.js`
+Export: `{ protect, verifyToken: protect }` — kedua nama adalah alias.
 Semua route file import `{ verifyToken }`.
 
 ## Prisma
@@ -48,6 +50,7 @@ Semua route file import `{ verifyToken }`.
 - **Sponsor Management**: Generate invite code → sponsor daftar di portal → buat deal
 - **Invoice**: Generate invoice PDF dari deal sponsor, update status (Belum Dibayar / DP Terbayar / Lunas)
 - **Document Table** (`/dashboard`): Tab "Invoice" menampilkan **semua invoice langsung** (bukan filter per event), karena deal historis punya `eventId = null`
+- **Plan/Tier System**: Field `plan` di tabel `users`. Values: `"starter"` (default) atau `"pro"`. Hook `useUser.ts` expose `{ user, loading, isPro }` untuk feature gating di frontend. `user_plan` disimpan di localStorage setelah login.
 
 ## Alur: Invite Code → Deal → Invoice → Document Table
 
@@ -72,10 +75,13 @@ Semua route file import `{ verifyToken }`.
 - Valid status values: `"Belum Dibayar"`, `"DP Terbayar"`, `"Lunas"`
 - Field `paidAt` diisi otomatis saat status → "Lunas"
 
-## Bug yang Sudah Diperbaiki (2026-06-24)
+## Known Bugs & Fixes
 
-1. **PATCH /api/invoices/:id/status → 500**: Karena `verifyToken` tidak ada di export middleware (hanya `protect`). Fix: tambah `verifyToken: protect` sebagai alias.
-2. **Invoice tidak muncul di tab Invoice** (deals lama punya `eventId = null`): Fix: tab Invoice sekarang menampilkan semua invoice langsung tanpa filter per event. `document-table.tsx` ditulis ulang.
+Lihat **`docs/known-bugs.md`** untuk daftar lengkap bug yang sudah pernah terjadi beserta solusinya.
+
+**WAJIB diikuti Claude Code di setiap sesi debugging:**
+1. **Sebelum mulai debugging** apapun, cek dulu `docs/known-bugs.md` — kalau gejala mirip dengan entry yang sudah ada, coba solusi tersebut dulu sebelum analisis dari nol.
+2. **Setelah fix berhasil diverifikasi**, tambahkan entry baru ke `docs/known-bugs.md` mengikuti format yang sudah ada di file tersebut. Jangan skip langkah ini meskipun bug terasa kecil — tujuannya supaya bug yang sama tidak dianalisis ulang dari nol di masa depan.
 
 ## Deployment
 
@@ -97,8 +103,28 @@ Semua route file import `{ verifyToken }`.
 - Sender: `onboarding@resend.dev` (domain nexeventapp.tech belum diverifikasi di Resend)
 - Jangan ganti sender sampai domain diverifikasi
 
+## PDF Generation
+
+- Library: `pdfkit` v0.19.1
+- Dipakai untuk: Invoice PDF dan PO (Purchase Order) PDF
+
+## Database Connection (SSL)
+
+- Koneksi ke Supabase via PrismaPg adapter wajib pakai opsi `ssl: { rejectUnauthorized: false }`
+- Tanpa opsi ini, koneksi akan gagal (lihat known-bugs.md untuk histori)
+
+## Next Priority (Roadmap)
+
+1. Integrasi Midtrans payment gateway (Sprint 2 dimajukan)
+2. Ticketing storefront B2C dengan Row-Level Locking
+3. CRON Job booking timeout 15 menit
+
+_Update bagian ini setiap prioritas berubah, supaya Claude Code dan Claude.ai selalu tahu fokus development saat ini._
+
 ## Aturan Tambahan
 
 - Setiap selesai coding, selalu commit + push + deploy.sh
 - Prisma singleton wajib — jangan `new PrismaClient()`
 - Auth middleware: `server/src/middleware/auth.middleware.js` — return 401 bukan 404
+- Setiap selesai fix bug nontrivial, WAJIB update `docs/known-bugs.md` (lihat section "Known Bugs & Fixes" di atas)
+- Semua fitur Pro wajib cek `isPro` dari hook `useUser.ts` sebelum render konten — tampilkan lock UI untuk Starter, bukan redirect atau hide menu.

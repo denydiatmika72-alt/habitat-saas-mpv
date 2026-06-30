@@ -76,3 +76,20 @@ File ini adalah log permanen bug yang sudah pernah terjadi di project ini besert
 - Fix: Gunakan `npx prisma db push` untuk apply schema changes, lalu `npx prisma generate` untuk regenerate client. Jangan gunakan `prisma migrate dev` karena project ini tidak punya migration history.
 - Tag: #prisma #migration #db-push #schema
 
+---
+
+## [2026-06-30] Plan/Tier field ditambahkan ke tabel users
+
+- Gejala: (Bukan bug — catatan implementasi fitur baru)
+- Root cause: Platform membutuhkan sistem tier Starter/Pro sebagai fondasi feature gating.
+- File terkait: `server/prisma/schema.prisma`, `server/controllers/users.controller.js`, `server/routes/users.routes.js`, `server/src/controllers/auth.controller.js`, `server/src/routes/auth.routes.js`, `client/src/hooks/useUser.ts`, `client/src/app/login/page.tsx`
+- Fix/Implementasi:
+  - Field `plan String @default("starter")` ditambahkan ke model `User` di schema.prisma
+  - Schema di-apply ke Supabase via `prisma db push` (bukan migrate dev — project tidak punya migration history)
+  - `GET /api/auth/me` (protected) — return profil user lengkap termasuk plan
+  - `POST /api/auth/login` — response data sekarang include field `plan`
+  - `PATCH /api/users/plan` (protected) — update plan user, validasi hanya `"starter"` atau `"pro"`, error P2025 → 404
+  - Frontend: login page store `user_plan` ke localStorage; hook `useUser.ts` fetch `/api/auth/me` dan expose `{ user, loading, isPro }` untuk feature gating
+  - Aturan gating: tampilkan lock UI untuk Starter (jangan redirect/hide menu)
+- Tag: #prisma #schema #plan #tier #feature-gating
+
