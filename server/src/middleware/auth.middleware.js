@@ -1,6 +1,7 @@
 const jwt = require('jsonwebtoken');
+const prisma = require('../lib/prisma');
 
-const protect = (req, res, next) => {
+const protect = async (req, res, next) => {
   const authHeader = req.headers.authorization;
 
   if (!authHeader || !authHeader.startsWith('Bearer ')) {
@@ -11,7 +12,18 @@ const protect = (req, res, next) => {
 
   try {
     const decoded = jwt.verify(token, process.env.JWT_SECRET);
-    req.user = decoded; // { id, email, name }
+
+    // Token lama (sebelum field role ditambahkan) tidak mengandung role.
+    // Fallback: ambil dari DB agar tidak perlu force re-login semua user.
+    if (decoded.role === undefined) {
+      const user = await prisma.user.findUnique({
+        where: { id: decoded.id },
+        select: { role: true },
+      });
+      decoded.role = user?.role ?? 'promotor';
+    }
+
+    req.user = decoded; // { id, email, name, role }
     next();
   } catch (error) {
     return res.status(401).json({ success: false, message: 'Token tidak valid atau sudah expired.' });
