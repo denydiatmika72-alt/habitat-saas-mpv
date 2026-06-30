@@ -38,13 +38,20 @@ File ini adalah log permanen bug yang sudah pernah terjadi di project ini besert
 
 ---
 
-## [2026-06-30] Register gagal — "Server error"
+## [2026-06-30] Prisma client stale — `Unknown argument 'phone'` saat register
 
-- Gejala: Saat user baru mendaftar (register), muncul pesan "Server error".
-- Root cause: Prisma client belum di-generate ulang setelah perubahan schema (field phone baru ditambahkan), sehingga client lama tidak cocok dengan schema database.
-- File terkait: `server/prisma/schema.prisma`, `deploy.sh`
-- Fix: Pastikan `prisma generate` selalu dijalankan sebagai bagian dari `deploy.sh` setiap deploy, supaya Prisma client selalu sinkron dengan schema terbaru.
-- Tag: #prisma #register #deployment #server-error
+- Gejala: Endpoint `POST /api/auth/register` mengembalikan "Server error". Log PM2 di VPS menampilkan error: `Unknown argument 'phone'. Available options are marked with ?` pada `auth.controller.js:22`. User baru tidak bisa daftar sama sekali.
+- Root cause: `schema.prisma` sudah punya field `phone String?` dan kolom sudah ada di database (Supabase), tapi Prisma client yang di-generate di `node_modules` VPS masih dari versi lama yang belum mengenal field `phone`. Client dan schema tidak sinkron. Terjadi ketika schema diupdate atau deploy dilakukan tanpa `npx prisma generate` yang sukses (kemungkinan race condition dengan `git push` — lihat entry race condition).
+- File terkait: `server/prisma/schema.prisma`, `server/src/controllers/auth.controller.js`
+- Fix immediate: SSH ke VPS → generate ulang Prisma client → restart PM2:
+  ```bash
+  ssh root@145.79.12.170
+  cd /var/www/nexevent/server
+  npx prisma generate
+  pm2 restart nexevent-api
+  ```
+  `deploy.sh` sudah include `prisma generate` di step 3 — jika terjadi lagi, pastikan `git push` selesai dan commit terbaru terverifikasi di GitHub sebelum jalankan `deploy.sh` (lihat entry race condition 2026-06-30).
+- Tag: #prisma #register #deployment #production #stale-client #phone #server-error
 
 ---
 
@@ -103,3 +110,24 @@ File ini adalah log permanen bug yang sudah pernah terjadi di project ini besert
   - Aturan gating: tampilkan lock UI untuk Starter (jangan redirect/hide menu)
 - Tag: #prisma #schema #plan #tier #feature-gating
 
+---
+
+## [2026-06-30] Expense Tracker — Fitur Pro baru ditambahkan
+
+- Gejala: (Bukan bug — catatan implementasi fitur baru)
+- Root cause: Platform butuh fitur pencatatan pengeluaran event yang di-gate sebagai fitur Pro.
+- File terkait:
+  - `server/prisma/schema.prisma` — model `Expense` + relasi ke `Event` dan `User`
+  - `server/controllers/expenses.controller.js` — GET, POST, DELETE
+  - `server/routes/expenses.routes.js` — route `/api/expenses`
+  - `server/src/index.js` — `app.use('/api/expenses', expensesRoutes)`
+  - `client/src/app/dashboard/expenses/page.tsx` — halaman baru
+  - `client/src/components/dashboard/sidebar.tsx` — nav item + Pro badge
+- Fix/Implementasi:
+  - `GET /api/expenses?eventId=xxx` — return semua expense milik user untuk event tertentu, order by date DESC
+  - `POST /api/expenses` — create expense, validasi amount positif, ownership event dicek via `promotor_id`
+  - `DELETE /api/expenses/:id` — hapus expense, cek ownership via `userId`, return 403 jika bukan pemilik
+  - Frontend: `isPro` dari `useUser()` dipakai untuk gating — Starter lihat lock UI, Pro lihat form + feed
+  - Lock UI tampil di halaman (bukan redirect/hidden menu), tombol upgrade ke `/dashboard/upgrade`
+  - Sidebar: item "Expense Tracker" selalu tampil untuk semua user, badge amber "Pro" di sebelah label
+- Tag: #expense-tracker #pro-feature #prisma #feature-gating
