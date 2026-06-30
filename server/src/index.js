@@ -1,4 +1,4 @@
-﻿require('dotenv').config({ path: require('path').resolve(__dirname, '../.env') })
+﻿require('dotenv').config({ path: require('path').resolve(__dirname, '../.env'), override: true })
 console.log('[ENV CHECK] ADMIN_EMAILS:', process.env.ADMIN_EMAILS)
 
 if (process.env.NODE_ENV !== 'production') {
@@ -15,7 +15,7 @@ const publicEventsRoutes  = require('../routes/publicEvents.routes');
 const eventRoutes         = require('../routes/event.routes');
 const budgetRoutes        = require('../routes/budget.routes');
 const sponsorRoutes       = require('../routes/sponsor.routes');
-const invoiceRoutes       = require('../routes/invoice.routes');
+// const invoiceRoutes    = require('../routes/invoice.routes'); // DISABLED: pdfkit not installed on VPS
 const settingsRoutes      = require('../routes/settings.routes');
 const purchaseOrderRoutes = require('../routes/purchaseOrder.routes');
 
@@ -70,7 +70,7 @@ app.use('/api/events/public', publicEventsRoutes);
 app.use('/api/events',        eventRoutes);
 app.use('/api/budgets',  budgetRoutes);
 app.use('/api/sponsor',  sponsorRoutes);
-app.use('/api/invoices', invoiceRoutes);
+// app.use('/api/invoices', invoiceRoutes); // DISABLED: pdfkit not installed on VPS
 app.use('/api/settings', settingsRoutes);
 app.use('/api/po',       purchaseOrderRoutes);
 

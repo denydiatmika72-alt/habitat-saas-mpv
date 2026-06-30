@@ -1,17 +1,15 @@
 const adminMiddleware = (req, res, next) => {
-  const raw = process.env.ADMIN_EMAILS
+  const raw = process.env.ADMIN_EMAILS || ''
   console.log('[ADMIN MW] raw ADMIN_EMAILS:', JSON.stringify(raw))
-  console.log('[ADMIN MW] type:', typeof raw, 'length:', raw ? raw.length : 0)
 
-  const ADMIN_EMAILS = (raw || '')
-    .replace(/[﻿​-‍]/g, '')
+  const ADMIN_EMAILS = raw
+    .replace(/[\uFEFF\u200B-\u200D]/g, '')
     .split(',')
     .map(e => e.trim().toLowerCase())
     .filter(e => e.length > 0)
 
   const userEmail = (req.user?.email || '').toLowerCase().trim()
-  console.log('[ADMIN MW] parsed adminEmails:', ADMIN_EMAILS)
-  console.log('[ADMIN MW] userEmail:', userEmail)
+  console.log('[ADMIN MW] adminEmails:', ADMIN_EMAILS, '| userEmail:', userEmail)
 
   if (!userEmail || !ADMIN_EMAILS.includes(userEmail)) {
     return res.status(403).json({
