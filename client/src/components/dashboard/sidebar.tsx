@@ -11,6 +11,7 @@ import {
   BarChart2,
   Crown,
   ShieldCheck,
+  Wallet,
 } from "lucide-react"
 import { cn } from "@/lib/utils"
 
@@ -22,8 +23,8 @@ const mobileNavItems = [
 ]
 
 type NavItem =
-  | { label: string; icon: React.ElementType; href: string; onClick?: never }
-  | { label: string; icon: React.ElementType; onClick: () => void; href?: never }
+  | { label: string; icon: React.ElementType; href: string; badge?: string; onClick?: never }
+  | { label: string; icon: React.ElementType; onClick: () => void; badge?: string; href?: never }
 
 const nav: NavItem[] = [
   { label: "Dashboard", icon: LayoutDashboard, href: "/dashboard" },
@@ -31,6 +32,7 @@ const nav: NavItem[] = [
   { label: "Sponsor & Partner", icon: Handshake, href: "/dashboard/sponsor" },
   { label: "Vendor & Talent", icon: Users, onClick: () => alert("Fitur Vendor Segera Hadir") },
   { label: "Invoice & Purchase Order", icon: ReceiptText, href: "/dashboard/invoice" },
+  { label: "Expense Tracker", icon: Wallet, href: "/dashboard/expenses", badge: "Pro" },
   { label: "Laporan P&L", icon: BarChart2, onClick: () => alert("Fitur Laporan Segera Hadir") },
   { label: "Approve User", icon: ShieldCheck, href: "/dashboard/admin" },
 ]
@@ -79,7 +81,12 @@ export function Sidebar() {
                     className={baseClass}
                   >
                     <item.icon className="size-4" />
-                    {item.label}
+                    <span className="flex-1">{item.label}</span>
+                    {item.badge && (
+                      <span className="rounded-full bg-amber-500 px-1.5 py-0.5 text-[9px] font-black leading-none text-neutral-950">
+                        {item.badge}
+                      </span>
+                    )}
                   </Link>
                 ) : (
                   <button
@@ -88,7 +95,12 @@ export function Sidebar() {
                     className={baseClass}
                   >
                     <item.icon className="size-4" />
-                    {item.label}
+                    <span className="flex-1">{item.label}</span>
+                    {item.badge && (
+                      <span className="rounded-full bg-amber-500 px-1.5 py-0.5 text-[9px] font-black leading-none text-neutral-950">
+                        {item.badge}
+                      </span>
+                    )}
                   </button>
                 )}
               </li>

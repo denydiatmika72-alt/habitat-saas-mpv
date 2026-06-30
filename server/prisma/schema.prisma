@@ -24,6 +24,7 @@ model User {
   updatedAt DateTime @updatedAt      @map("updated_at")
 
   events    Event[]
+  expenses  Expense[]
 
   @@map("users")
 }
@@ -46,8 +47,27 @@ model Event {
   promotor           User              @relation(fields: [promotor_id], references: [id])
   budget             Budget?
   purchaseOrders     PurchaseOrder[]
+  expenses           Expense[]
 
   @@map("events")
+}
+
+model Expense {
+  id          String   @id @default(uuid())
+  eventId     String   @map("event_id")
+  userId      String   @map("user_id")
+  description String
+  amount      Float
+  category    String
+  receiptUrl  String?  @map("receipt_url")
+  date        DateTime @default(now())
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt      @map("updated_at")
+
+  event       Event    @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("expenses")
 }
 
 model Budget {
