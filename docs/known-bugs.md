@@ -231,3 +231,25 @@ File ini adalah log permanen bug yang sudah pernah terjadi di project ini besert
   - **dashboard/layout.tsx**: wrap semua halaman dashboard dengan `<DashboardGuard>`. Layout tetap server component, Guard adalah client component.
   - **field/page.tsx**: sudah ter-handle sejak Field Crew feature — jika `role !== "crew"` tampilkan "wrong-role" view dengan link ke `/dashboard` (tidak redirect otomatis, sesuai spec).
 - Tag: #auth #redirect #role #field-crew #login #dashboard-guard
+
+---
+
+## [2026-07-01] /field page — dark theme tidak konsisten dengan dashboard palette
+
+- Gejala: Halaman `/field` (mobile Field Crew) menggunakan dark theme (`bg-neutral-950`, amber accent `bg-amber-500`, `text-neutral-400`) yang terasa seperti aplikasi berbeda dibanding dashboard promotor yang menggunakan light theme (slate/emerald). Mobile UX juga belum optimal: font input kurang dari 16px (menyebabkan iOS auto-zoom), tidak ada highlight hover pada event cards.
+- Root cause: Implementasi awal `/field` sengaja menggunakan dark theme sebagai "identitas visual crew" tapi keputusan ini direvisi — crew tetap harus merasakan aplikasi yang sama.
+- File terkait: `client/src/app/field/page.tsx`
+- Fix:
+  - Ganti semua `bg-neutral-950` → `bg-slate-50` (page background)
+  - Ganti `bg-neutral-800` (cards) → `bg-white border border-slate-200 rounded-xl`
+  - Ganti `bg-amber-500` (primary buttons) → `bg-emerald-800 hover:bg-emerald-900 text-white`
+  - Ganti `text-white` body → `text-slate-900`; `text-neutral-400/500` → `text-slate-500/400`
+  - Ganti `text-amber-400` (balance, amounts) → `text-emerald-800`
+  - Ganti `focus:ring-amber-500` → `focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500/30` (konsisten dengan dashboard inputs)
+  - Error state: `bg-red-900/40 text-red-400` → `bg-red-50 border border-red-200 text-red-600`
+  - Spinner: `border-amber-500` → `border-emerald-800`
+  - Success icon: `CheckCircle text-amber-400` → dalam `div bg-emerald-100`, `CheckCircle text-emerald-700`
+  - UX fixes: input `text-base` (16px, cegah iOS zoom), back button `min-h-[48px]` (touch target), amount input `text-3xl`, event cards hover state `hover:border-emerald-300 hover:bg-emerald-50`
+  - Tambah note info di `/dashboard/expenses`: "Pengeluaran ini dicatat langsung oleh promotor. Pengeluaran crew lapangan dapat dilihat di menu Field Crew."
+  - Tambah note info di `/dashboard/crew`: "Pengeluaran crew lapangan akan digabungkan dengan expense tracker di Laporan P&L otomatis."
+- Tag: #field-crew #ui #color-palette #mobile-ux #consistency
