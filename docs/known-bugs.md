@@ -78,6 +78,16 @@ File ini adalah log permanen bug yang sudah pernah terjadi di project ini besert
 
 ---
 
+## [2026-06-30] Race condition deploy — endpoint tidak muncul di production
+
+- Gejala: Endpoint baru (`GET /api/auth/me`, `PATCH /api/users/plan`) tidak tersedia setelah deploy pertama — API mengembalikan 404 "Route tidak ditemukan" meskipun deploy.sh selesai tanpa error.
+- Root cause: `deploy.sh` dijalankan di VPS sebelum `git push` dari local selesai, sehingga `git pull` di dalam deploy.sh masih menarik commit lama. PM2 restart berjalan sukses tapi menjalankan kode lama.
+- File terkait: `deploy.sh`, VPS git state
+- Fix: Pastikan `git push` selesai dan commit terbaru sudah terverifikasi di GitHub (cek commit SHA) sebelum SSH ke VPS dan jalankan `deploy.sh`. Urutan wajib: push → verify → deploy.
+- Tag: #deployment #vps #git #race-condition
+
+---
+
 ## [2026-06-30] Plan/Tier field ditambahkan ke tabel users
 
 - Gejala: (Bukan bug — catatan implementasi fitur baru)
