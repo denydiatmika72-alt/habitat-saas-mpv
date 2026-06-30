@@ -276,3 +276,29 @@ File ini adalah log permanen bug yang sudah pernah terjadi di project ini besert
 - File terkait: `client/src/app/field/page.tsx`
 - Fix: Hapus icon sepenuhnya dari kedua action button ("CATAT PENGELUARAN" dan "KEMBALIKAN SISA") — teks saja sudah cukup dan tampilan lebih rapi di mobile. Hapus juga import `Send` dan `RotateCcw` dari lucide-react karena sudah tidak terpakai.
 - Tag: #field-crew #ui #button #icon #mobile-ux
+
+---
+
+## [2026-07-01] P&L Report — Implementasi fitur baru
+
+- Gejala: (Bukan bug — catatan implementasi fitur baru)
+- Root cause: Platform butuh laporan laba/rugi otomatis yang menggabungkan semua sumber pemasukan (sponsor deal, pemasukan lain) dan pengeluaran (promotor expense, crew petty cash) per event.
+- File terkait:
+  - `server/prisma/schema.prisma` — model baru `OtherIncome` + relasi ke Event dan User
+  - `server/controllers/pl-report.controller.js` — `getPLReport` (fetch paralel 4 sumber), `exportPLReportPDF` (pdfkit A4)
+  - `server/controllers/other-income.controller.js` — CRUD pemasukan manual
+  - `server/routes/pl-report.routes.js` — `/export-pdf` didaftarkan SEBELUM `/` agar tidak ketubruk wildcard
+  - `server/routes/other-income.routes.js`
+  - `server/src/index.js` — register `/api/pl-report` dan `/api/other-income`
+  - `client/src/app/dashboard/pl-report/page.tsx` — halaman P&L baru (Pro-gated)
+  - `client/src/components/dashboard/sidebar.tsx` — "Laporan P&L" diubah dari onClick placeholder ke href + Pro badge
+  - `client/package.json` — recharts 3.9.1 ditambahkan
+- Fix/Implementasi:
+  - `GET /api/pl-report?eventId=xxx`: fetch parallel sponsor deals (status="Disetujui"), otherIncome, expenses, pettyCashTransactions (ONLY type:"expense"). Return summary + detail per sumber.
+  - `GET /api/pl-report/export-pdf?eventId=xxx`: pdfkit A4, font Helvetica, warna emerald #065f46 untuk header, IDR format pakai `Math.round(n).toLocaleString('id-ID')`.
+  - KRITIS: `SponsorDeal.totalValue` (bukan `totalAmount`) dan `SponsorDeal.sponsorName` (bukan `companyName`) — lihat schema saat coding.
+  - KRITIS: Crew expense filter wajib `type: "expense"` dan join ke `pettyCashAccount.eventId` — jangan pakai `direction` sebagai filter.
+  - Frontend: recharts PieChart (donut) untuk komposisi pengeluaran, BarChart untuk pemasukan vs pengeluaran. Collapsible detail tables untuk 3 tabel rincian.
+  - Lock UI untuk Starter (bukan redirect/hide menu) — sama dengan pola di expenses/crew pages.
+  - `npx prisma db push` (bukan `migrate dev`) untuk apply schema di VPS.
+- Tag: #pl-report #feature #prisma #schema #pdfkit #recharts #petty-cash #pro-feature
