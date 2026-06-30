@@ -198,3 +198,19 @@ File ini adalah log permanen bug yang sudah pernah terjadi di project ini besert
   }
   ```
 - Tag: #auth #middleware #jwt #role #403 #field-crew
+
+---
+
+## [2026-07-01] Register page tidak punya role selector — crew tidak bisa mendaftar
+
+- Gejala: Promotor mendapat error 400 "User ini bukan crew" saat mencoba invite. Akar masalahnya: tidak ada cara bagi calon crew untuk mendaftar dengan role "crew" karena form register hanya membuat akun "promotor" dan tidak ada pilihan role.
+- Root cause: Form register di `client/src/app/register/page.tsx` tidak mengirim field `role` ke API, sehingga semua akun dibuat dengan `role: "promotor"` (default). Backend `POST /api/auth/register` sudah support `role` param sejak Field Crew feature ditambahkan, tapi UI belum mengeksposnya.
+- File terkait: `client/src/app/register/page.tsx`
+- Fix:
+  - Tambah state `role: "promotor" | "crew"` (default "promotor")
+  - Tambah toggle button "Promotor Event" / "Crew Lapangan" di form — match existing card style
+  - Saat "Crew Lapangan" dipilih: sembunyikan field "Nama Promotor/EO" (tidak relevan untuk crew), tampilkan note kecil "Akun crew hanya bisa diakses via nexeventapp.tech/field"
+  - Field `role` dikirim ke `POST /api/auth/register` bersama formData
+  - Success screen untuk crew menampilkan hint URL `/field`
+  - Verifikasi end-to-end: register crew → activate → invite via /dashboard/crew → `GET /api/crew/my-events` return assignment dengan `balance: 0` → `POST /api/petty-cash/transaction` dengan `type:"topup"` return 400 (bukan 403 — sudah lolos auth check, ditolak karena business rule crew tidak bisa topup)
+- Tag: #register #role #field-crew #ui #ux
