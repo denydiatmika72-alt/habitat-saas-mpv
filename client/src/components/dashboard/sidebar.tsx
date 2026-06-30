@@ -34,7 +34,7 @@ const nav: NavItem[] = [
   { label: "Invoice & Purchase Order", icon: ReceiptText, href: "/dashboard/invoice" },
   { label: "Expense Tracker", icon: Wallet, href: "/dashboard/expenses", badge: "Pro" },
   { label: "Field Crew", icon: Users, href: "/dashboard/crew", badge: "Pro" },
-  { label: "Laporan P&L", icon: BarChart2, onClick: () => alert("Fitur Laporan Segera Hadir") },
+  { label: "Laporan P&L", icon: BarChart2, href: "/dashboard/pl-report", badge: "Pro" },
   { label: "Approve User", icon: ShieldCheck, href: "/dashboard/admin" },
 ]
 

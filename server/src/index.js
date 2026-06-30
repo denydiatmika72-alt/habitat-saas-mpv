@@ -21,6 +21,8 @@ const usersRoutes         = require('../routes/users.routes');
 const expensesRoutes      = require('../routes/expenses.routes');
 const crewRoutes          = require('../routes/crew.routes');
 const pettyCashRoutes     = require('../routes/pettycash.routes');
+const plReportRoutes      = require('../routes/pl-report.routes');
+const otherIncomeRoutes   = require('../routes/other-income.routes');
 
 const app = express();
 const PORT = process.env.PORT || 5000;
@@ -80,6 +82,8 @@ app.use('/api/users',         usersRoutes);
 app.use('/api/expenses',      expensesRoutes);
 app.use('/api/crew',          crewRoutes);
 app.use('/api/petty-cash',    pettyCashRoutes);
+app.use('/api/pl-report',     plReportRoutes);
+app.use('/api/other-income',  otherIncomeRoutes);
 
 app.use((req, res) => {
   console.warn('[404] Route tidak ditemukan:', req.method, req.originalUrl);
