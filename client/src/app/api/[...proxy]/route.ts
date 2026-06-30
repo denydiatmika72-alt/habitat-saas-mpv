@@ -42,6 +42,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ pro
       method: 'POST',
       headers: { 'Content-Type': 'application/json', ...forwardHeaders(req) },
       body,
+      signal: AbortSignal.timeout(25000),
     });
     console.log(`[PROXY] POST ${targetUrl} -> ${res.status}`);
     const resText = await res.text();
@@ -66,6 +67,7 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ prox
       method: 'PUT',
       headers: { 'Content-Type': 'application/json', ...forwardHeaders(req) },
       body: text || '{}',
+      signal: AbortSignal.timeout(25000),
     });
     console.log(`[PROXY] PUT ${targetUrl} -> ${res.status}`);
     const resText = await res.text();
@@ -88,6 +90,7 @@ export async function DELETE(req: NextRequest, { params }: { params: Promise<{ p
     const res = await fetch(targetUrl, {
       method: 'DELETE',
       headers: forwardHeaders(req),
+      signal: AbortSignal.timeout(25000),
     });
     console.log(`[PROXY] DELETE ${targetUrl} -> ${res.status}`);
     const resText = await res.text();
@@ -112,6 +115,7 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ pr
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json', ...forwardHeaders(req) },
       body: text || '{}',
+      signal: AbortSignal.timeout(25000),
     });
     console.log(`[PROXY] PATCH ${targetUrl} -> ${res.status}`);
     const resText = await res.text();
@@ -134,6 +138,7 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ prox
     const res = await fetch(targetUrl, {
       cache: 'no-store',
       headers: forwardHeaders(req),
+      signal: AbortSignal.timeout(25000),
     });
     console.log(`[PROXY] GET ${targetUrl} -> ${res.status}`);
     const resText = await res.text();
