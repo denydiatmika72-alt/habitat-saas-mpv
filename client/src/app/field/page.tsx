@@ -402,16 +402,16 @@ export default function FieldPage() {
             onClick={() => { setView("expense-form"); setTxAmount(""); setTxDescription(""); setTxError("") }}
             className="flex min-h-[64px] items-center justify-center gap-2 rounded-xl bg-emerald-800 text-sm font-bold text-white transition-colors hover:bg-emerald-900 active:scale-[0.97]"
           >
-            <Send className="size-4" />
-            CATAT PENGELUARAN
+            <Send className="h-5 w-5 shrink-0" />
+            <span>CATAT PENGELUARAN</span>
           </button>
           <button
             onClick={() => { setView("return-form"); setTxAmount(""); setTxDescription(""); setTxError("") }}
             disabled={balance <= 0}
             className="flex min-h-[64px] items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white text-sm font-bold text-slate-700 transition-colors hover:bg-slate-50 active:scale-[0.97] disabled:opacity-40"
           >
-            <RotateCcw className="size-4" />
-            KEMBALIKAN SISA
+            <RotateCcw className="h-5 w-5 shrink-0" />
+            <span>KEMBALIKAN SISA</span>
           </button>
         </div>
 
@@ -429,7 +429,13 @@ export default function FieldPage() {
                 >
                   <div className="min-w-0 mr-3">
                     <p className="truncate text-sm font-medium text-slate-900">{t.description}</p>
-                    <p className="mt-0.5 text-xs capitalize text-slate-400">{t.type}</p>
+                    <p className={`mt-0.5 text-xs font-medium ${
+                      t.type === "topup" ? "text-blue-600"
+                      : t.type === "expense" ? "text-red-500"
+                      : "text-emerald-600"
+                    }`}>
+                      {t.type === "topup" ? "Topup" : t.type === "expense" ? "Expense" : "Return"}
+                    </p>
                   </div>
                   <p
                     className={`shrink-0 text-sm font-semibold ${
