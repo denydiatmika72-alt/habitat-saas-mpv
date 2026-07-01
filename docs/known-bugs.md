@@ -465,6 +465,15 @@ File ini adalah log permanen bug yang sudah pernah terjadi di project ini besert
   4. Helper `fmtIDR(n)` dengan `Number(n) || 0` sebagai null-safe guard
 - Pelajaran: Jangan pernah pakai explicit x,y positioning (`doc.text('', x, y)`) di PDFKit untuk multiple teks pada Y yang sama. Gunakan flow-based layout dengan `continued: true` + `align: 'right'`.
 - Tag: #pdf #pdfkit #corrupt #pl-report
+- Status: PARTIALLY FIXED — backend PDF stream diperbaiki, tapi root cause sebenarnya ada di proxy (lihat entry berikutnya)
+
+## [2026-07-01] PDF P&L corrupt (root cause sebenarnya) — Next.js proxy JSON-encode binary stream
+- Gejala: File PDF ter-download, size > 100 bytes, tapi browser tidak bisa membuka ("Failed to load PDF document"). PM2 log backend bersih. File yang ter-download adalah JSON `{"message":"%PDF-1.4..."}`, bukan binary PDF.
+- Root cause: GET handler di `client/src/app/api/[...proxy]/route.ts` selalu memproses semua response sebagai teks dan me-return `NextResponse.json(data)`. Untuk binary PDF: (1) `await res.text()` membaca bytes PDF sebagai UTF-8 string → corrupt, (2) `JSON.parse()` gagal karena bukan JSON, (3) catch block: `data = { message: resText }`, (4) `NextResponse.json({ message: "%PDF-..." })` → frontend download JSON string, bukan PDF.
+- File terkait: `client/src/app/api/[...proxy]/route.ts`
+- Fix: Tambah deteksi binary path sebelum `res.text()` di GET handler. Jika `path.includes('export-pdf')` atau `content-type` adalah `application/pdf`, stream langsung via `new Response(blob, { headers: { 'Content-Type': 'application/pdf', ... } })` tanpa JSON-encoding.
+- Pelajaran: Next.js API route proxy WAJIB handle binary responses secara khusus. Jangan pernah melewatkan respons binary melalui `res.text()` + `NextResponse.json()`. Gunakan `res.blob()` + `new Response(blob)` untuk PDF dan binary data lainnya. Tambahkan path patterns ke array `BINARY_PATHS` untuk setiap endpoint yang mengembalikan non-JSON.
+- Tag: #proxy #pdf #binary #nextjs #corrupt
 
 ## [2026-07-01] Deliverables tidak auto-generate saat deal disetujui
 - Gejala: Sponsor memilih benefits (misal "10× Umbul-Umbul, 1× Booth 3×3") saat submit deal. Setelah promotor approve, sponsor dashboard menampilkan "Belum ada deliverable untuk akun ini".
