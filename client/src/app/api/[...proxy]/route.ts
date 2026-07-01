@@ -129,6 +129,9 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ pr
   }
 }
 
+// Paths that return binary (PDF) — must NOT be JSON-encoded
+const BINARY_PATHS = ['export-pdf', 'generate-pdf'];
+
 export async function GET(req: NextRequest, { params }: { params: Promise<{ proxy: string[] }> }) {
   const { proxy } = await params;
   const path = proxy.join('/');
@@ -141,6 +144,21 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ prox
       signal: AbortSignal.timeout(25000),
     });
     console.log(`[PROXY] GET ${targetUrl} -> ${res.status}`);
+
+    // Binary response: stream directly without JSON-encoding (JSON.encode corrupts binary)
+    const contentType = res.headers.get('content-type') || '';
+    const isBinary = contentType.includes('application/pdf') || BINARY_PATHS.some(p => path.includes(p));
+    if (isBinary) {
+      const blob = await res.blob();
+      return new Response(blob, {
+        status: res.status,
+        headers: {
+          'Content-Type': 'application/pdf',
+          'Content-Disposition': res.headers.get('content-disposition') || 'attachment; filename="report.pdf"',
+        },
+      });
+    }
+
     const resText = await res.text();
     let data: unknown = {};
     try { data = resText ? JSON.parse(resText) : {}; } catch { data = { message: resText }; }
