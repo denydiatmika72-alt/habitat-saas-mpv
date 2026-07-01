@@ -350,3 +350,22 @@ File ini adalah log permanen bug yang sudah pernah terjadi di project ini besert
 - Cara deteksi: Cek PM2 logs — `[EMAIL] Kredensial terkirim ke X` TIDAK berarti email sampai ke inbox. Verifikasi dengan test curl langsung ke Resend API.
 - Catatan: Saat domain `nexeventapp.tech` sudah diverifikasi di Resend, ganti `promotorEmail` kembali ke `sponsorEmail` dan ganti sender ke `noreply@nexeventapp.tech`.
 - Tag: #email #resend #sponsor #domain-verification #workaround
+
+---
+
+## [2026-07-01] Invoice status dropdown salah opsi + P&L hitung semua sponsor deal
+
+- Gejala 1: Dropdown status invoice di card sponsor menampilkan opsi "Sudah Dibayar" dan "Jatuh Tempo" yang tidak valid — backend menolak update atau status tidak konsisten dengan sistem lain.
+- Gejala 2: Laporan P&L memasukkan semua deal berstatus "Disetujui" ke pemasukan, termasuk deal yang belum ada pembayaran sama sekali (invoice "Belum Dibayar"). Ini menyebabkan P&L terlalu optimis.
+- Gejala 3: Dropdown invoice overflow/terpotong di dalam card karena berada satu baris dengan banyak action button lain.
+- Root cause 1: Opsi dropdown di `dashboard/sponsor/page.tsx` tidak sinkron dengan valid status di CLAUDE.md dan backend (`"Belum Dibayar"`, `"DP Terbayar"`, `"Lunas"`).
+- Root cause 2: Query sponsor income di `pl-report.controller.js` hanya filter `status: 'Disetujui'` tanpa cek payment status invoice — uang belum tentu diterima meskipun deal disetujui.
+- Root cause 3: Invoice section berada di dalam flex container yang sama dengan action buttons (Disetujui badge, Lihat Dashboard, Kirim Ulang Credential) sehingga overflow pada viewport kecil.
+- File terkait: `client/src/app/dashboard/sponsor/page.tsx`, `server/controllers/pl-report.controller.js`, `server/services/email.service.js`
+- Fix:
+  1. Dropdown options diubah ke `"Belum Dibayar"`, `"DP Terbayar"`, `"Lunas"` (sesuai CLAUDE.md).
+  2. Invoice section dipindah ke baris terpisah di bawah action bar (dibatasi `border-t pt-3`) — tidak lagi dalam satu flex row dengan action buttons.
+  3. P&L sponsor query ditambah filter: `invoices: { some: { status: { in: ['DP Terbayar', 'Lunas'] } } }` — hanya deal yang sudah ada pembayaran yang dihitung sebagai pemasukan.
+  4. Aturan: "DP Terbayar" dan "Lunas" sama-sama pakai `totalValue` deal (bukan partial DP, karena nilai DP tidak tersimpan terpisah).
+  5. Email kredensial diupdate ke `Promise.allSettled` — kirim ke promotor (guaranteed) DAN sponsor (best-effort).
+- Tag: #invoice #sponsor #pl-report #dropdown #layout #email
