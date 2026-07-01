@@ -871,6 +871,8 @@ function DealTracker() {
   const [approving, setApproving] = useState<string | null>(null)
   const [rejecting, setRejecting] = useState<string | null>(null)
   const [creds, setCreds] = useState<GeneratedCreds | null>(null)
+  const [emailSending, setEmailSending] = useState(false)
+  const [emailSent, setEmailSent] = useState(false)
   const [promotorSettings, setPromotorSettings] = useState<PromoterSettings | null>(null)
 
   useEffect(() => {
@@ -933,6 +935,7 @@ function DealTracker() {
 
       if (accountData.success && accountData.data) {
         const d = accountData.data as { username: string; password: string }
+        setEmailSent(false)
         setCreds({ dealId: deal.id, username: d.username, password: d.password, email: deal.email })
       }
     } catch {
@@ -1007,7 +1010,7 @@ function DealTracker() {
               onReject={handleReject}
               approving={approving === deal.id}
               rejecting={rejecting === deal.id}
-              onCredsGenerated={setCreds}
+              onCredsGenerated={(c) => { setEmailSent(false); setCreds(c) }}
               promotorSettings={promotorSettings}
             />
           ))}
@@ -1051,40 +1054,58 @@ function DealTracker() {
               </div>
             </div>
 
-            <div className="mb-3 grid grid-cols-3 gap-2">
+            <div className="mb-3 space-y-2">
               <button
                 type="button"
                 onClick={() => {
-                  const text = `Kredensial Sponsor nexEvent\nEmail: ${creds.email}\nUsername: ${creds.username}\nPassword: ${creds.password}\nLogin: https://nexeventapp.tech/login?role=sponsor`
+                  const text = `nexEvent Sponsor Login\nEmail: ${creds.email}\nUsername: ${creds.username}\nPassword: ${creds.password}\nLogin: https://nexeventapp.tech/login?role=sponsor`
                   navigator.clipboard.writeText(text)
                 }}
-                className="flex items-center justify-center gap-1.5 rounded-xl border border-slate-200 py-2.5 text-xs font-semibold text-slate-700 hover:bg-slate-50"
+                className="flex w-full items-center justify-center gap-2 rounded-xl border border-slate-200 py-2.5 text-sm font-bold text-slate-700 hover:bg-slate-50"
               >
-                <Copy className="size-3.5" />
-                Salin
+                <Copy className="size-4" />
+                Salin Semua
               </button>
+              <a
+                href={`https://wa.me/?text=${encodeURIComponent(
+                  `Halo! Ini akses Sponsor Dashboard nexEvent Anda 🎉\n\n📧 Email: ${creds.email}\n👤 Username: ${creds.username}\n🔑 Password: ${creds.password}\n\n🔗 Login: https://nexeventapp.tech/login?role=sponsor`
+                )}`}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="flex w-full items-center justify-center gap-2 rounded-xl bg-green-500 py-2.5 text-sm font-bold text-white hover:bg-green-600"
+              >
+                <MessageCircle className="size-4" />
+                Kirim via WhatsApp
+              </a>
               <button
                 type="button"
-                onClick={() => {
-                  const pesan = `Halo! Berikut akses Sponsor Dashboard nexEvent Anda:\n\n*Email:* ${creds.email}\n*Username:* ${creds.username}\n*Password:* ${creds.password}\n\nLogin di: https://nexeventapp.tech/login?role=sponsor`
-                  window.open(`https://wa.me/?text=${encodeURIComponent(pesan)}`, "_blank")
+                disabled={emailSending || emailSent}
+                onClick={async () => {
+                  setEmailSending(true)
+                  try {
+                    const res = await fetch(`${API_BASE}/sponsor/deals/${creds.dealId}/resend-credential`, {
+                      method: 'POST',
+                      headers: authHeaders(),
+                    })
+                    const data = await res.json()
+                    if (data.success) setEmailSent(true)
+                    else alert('Gagal kirim email: ' + (data.message ?? 'Server error'))
+                  } catch {
+                    alert('Gagal menghubungi server.')
+                  } finally {
+                    setEmailSending(false)
+                  }
                 }}
-                className="flex items-center justify-center gap-1.5 rounded-xl bg-green-500 py-2.5 text-xs font-semibold text-white hover:bg-green-600"
+                className="flex w-full items-center justify-center gap-2 rounded-xl bg-blue-600 py-2.5 text-sm font-bold text-white hover:bg-blue-700 disabled:opacity-60"
               >
-                <MessageCircle className="size-3.5" />
-                WA
-              </button>
-              <button
-                type="button"
-                onClick={() => {
-                  const subjek = "Akses Dashboard Sponsor — nexEvent"
-                  const isi = `Halo,\n\nBerikut kredensial login Sponsor Dashboard nexEvent:\n\nEmail: ${creds.email}\nUsername: ${creds.username}\nPassword: ${creds.password}\nLink Login: https://nexeventapp.tech/login?role=sponsor\n\nMohon simpan informasi ini dengan aman.`
-                  window.open(`mailto:?subject=${encodeURIComponent(subjek)}&body=${encodeURIComponent(isi)}`, "_blank")
-                }}
-                className="flex items-center justify-center gap-1.5 rounded-xl bg-slate-700 py-2.5 text-xs font-semibold text-white hover:bg-slate-800"
-              >
-                <Mail className="size-3.5" />
-                Email
+                {emailSending ? (
+                  <RotateCw className="size-4 animate-spin" />
+                ) : emailSent ? (
+                  <Check className="size-4" />
+                ) : (
+                  <Mail className="size-4" />
+                )}
+                {emailSending ? 'Mengirim...' : emailSent ? 'Email Terkirim ke Promotor' : 'Kirim Email ke Sponsor'}
               </button>
             </div>
 

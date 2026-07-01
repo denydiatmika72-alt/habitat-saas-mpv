@@ -411,18 +411,8 @@ const createAccount = async (req, res) => {
       data: { dealId, sponsorName: sponsorName ?? '', username: finalUsername, password: hashed, tier: tier ?? '' },
     });
 
-    // Kirim email kredensial ke PROMOTOR (bukan sponsor) — onboarding@resend.dev
-    // hanya bisa deliver ke email yang terdaftar di akun Resend (bukan email eksternal)
-    const deal = await prisma.sponsorDeal.findUnique({ where: { id: dealId }, select: { email: true } });
-    if (req.user?.email) {
-      sendSponsorCredential({
-        promotorEmail: req.user.email,
-        sponsorEmail: deal?.email ?? '',
-        sponsorName: sponsorName ?? account.sponsorName,
-        username: account.username,
-        password, // plain text sebelum di-hash
-      });
-    }
+    // Email TIDAK dikirim otomatis — promotor eksplisit pilih kirim via modal kredensial
+    // Gunakan endpoint POST /deals/:id/resend-credential untuk trigger email
 
     return res.status(201).json({
       success: true,

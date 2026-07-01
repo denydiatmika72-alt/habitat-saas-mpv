@@ -97,21 +97,21 @@ export default function PLReportPage() {
         headers: { Authorization: `Bearer ${getToken()}` },
       })
       const contentType = res.headers.get("content-type") ?? ""
-      if (!res.ok || !contentType.includes("pdf")) {
+      if (contentType.includes("application/pdf")) {
+        const blob = await res.blob()
+        if (blob.size < 100) { alert("PDF kosong — coba lagi."); return }
+        const url = URL.createObjectURL(blob)
+        const a = document.createElement("a")
+        a.href = url
+        a.download = `PL-Report-${selectedEventId}.pdf`
+        document.body.appendChild(a)
+        a.click()
+        document.body.removeChild(a)
+        setTimeout(() => URL.revokeObjectURL(url), 1000)
+      } else {
         const errData = await res.json().catch(() => ({}))
         alert("Gagal generate PDF: " + ((errData as Record<string, unknown>).message ?? "Server error"))
-        return
       }
-      const blob = await res.blob()
-      if (blob.size < 100) { alert("PDF kosong — coba lagi."); return }
-      const url = URL.createObjectURL(blob)
-      const a = document.createElement("a")
-      a.href = url
-      a.download = `PL-Report-${selectedEventId}.pdf`
-      document.body.appendChild(a)
-      a.click()
-      document.body.removeChild(a)
-      URL.revokeObjectURL(url)
     } catch (e) {
       alert("Gagal mengunduh PDF: " + (e instanceof Error ? e.message : "Unknown error"))
     } finally { setExportingPdf(false) }
