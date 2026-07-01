@@ -411,11 +411,13 @@ const createAccount = async (req, res) => {
       data: { dealId, sponsorName: sponsorName ?? '', username: finalUsername, password: hashed, tier: tier ?? '' },
     });
 
-    // Auto-kirim email kredensial ke sponsor
+    // Kirim email kredensial ke PROMOTOR (bukan sponsor) — onboarding@resend.dev
+    // hanya bisa deliver ke email yang terdaftar di akun Resend (bukan email eksternal)
     const deal = await prisma.sponsorDeal.findUnique({ where: { id: dealId }, select: { email: true } });
-    if (deal?.email) {
+    if (req.user?.email) {
       sendSponsorCredential({
-        to: deal.email,
+        promotorEmail: req.user.email,
+        sponsorEmail: deal?.email ?? '',
         sponsorName: sponsorName ?? account.sponsorName,
         username: account.username,
         password, // plain text sebelum di-hash
@@ -487,13 +489,14 @@ const resendCredential = async (req, res) => {
     await prisma.clientAccount.update({ where: { dealId }, data: { password: hashed } });
 
     await sendSponsorCredential({
-      to: deal.email,
+      promotorEmail: req.user.email,
+      sponsorEmail: deal.email,
       sponsorName: deal.sponsorName,
       username: account.username,
       password: newPassword,
     });
 
-    return res.status(200).json({ success: true, message: 'Kredensial baru berhasil dikirim ke email sponsor.' });
+    return res.status(200).json({ success: true, message: 'Kredensial baru berhasil dikirim ke email promotor.' });
   } catch (error) {
     console.error('[SPONSOR ERROR]', error.message, error.stack);
     return res.status(500).json({ success: false, message: error.message });
