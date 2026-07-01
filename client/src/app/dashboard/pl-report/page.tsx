@@ -299,7 +299,7 @@ export default function PLReportPage() {
                         <Cell key={i} fill={PIE_COLORS[i % PIE_COLORS.length]} />
                       ))}
                     </Pie>
-                    <Tooltip formatter={(v: number) => IDR.format(v)} />
+                    <Tooltip formatter={(v) => IDR.format(Number(v))} />
                     <Legend iconType="circle" iconSize={8} wrapperStyle={{ fontSize: "11px" }} />
                   </PieChart>
                 </ResponsiveContainer>
@@ -315,7 +315,7 @@ export default function PLReportPage() {
                 <BarChart data={incomeVsExpenseData} barSize={48}>
                   <XAxis dataKey="name" tick={{ fontSize: 11 }} axisLine={false} tickLine={false} />
                   <YAxis hide />
-                  <Tooltip formatter={(v: number) => IDR.format(v)} />
+                  <Tooltip formatter={(v) => IDR.format(Number(v))} />
                   <Bar dataKey="value" radius={[6, 6, 0, 0]}>
                     <Cell fill="#065f46" />
                     <Cell fill="#dc2626" />
