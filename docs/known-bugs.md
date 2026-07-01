@@ -333,3 +333,20 @@ File ini adalah log permanen bug yang sudah pernah terjadi di project ini besert
   5. Login page: /login?role=sponsor menampilkan 2-tab UI — "Kode Undangan" (redirect ke sponsor-portal) dan "Sudah Punya Akun" (login langsung).
 - Catatan: ClientAccount tidak punya field email langsung — email ada di SponsorDeal. Lookup: SponsorDeal.findFirst({ where: { email } }) → ClientAccount.findUnique({ where: { dealId } }).
 - Tag: #sponsor #auth #email #credential #password-reset
+
+---
+
+## [2026-07-01] Email kredensial sponsor tidak masuk ke inbox penerima
+
+- Gejala: Resend SDK mengembalikan `{ id: "xxx" }` (sukses) dan PM2 log menampilkan `[EMAIL] Kredensial sponsor terkirim ke <email>`, tapi email tidak sampai ke inbox sponsor.
+- Root cause: `onboarding@resend.dev` adalah shared sender Resend untuk testing. Limitation-nya: **hanya bisa deliver ke email yang terdaftar di akun Resend** (biasanya hanya email owner akun). Email ke alamat eksternal (gmail, yahoo, domain lain) diterima oleh Resend API (return ID sukses) tapi **tidak dikirimkan** ke inbox penerima. Ini BUKAN bug, melainkan batasan Resend testing mode.
+- Root cause tambahan: Domain `nexeventapp.tech` belum diverifikasi di Resend, sehingga tidak bisa dipakai sebagai custom sender.
+- File terkait: `server/services/email.service.js`, `server/controllers/sponsor.controller.js`
+- Fix (workaround hingga domain diverifikasi):
+  1. Ubah penerima email dari `deal.email` (sponsor) → `req.user.email` (promotor yang login)
+  2. Update template email — kirim ke promotor dengan info lengkap: nama sponsor, email sponsor, username, password, link login
+  3. Email berisi tombol WhatsApp dan mailto ke email sponsor, sehingga promotor bisa forward langsung
+  4. Credential modal di UI (`creds` state di `dashboard/sponsor/page.tsx`) sudah ada sebagai fallback — WhatsApp share button sudah tersedia di sana
+- Cara deteksi: Cek PM2 logs — `[EMAIL] Kredensial terkirim ke X` TIDAK berarti email sampai ke inbox. Verifikasi dengan test curl langsung ke Resend API.
+- Catatan: Saat domain `nexeventapp.tech` sudah diverifikasi di Resend, ganti `promotorEmail` kembali ke `sponsorEmail` dan ganti sender ke `noreply@nexeventapp.tech`.
+- Tag: #email #resend #sponsor #domain-verification #workaround
