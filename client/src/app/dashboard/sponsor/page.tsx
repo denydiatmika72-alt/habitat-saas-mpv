@@ -827,23 +827,7 @@ function DealCard({
                 </p>
               )}
 
-              {invoiceState ? (
-                <>
-                  <span className="flex items-center gap-1.5 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-1.5 text-xs font-medium text-emerald-700">
-                    <Check className="size-3.5" />
-                    {invoiceState.invoiceNumber}
-                  </span>
-                  <select
-                    value={invoiceState.status}
-                    onChange={(e) => updateInvoiceStatus(e.target.value)}
-                    className="rounded-lg border border-slate-200 bg-white px-2 py-1.5 text-xs text-slate-700 outline-none focus:border-emerald-800"
-                  >
-                    <option value="Belum Dibayar">Belum Dibayar</option>
-                    <option value="Sudah Dibayar">Sudah Dibayar</option>
-                    <option value="Jatuh Tempo">Jatuh Tempo</option>
-                  </select>
-                </>
-              ) : (
+              {!invoiceState && (
                 <button
                   type="button"
                   onClick={generateInvoice}
@@ -857,9 +841,6 @@ function DealCard({
                   )}
                   {generatingInvoice ? "Membuat..." : "Generate Invoice"}
                 </button>
-              )}
-              {invoiceError && (
-                <p className="w-full text-xs text-red-600">{invoiceError}</p>
               )}
             </>
           ) : rejected ? (
@@ -900,6 +881,26 @@ function DealCard({
           )}
         </div>
       </div>
+      {/* Invoice section — row terpisah agar tidak overflow action bar */}
+      {approved && invoiceState && (
+        <div className="flex flex-wrap items-center gap-2 border-t border-slate-100 pt-3">
+          <span className="text-xs font-medium text-slate-500">Invoice:</span>
+          <span className="flex items-center gap-1.5 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-1.5 text-xs font-medium text-emerald-700">
+            <Check className="size-3.5" />
+            {invoiceState.invoiceNumber}
+          </span>
+          <select
+            value={invoiceState.status}
+            onChange={(e) => updateInvoiceStatus(e.target.value)}
+            className="rounded-lg border border-slate-200 bg-white px-2 py-1.5 text-xs text-slate-700 outline-none focus:border-emerald-800"
+          >
+            <option value="Belum Dibayar">Belum Dibayar</option>
+            <option value="DP Terbayar">DP Terbayar</option>
+            <option value="Lunas">Lunas</option>
+          </select>
+          {invoiceError && <p className="text-xs text-red-600">{invoiceError}</p>}
+        </div>
+      )}
       {approved && <DeliverableManagerForDeal dealId={deal.id} />}
     </article>
   )

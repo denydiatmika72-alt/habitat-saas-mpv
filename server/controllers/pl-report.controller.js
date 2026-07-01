@@ -19,7 +19,12 @@ const getPLReport = async (req, res) => {
     const [sponsorDeals, otherIncomeRows, promotorExpenseRows, crewTxRows] = await Promise.all([
       // 1. Sponsor income — status Disetujui
       prisma.sponsorDeal.findMany({
-        where: { eventId, status: 'Disetujui' },
+        where: {
+          eventId,
+          status: 'Disetujui',
+          // Hanya deal yang sudah ada pembayaran (DP atau Lunas)
+          invoices: { some: { status: { in: ['DP Terbayar', 'Lunas'] } } },
+        },
         select: { sponsorName: true, tier: true, totalValue: true },
       }),
 
@@ -91,7 +96,7 @@ const getPLReport = async (req, res) => {
       event: { id: event.id, title: event.title, eventDate: event.event_date, location: event.location },
       summary: { totalIncome, totalExpense, netPL, marginPct, isProfit: netPL >= 0 },
       income: {
-        sponsor: { total: sponsorTotal, items: sponsorItems },
+        sponsor: { total: sponsorTotal, note: 'Hanya deal dengan invoice DP Terbayar atau Lunas', items: sponsorItems },
         other: { total: otherTotal, items: otherIncomeRows },
       },
       expense: {
@@ -126,7 +131,12 @@ const exportPLReportPDF = async (req, res) => {
 
     const [sponsorDeals, otherIncomeRows, promotorExpenseRows, crewTxRows] = await Promise.all([
       prisma.sponsorDeal.findMany({
-        where: { eventId, status: 'Disetujui' },
+        where: {
+          eventId,
+          status: 'Disetujui',
+          // Hanya deal yang sudah ada pembayaran (DP atau Lunas)
+          invoices: { some: { status: { in: ['DP Terbayar', 'Lunas'] } } },
+        },
         select: { sponsorName: true, tier: true, totalValue: true },
       }),
       prisma.otherIncome.findMany({
@@ -237,8 +247,10 @@ const exportPLReportPDF = async (req, res) => {
     // A. Sponsor Deal
     doc.fontSize(9).fillColor(DARK).font('Helvetica-Bold').text('A. Sponsor Deal')
     doc.font('Helvetica').fillColor(DARK)
+    doc.fontSize(8).fillColor(GRAY).font('Helvetica').text('  * Hanya deal dengan invoice DP Terbayar atau Lunas', { indent: 10 })
+    doc.font('Helvetica').fillColor(DARK)
     if (sponsorDeals.length === 0) {
-      doc.fontSize(9).fillColor(GRAY).text('  Tidak ada data sponsor deal Disetujui.', { indent: 10 })
+      doc.fontSize(9).fillColor(GRAY).text('  Tidak ada sponsor deal dengan pembayaran.', { indent: 10 })
     } else {
       sponsorDeals.forEach((d) => {
         const y = doc.y
