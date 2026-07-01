@@ -317,3 +317,19 @@ File ini adalah log permanen bug yang sudah pernah terjadi di project ini besert
   2. Ganti `formatter={(v: number) => IDR.format(v)}` → `formatter={(v) => IDR.format(Number(v))}` pada semua instance Tooltip di file (ada 2 — PieChart dan BarChart)
   3. Verifikasi `npm run build` lokal sukses sebelum push
 - Tag: #vercel #build-error #recharts #typescript #react-is #peer-dependency
+
+---
+
+## [2026-07-01] Sponsor tidak bisa login — password terlupa / akun baru tidak tahu password
+
+- Gejala: Sponsor melaporkan tidak bisa login ke /sponsor-dashboard. Password yang diterima sebelumnya tidak bekerja, atau sponsor belum pernah menerima kredensial.
+- Root cause: Flow lama tidak mengirim email otomatis saat akun dibuat. Password hanya ditampilkan sekali di UI promotor dan tidak tersimpan di mana pun secara plain text.
+- File terkait: server/controllers/sponsor.controller.js, server/services/email.service.js, server/routes/sponsor.routes.js
+- Fix:
+  1. Reset password darurat: buat script server/scripts/reset-sponsor-password.js, jalankan di VPS, cari SponsorDeal by email, update ClientAccount.password via bcrypt hash.
+  2. Auto-email: createAccount sekarang auto-kirim email kredensial via sendSponsorCredential setelah akun dibuat.
+  3. Resend credential: tambah endpoint POST /api/sponsor/deals/:id/resend-credential (verifyToken) — generate password baru, update hash, kirim email.
+  4. Email login: verifyAccount kini support identifier (email atau username). Jika @ ada di input, cari via SponsorDeal.email lalu ClientAccount.
+  5. Login page: /login?role=sponsor menampilkan 2-tab UI — "Kode Undangan" (redirect ke sponsor-portal) dan "Sudah Punya Akun" (login langsung).
+- Catatan: ClientAccount tidak punya field email langsung — email ada di SponsorDeal. Lookup: SponsorDeal.findFirst({ where: { email } }) → ClientAccount.findUnique({ where: { dealId } }).
+- Tag: #sponsor #auth #email #credential #password-reset
