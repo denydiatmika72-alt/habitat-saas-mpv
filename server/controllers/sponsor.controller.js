@@ -221,37 +221,37 @@ const updateDealStatus = async (req, res) => {
       return res.status(400).json({ success: false, message: 'Status tidak valid.' });
     }
 
-    // Ambil tier dan dealBenefits sebelum update
+    // Ambil tier dan dealBenefits sebelum update (include benefit name/category untuk auto-create deliverables)
     const dealBefore = await prisma.sponsorDeal.findUnique({
       where: { id },
       select: {
         tier: true,
-        dealBenefits: { select: { benefitId: true, qty: true } },
+        dealBenefits: {
+          select: {
+            benefitId: true,
+            qty: true,
+            benefit: { select: { name: true, category: true, description: true } },
+          },
+        },
       },
     });
     const deal = await prisma.sponsorDeal.update({ where: { id }, data: { status } });
     const dealBenefits = dealBefore?.dealBenefits ?? [];
 
     if (status === 'Disetujui' && dealBefore) {
-      // Auto-create deliverables dari benefit paket
+      // Auto-create deliverables dari benefit yang dipilih sponsor (bukan dari package)
       const existing = await prisma.sponsorDeliverable.count({ where: { dealId: id } });
-      if (existing === 0) {
-        const pkg = await prisma.sponsorPackage.findFirst({
-          where: { name: dealBefore.tier },
-          include: { benefits: { include: { benefit: true } } },
+      if (existing === 0 && dealBenefits.length > 0) {
+        await prisma.sponsorDeliverable.createMany({
+          data: dealBenefits.map(({ benefit, qty }) => ({
+            dealId: id,
+            title: `${qty}× ${benefit.name}`,
+            category: benefit.category,
+            status: 'Planning',
+            notes: benefit.description || null,
+          })),
         });
-        if (pkg && pkg.benefits.length > 0) {
-          await prisma.sponsorDeliverable.createMany({
-            data: pkg.benefits.map(({ benefit }) => ({
-              dealId: id,
-              title: benefit.name,
-              category: benefit.category,
-              status: 'Planning',
-              notes: benefit.description || null,
-            })),
-          });
-          console.log(`[UPDATE DEAL STATUS] Auto-created ${pkg.benefits.length} deliverables for deal ${id}`);
-        }
+        console.log(`[UPDATE DEAL STATUS] Auto-created ${dealBenefits.length} deliverables for deal ${id}`);
       }
 
       // Pindahkan stok: heldQty → usedQty
@@ -502,16 +502,47 @@ const getDeliverables = async (req, res) => {
       return res.status(400).json({ success: false, message: 'dealId query param wajib diisi.' });
     }
 
-    const [items, deal] = await Promise.all([
+    let [items, deal] = await Promise.all([
       prisma.sponsorDeliverable.findMany({
         where: { dealId: String(dealId) },
         orderBy: { createdAt: 'asc' },
       }),
       prisma.sponsorDeal.findUnique({
         where: { id: String(dealId) },
-        select: { tier: true, createdAt: true },
+        select: { tier: true, createdAt: true, status: true },
       }),
     ]);
+
+    // Lazy backfill: deal sudah Disetujui tapi belum punya deliverables (historical deals)
+    if (items.length === 0 && deal?.status === 'Disetujui') {
+      const dealFull = await prisma.sponsorDeal.findUnique({
+        where: { id: String(dealId) },
+        select: {
+          dealBenefits: {
+            select: {
+              qty: true,
+              benefit: { select: { name: true, category: true, description: true } },
+            },
+          },
+        },
+      });
+      if (dealFull?.dealBenefits.length > 0) {
+        await prisma.sponsorDeliverable.createMany({
+          data: dealFull.dealBenefits.map(({ benefit, qty }) => ({
+            dealId: String(dealId),
+            title: `${qty}× ${benefit.name}`,
+            category: benefit.category,
+            status: 'Planning',
+            notes: benefit.description || null,
+          })),
+        });
+        console.log(`[DELIVERABLES] Backfilled ${dealFull.dealBenefits.length} deliverables for deal ${dealId}`);
+        items = await prisma.sponsorDeliverable.findMany({
+          where: { dealId: String(dealId) },
+          orderBy: { createdAt: 'asc' },
+        });
+      }
+    }
 
     // Cari harga benefit dari paket yang cocok dengan tier deal
     const benefitPriceMap = new Map();
