@@ -426,3 +426,30 @@ File ini adalah log permanen bug yang sudah pernah terjadi di project ini besert
   4. Tombol email punya 3 state: default / loading (spin) / sent (check + "Email Terkirim").
   5. `emailSent` di-reset saat modal buka baru (`setEmailSent(false)` sebelum `setCreds`).
 - Tag: #sponsor #credential #email #ux #modal
+
+---
+
+## [2026-07-01] PDF Export alert menampilkan PDF bytes melalui content-type check yang tidak reliable
+
+- Gejala: Klik Export PDF → alert "Gagal generate PDF: %PDF-1.3 %…" padahal backend HTTP 200 dan size 2.7KB. Fix pertama (cek `contentType.includes('application/pdf')`) tetap gagal.
+- Root cause: Vercel proxy (atau Next.js proxy di `/api/[...proxy]`) tidak selalu meneruskan `Content-Type: application/pdf` ke response frontend. Akibatnya `contentType.includes('application/pdf')` = `false` meski response sebenarnya PDF binary — frontend masuk error branch dan mencoba `res.json()` pada PDF bytes.
+- File terkait: `client/src/app/dashboard/pl-report/page.tsx`
+- Fix: Gunakan `response.ok` (HTTP status) sebagai satu-satunya sinyal, bukan content-type:
+  - `!res.ok` → try JSON parse error message → alert
+  - `res.ok` → langsung `res.blob()` → download (tidak pernah cek content-type)
+- Tag: #pdf #pl-report #content-type #proxy #vercel #frontend
+
+---
+
+## [2026-07-01] Sponsor login 401 — email typo di data + password stale setelah kirim email
+
+- Gejala 1: Login sponsor dengan email `pewaraganstudiodesain@gmail.com` → 401 padahal akun ada.
+- Gejala 2: Setelah promotor klik "Kirim Email ke Sponsor" di modal, modal masih tampilkan password LAMA, padahal email sponsor sudah berisi password BARU.
+- Root cause 1: Email di database adalah `pewareganstudiodesain@gmail.com` (typo: "pewaregan" bukan "pewaragan"). Sponsor memasukkan email dengan ejaan berbeda → lookup email gagal → 401.
+- Root cause 2: `resend-credential` endpoint generate password baru dan update hash di DB, tapi frontend tidak update `creds.password` setelah response berhasil — modal jadi stale.
+- File terkait: `client/src/app/dashboard/sponsor/page.tsx`, `server/scripts/reset-pewaragan-password.js` (one-time script)
+- Fix:
+  1. Password direset via one-time script ke `Sponsor2026!` untuk `pewareganstudiodesain@gmail.com` — sponsor bisa login dengan username `pewareganstudiodesain` atau email tersebut.
+  2. Modal "Kirim Email ke Sponsor": setelah response sukses, `setCreds(c => ({ ...c, password: data.data.password }))` — modal langsung menampilkan password terbaru yang dikirim ke email.
+- Pelajaran: SELALU verifikasi email di DB sebelum diagnosa login issue. Email di SponsorDeal diinput manual oleh sponsor — typo sangat mungkin.
+- Tag: #sponsor #login #401 #email-typo #password-stale #modal
