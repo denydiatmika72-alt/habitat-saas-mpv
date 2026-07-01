@@ -401,3 +401,28 @@ File ini adalah log permanen bug yang sudah pernah terjadi di project ini besert
   4. `DealCard` menerima prop `onCredsGenerated(c: GeneratedCreds)` — dipanggil saat resend sukses.
   5. Modal berisi: tabel email/username/password/link, tombol Salin/WA/Email, peringatan amber, tombol tutup.
 - Tag: #sponsor #credential #modal #copy #resend
+
+---
+
+## [2026-07-01] PDF P&L alert menampilkan isi PDF ("%PDF-1.3 %…") alih-alih error message
+
+- Gejala: Klik "Export PDF" → alert muncul dengan teks "Gagal generate PDF: %PDF-1.3 %…" (isi raw PDF) padahal backend berhasil generate PDF.
+- Root cause: Logic `if (!res.ok || !contentType.includes("pdf"))` — kondisi kedua `!contentType.includes("pdf")` bisa `true` jika proxy (Nginx atau Vercel) tidak forward `Content-Type: application/pdf` dengan tepat. Saat masuk error branch, kode memanggil `res.json()` pada response yang sebenarnya adalah bytes PDF — `res.json()` kadang bisa "berhasil" dan mengembalikan objek dengan property `message` berisi bytes awal PDF, sehingga alert menampilkan `%PDF-1.3`.
+- File terkait: `client/src/app/dashboard/pl-report/page.tsx`
+- Fix: Ubah logic dari negatif ke positif — cek `contentType.includes('application/pdf')` PERTAMA. Jika PDF → blob dan download. Jika BUKAN PDF → baru parse JSON error. Jangan pernah call `res.json()` pada response yang mungkin PDF.
+- Tag: #pdf #pl-report #content-type #proxy #frontend
+
+---
+
+## [2026-07-01] Auto-email credential saat approve deal — email tidak bisa dikontrol promotor
+
+- Gejala: Saat promotor approve deal sponsor dan akun dibuat, email langsung dikirim otomatis tanpa konfirmasi. Promotor tidak punya kesempatan memilih apakah mau kirim via email, WA, atau cukup salin manual.
+- Root cause: `createAccount` controller langsung memanggil `sendSponsorCredential()` setelah akun dibuat, tidak ada flow persetujuan dari promotor.
+- File terkait: `server/controllers/sponsor.controller.js`, `client/src/app/dashboard/sponsor/page.tsx`
+- Fix:
+  1. Backend: Hapus panggilan `sendSponsorCredential()` dari `createAccount` — akun dibuat tanpa kirim email otomatis.
+  2. Frontend: Modal credential sekarang punya 3 tombol stacked vertikal: "Salin Semua" / "Kirim via WhatsApp" / "Kirim Email ke Sponsor".
+  3. Tombol "Kirim Email ke Sponsor" memanggil `POST /api/sponsor/deals/:id/resend-credential` secara eksplisit — promotor yang menentukan kapan kirim email.
+  4. Tombol email punya 3 state: default / loading (spin) / sent (check + "Email Terkirim").
+  5. `emailSent` di-reset saat modal buka baru (`setEmailSent(false)` sebelum `setCreds`).
+- Tag: #sponsor #credential #email #ux #modal
