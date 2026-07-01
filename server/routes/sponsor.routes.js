@@ -18,6 +18,7 @@ const {
   saveThresholds,
   createAccount,
   verifyAccount,
+  resendCredential,
   getDeliverables,
   createDeliverable,
   updateDeliverable,
@@ -56,7 +57,8 @@ router.post('/thresholds', verifyToken, saveThresholds);
 
 // Client accounts
 router.post('/accounts', verifyToken, createAccount);
-router.post('/accounts/verify', verifyLimiter, verifyAccount); // public + rate-limited
+router.post('/accounts/verify', verifyLimiter, verifyAccount);           // public + rate-limited
+router.post('/deals/:id/resend-credential', verifyToken, resendCredential);
 
 // Deliverables
 router.get('/deliverables', getDeliverables);               // public — client dashboard

@@ -1,5 +1,6 @@
 const prisma = require('../src/lib/prisma');
 const bcrypt = require('bcryptjs');
+const { sendSponsorCredential } = require('../services/email.service');
 
 // ─── Code helpers ─────────────────────────────────────────────────────────────
 function makeCodeString() {
@@ -409,6 +410,18 @@ const createAccount = async (req, res) => {
     const account = await prisma.clientAccount.create({
       data: { dealId, sponsorName: sponsorName ?? '', username: finalUsername, password: hashed, tier: tier ?? '' },
     });
+
+    // Auto-kirim email kredensial ke sponsor
+    const deal = await prisma.sponsorDeal.findUnique({ where: { id: dealId }, select: { email: true } });
+    if (deal?.email) {
+      sendSponsorCredential({
+        to: deal.email,
+        sponsorName: sponsorName ?? account.sponsorName,
+        username: account.username,
+        password, // plain text sebelum di-hash
+      });
+    }
+
     return res.status(201).json({
       success: true,
       data: { id: account.id, username: account.username, password },
@@ -421,22 +434,66 @@ const createAccount = async (req, res) => {
 
 const verifyAccount = async (req, res) => {
   try {
-    const { username, password } = req.body;
-    if (!username || !password) {
-      return res.status(400).json({ success: false, message: 'Username dan password wajib diisi.' });
+    // Support 'identifier' (email atau username) dan legacy 'username'
+    const identifier = req.body.identifier || req.body.username;
+    const { password } = req.body;
+    if (!identifier || !password) {
+      return res.status(400).json({ success: false, message: 'Identifier dan password wajib diisi.' });
     }
-    const account = await prisma.clientAccount.findUnique({ where: { username } });
+
+    let account;
+    if (identifier.includes('@')) {
+      // Lookup via email → SponsorDeal → ClientAccount
+      const deal = await prisma.sponsorDeal.findFirst({ where: { email: identifier }, select: { id: true } });
+      if (deal) {
+        account = await prisma.clientAccount.findUnique({ where: { dealId: deal.id } });
+      }
+    } else {
+      account = await prisma.clientAccount.findUnique({ where: { username: identifier } });
+    }
+
     if (!account) {
-      return res.status(401).json({ success: false, message: 'Username atau password salah.' });
+      return res.status(401).json({ success: false, message: 'Username/email atau password salah.' });
     }
     const match = await bcrypt.compare(password, account.password);
     if (!match) {
-      return res.status(401).json({ success: false, message: 'Username atau password salah.' });
+      return res.status(401).json({ success: false, message: 'Username/email atau password salah.' });
     }
     return res.status(200).json({
       success: true,
       data: { sponsorName: account.sponsorName, tier: account.tier, dealId: account.dealId },
     });
+  } catch (error) {
+    console.error('[SPONSOR ERROR]', error.message, error.stack);
+    return res.status(500).json({ success: false, message: error.message });
+  }
+};
+
+const resendCredential = async (req, res) => {
+  try {
+    const { id: dealId } = req.params;
+    const deal = await prisma.sponsorDeal.findUnique({
+      where: { id: dealId },
+      select: { email: true, sponsorName: true },
+    });
+    if (!deal) return res.status(404).json({ success: false, message: 'Deal tidak ditemukan.' });
+
+    const account = await prisma.clientAccount.findUnique({ where: { dealId } });
+    if (!account) return res.status(404).json({ success: false, message: 'Akun sponsor belum dibuat. Setujui deal dulu.' });
+
+    // Generate password baru, update hash, kirim email
+    const newPassword = Math.random().toString(36).slice(-8).toUpperCase();
+    const hashed = await bcrypt.hash(newPassword, 10);
+    await prisma.clientAccount.update({ where: { dealId }, data: { password: hashed } });
+
+    await sendSponsorCredential({
+      to: deal.email,
+      sponsorName: deal.sponsorName,
+      username: account.username,
+      password: newPassword,
+    });
+
+    return res.status(200).json({ success: true, message: 'Kredensial baru berhasil dikirim ke email sponsor.' });
   } catch (error) {
     console.error('[SPONSOR ERROR]', error.message, error.stack);
     return res.status(500).json({ success: false, message: error.message });
@@ -543,6 +600,7 @@ module.exports = {
   saveThresholds,
   createAccount,
   verifyAccount,
+  resendCredential,
   getDeliverables,
   createDeliverable,
   updateDeliverable,

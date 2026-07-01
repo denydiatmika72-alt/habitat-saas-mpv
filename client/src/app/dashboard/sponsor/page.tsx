@@ -619,6 +619,25 @@ function DealCard({
   const [invoiceState, setInvoiceState] = useState<InvoiceState | null>(null)
   const [generatingInvoice, setGeneratingInvoice] = useState(false)
   const [invoiceError, setInvoiceError] = useState<string | null>(null)
+  const [resending, setResending] = useState(false)
+  const [resendMsg, setResendMsg] = useState<{ ok: boolean; text: string } | null>(null)
+
+  async function handleResendCredential() {
+    setResending(true)
+    setResendMsg(null)
+    try {
+      const res = await fetch(`${API_BASE}/sponsor/deals/${deal.id}/resend-credential`, {
+        method: 'POST',
+        headers: { ...authHeaders() },
+      })
+      const data = await safeJson(res)
+      setResendMsg({ ok: res.ok && !!data.success, text: (data.message as string) ?? (res.ok ? 'Terkirim!' : 'Gagal kirim.') })
+    } catch {
+      setResendMsg({ ok: false, text: 'Gagal menghubungi server.' })
+    } finally {
+      setResending(false)
+    }
+  }
 
   useEffect(() => {
     if (!approved) return
@@ -789,6 +808,24 @@ function DealCard({
               >
                 Lihat Dashboard →
               </a>
+
+              {deal.account && (
+                <button
+                  type="button"
+                  onClick={handleResendCredential}
+                  disabled={resending}
+                  title="Kirim ulang kredensial login ke email sponsor"
+                  className="flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-medium text-slate-600 transition-colors hover:bg-slate-50 disabled:opacity-60"
+                >
+                  {resending ? <RotateCw className="size-3.5 animate-spin" /> : <Mail className="size-3.5" />}
+                  {resending ? "Mengirim..." : "Kirim Ulang Credential"}
+                </button>
+              )}
+              {resendMsg && (
+                <p className={`w-full text-xs ${resendMsg.ok ? "text-emerald-700" : "text-red-600"}`}>
+                  {resendMsg.text}
+                </p>
+              )}
 
               {invoiceState ? (
                 <>

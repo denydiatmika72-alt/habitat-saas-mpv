@@ -685,6 +685,15 @@ export default function SponsorDashboardPage() {
     total: 0, executed: 0, active: 0, packagePrice: 0, loaded: false,
   })
 
+  // Baca session dari sessionStorage jika redirect dari /login?role=sponsor
+  useEffect(() => {
+    const stored = sessionStorage.getItem('sponsor_session')
+    if (stored) {
+      try { setSession(JSON.parse(stored)) } catch {}
+      sessionStorage.removeItem('sponsor_session')
+    }
+  }, [])
+
   // Setelah login berhasil, ambil deliverables dan harga paket dari tier
   useEffect(() => {
     if (!session) return
