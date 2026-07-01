@@ -453,3 +453,26 @@ File ini adalah log permanen bug yang sudah pernah terjadi di project ini besert
   2. Modal "Kirim Email ke Sponsor": setelah response sukses, `setCreds(c => ({ ...c, password: data.data.password }))` — modal langsung menampilkan password terbaru yang dikirim ke email.
 - Pelajaran: SELALU verifikasi email di DB sebelum diagnosa login issue. Email di SponsorDeal diinput manual oleh sponsor — typo sangat mungkin.
 - Tag: #sponsor #login #401 #email-typo #password-stale #modal
+
+## [2026-07-01] PDF P&L corrupt — tidak bisa dibuka browser
+- Gejala: File PDF berhasil ter-download (HTTP 200, progress bar selesai) tapi browser menampilkan "Failed to load PDF document". PM2 log tidak menunjukkan error apapun.
+- Root cause: PDFKit explicit Y-positioning (`.text('...', x, y)`) yang dipakai untuk menaruh beberapa teks di Y yang sama bisa membuat internal state PDFKit tidak konsisten. Saat browser membaca file, PDF structure dianggap corrupt meskipun `doc.end()` terpanggil. Selain itu, tidak ada safety net: kalau ada exception setelah `doc.pipe(res)`, `doc.end()` tidak pernah dipanggil (catch block skip karena headersSent=true) → PDF truncated.
+- File terkait: `server/controllers/pl-report.controller.js`
+- Fix: Rewrite `exportPLReportPDF` dengan pola aman:
+  1. Semua Prisma query selesai **sebelum** `doc.pipe(res)` dipanggil (STEP 1 & 2 data fetch, STEP 3 PDF stream)
+  2. Hapus semua explicit Y-positioning — gunakan `.moveDown()` dan `{ continued: true }` + `{ align: 'right' }` untuk layout
+  3. Catch block di dalam section setelah `doc.pipe(res)` memanggil `try { doc.end() } catch {}` untuk memastikan stream selalu properly terminated
+  4. Helper `fmtIDR(n)` dengan `Number(n) || 0` sebagai null-safe guard
+- Pelajaran: Jangan pernah pakai explicit x,y positioning (`doc.text('', x, y)`) di PDFKit untuk multiple teks pada Y yang sama. Gunakan flow-based layout dengan `continued: true` + `align: 'right'`.
+- Tag: #pdf #pdfkit #corrupt #pl-report
+
+## [2026-07-01] Deliverables tidak auto-generate saat deal disetujui
+- Gejala: Sponsor memilih benefits (misal "10× Umbul-Umbul, 1× Booth 3×3") saat submit deal. Setelah promotor approve, sponsor dashboard menampilkan "Belum ada deliverable untuk akun ini".
+- Root cause: `updateDealStatus` membuat deliverables dengan cara lookup ke `SponsorPackage` berdasarkan `deal.tier` (nama tier). Jika nama tier tidak cocok persis dengan package yang ada di DB, atau benefit dipilih à la carte, `pkg` bernilai `null` → deliverables tidak dibuat. Seharusnya deliverables dibuat dari `SponsorDealBenefit[]` (benefit yang benar-benar dipilih sponsor).
+- File terkait: `server/controllers/sponsor.controller.js`
+- Fix:
+  1. Update query di `updateDealStatus` — tambah `benefit: { select: { name, category, description } }` ke dalam `dealBenefits` select.
+  2. Ganti logic auto-create: pakai `dealBenefits.map(({ benefit, qty }) => ({ title: \`${qty}× ${benefit.name}\`, ... }))` — bukan lookup package.
+  3. Tambah **lazy backfill** di `getDeliverables`: jika deal berstatus `Disetujui` dan `items.length === 0`, auto-create deliverables dari `dealBenefits` dan re-fetch → handle historical deals yang sudah approved sebelum fix ini.
+- Pelajaran: Data "apa yang sponsor pilih" ada di `SponsorDealBenefit`, bukan di `SponsorPackage`. Jangan derive deliverables dari package karena tier bisa berubah atau tidak cocok.
+- Tag: #sponsor #deliverables #auto-generate #deal-benefits
