@@ -369,3 +369,35 @@ File ini adalah log permanen bug yang sudah pernah terjadi di project ini besert
   4. Aturan: "DP Terbayar" dan "Lunas" sama-sama pakai `totalValue` deal (bukan partial DP, karena nilai DP tidak tersimpan terpisah).
   5. Email kredensial diupdate ke `Promise.allSettled` — kirim ke promotor (guaranteed) DAN sponsor (best-effort).
 - Tag: #invoice #sponsor #pl-report #dropdown #layout #email
+
+---
+
+## [2026-07-01] PDF P&L "Failed to load PDF document" di browser
+
+- Gejala: Klik tombol "Export PDF" di halaman P&L Report → browser menampilkan "Failed to load PDF document" atau file PDF kosong/rusak saat dibuka.
+- Root cause: Frontend `handleExportPDF` langsung memanggil `res.blob()` tanpa mengecek `res.ok` atau `Content-Type`. Jika backend mengembalikan error JSON, frontend membuat blob dari JSON tersebut → PDF reader tidak bisa membaca JSON sebagai PDF.
+- File terkait: `client/src/app/dashboard/pl-report/page.tsx`, `server/controllers/pl-report.controller.js`
+- Fix:
+  1. Tambah pengecekan `res.ok` dan `content-type.includes('pdf')` sebelum `res.blob()`. Jika bukan PDF, parse JSON error dan tampilkan `alert('Gagal generate PDF: ' + message)`.
+  2. Tambah guard `blob.size < 100` untuk PDF kosong.
+  3. Perbaiki `a.click()` — gunakan `document.body.appendChild(a)` sebelum click dan `removeChild` sesudah, supaya download reliable di semua browser (detached anchor tidak reliable di Firefox/Safari).
+  4. Backend `exportPLReportPDF` sudah benar: data di-fetch dulu sebelum PDF dimulai, `res.setHeader` → `doc.pipe(res)` → `doc.end()` → catch hanya kirim JSON jika `!res.headersSent`.
+- Tag: #pdf #pl-report #frontend #blob #download
+
+---
+
+## [2026-07-01] Kredensial sponsor hilang setelah modal + Kirim Ulang tidak tampilkan password baru
+
+- Gejala 1: Setelah approve deal, kredensial tampil inline di card — rentan hilang saat re-render atau scroll.
+- Gejala 2: Tombol "Kirim Ulang Credential" hanya tampilkan teks sukses/gagal, password baru tidak ditampilkan.
+- Gejala 3: Tidak ada tombol "Copy All" untuk salin kredensial ke clipboard.
+- Root cause 1: Credential display inline di card rentan hilang saat re-render; tidak ada copy button.
+- Root cause 2: Endpoint `POST /api/sponsor/deals/:id/resend-credential` return `{ success: true, message }` saja tanpa `data: { username, password }`.
+- File terkait: `client/src/app/dashboard/sponsor/page.tsx`, `server/controllers/sponsor.controller.js`
+- Fix:
+  1. Backend `resendCredential` sekarang return `{ success: true, message, data: { username, password } }`.
+  2. Hapus inline credential box dari `DealCard`, pindahkan ke modal overlay penuh (z-50) di level `DealTracker`.
+  3. Modal ditampilkan untuk KEDUANYA: approve deal baru DAN kirim ulang credential.
+  4. `DealCard` menerima prop `onCredsGenerated(c: GeneratedCreds)` — dipanggil saat resend sukses.
+  5. Modal berisi: tabel email/username/password/link, tombol Salin/WA/Email, peringatan amber, tombol tutup.
+- Tag: #sponsor #credential #modal #copy #resend
