@@ -58,6 +58,7 @@ type GeneratedCreds = {
   dealId: string
   username: string
   password: string
+  email: string
 }
 
 type GeneratedCode = {
@@ -603,7 +604,7 @@ function DealCard({
   onReject,
   approving,
   rejecting,
-  creds,
+  onCredsGenerated,
   promotorSettings,
 }: {
   deal: Deal
@@ -611,7 +612,7 @@ function DealCard({
   onReject: (d: Deal) => void
   approving: boolean
   rejecting: boolean
-  creds: GeneratedCreds | null
+  onCredsGenerated: (c: GeneratedCreds) => void
   promotorSettings: PromoterSettings | null
 }) {
   const approved = deal.status === "Disetujui"
@@ -620,20 +621,21 @@ function DealCard({
   const [generatingInvoice, setGeneratingInvoice] = useState(false)
   const [invoiceError, setInvoiceError] = useState<string | null>(null)
   const [resending, setResending] = useState(false)
-  const [resendMsg, setResendMsg] = useState<{ ok: boolean; text: string } | null>(null)
 
   async function handleResendCredential() {
     setResending(true)
-    setResendMsg(null)
     try {
       const res = await fetch(`${API_BASE}/sponsor/deals/${deal.id}/resend-credential`, {
         method: 'POST',
         headers: { ...authHeaders() },
       })
       const data = await safeJson(res)
-      setResendMsg({ ok: res.ok && !!data.success, text: (data.message as string) ?? (res.ok ? 'Terkirim!' : 'Gagal kirim.') })
+      if (res.ok && data.success && data.data) {
+        const d = data.data as { username: string; password: string }
+        onCredsGenerated({ dealId: deal.id, username: d.username, password: d.password, email: deal.email })
+      }
     } catch {
-      setResendMsg({ ok: false, text: 'Gagal menghubungi server.' })
+      // silently ignore — user can retry
     } finally {
       setResending(false)
     }
@@ -751,45 +753,6 @@ function DealCard({
               </p>
             )}
 
-            {creds && (
-              <div className="mt-3 rounded-xl border border-emerald-800/20 bg-emerald-50 p-3">
-                <p className="mb-1.5 flex items-center gap-1.5 text-xs font-semibold text-emerald-800">
-                  <KeyRound className="size-3.5" />
-                  Kredensial klien — bagikan ke sponsor
-                </p>
-                <p className="font-mono text-xs text-slate-700">
-                  Username: <span className="font-semibold">{creds.username}</span>
-                </p>
-                <p className="font-mono text-xs text-slate-700">
-                  Password: <span className="font-semibold">{creds.password}</span>
-                </p>
-                <div className="mt-3 flex gap-2">
-                  <button
-                    type="button"
-                    onClick={() => {
-                      const pesan = `Selamat! Pengajuan sponsorship Anda telah kami setujui. 🎉\n\nSilakan login ke dashboard sponsor Anda:\n🔗 ${window.location.origin}/sponsor-dashboard\n\n👤 Username: ${creds.username}\n🔑 Password: ${creds.password}\n\nMohon simpan informasi ini dengan aman.`
-                      window.open(`https://wa.me/?text=${encodeURIComponent(pesan)}`, "_blank")
-                    }}
-                    className="flex flex-1 items-center justify-center gap-1.5 rounded-lg bg-emerald-600 px-3 py-2 text-xs font-medium text-white transition-colors hover:bg-emerald-700"
-                  >
-                    <MessageCircle className="size-3.5" />
-                    Kirim via WhatsApp
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      const subjek = "Akses Dashboard Sponsor - Kredensial Login Anda"
-                      const isi = `Selamat!\n\nPengajuan sponsorship Anda telah kami setujui.\n\nSilakan login ke dashboard sponsor:\nLink: ${window.location.origin}/sponsor-dashboard\nUsername: ${creds.username}\nPassword: ${creds.password}\n\nMohon simpan informasi ini dengan aman.\n\nSalam,\nTim Kemitraan`
-                      window.open(`mailto:?subject=${encodeURIComponent(subjek)}&body=${encodeURIComponent(isi)}`, "_blank")
-                    }}
-                    className="flex flex-1 items-center justify-center gap-1.5 rounded-lg bg-slate-700 px-3 py-2 text-xs font-medium text-white transition-colors hover:bg-slate-800"
-                  >
-                    <Mail className="size-3.5" />
-                    Kirim via Email
-                  </button>
-                </div>
-              </div>
-            )}
           </div>
         </div>
 
@@ -820,11 +783,6 @@ function DealCard({
                   {resending ? <RotateCw className="size-3.5 animate-spin" /> : <Mail className="size-3.5" />}
                   {resending ? "Mengirim..." : "Kirim Ulang Credential"}
                 </button>
-              )}
-              {resendMsg && (
-                <p className={`w-full text-xs ${resendMsg.ok ? "text-emerald-700" : "text-red-600"}`}>
-                  {resendMsg.text}
-                </p>
               )}
 
               {!invoiceState && (
@@ -975,7 +933,7 @@ function DealTracker() {
 
       if (accountData.success && accountData.data) {
         const d = accountData.data as { username: string; password: string }
-        setCreds({ dealId: deal.id, username: d.username, password: d.password })
+        setCreds({ dealId: deal.id, username: d.username, password: d.password, email: deal.email })
       }
     } catch {
       // silently ignore — user can retry
@@ -1049,10 +1007,99 @@ function DealTracker() {
               onReject={handleReject}
               approving={approving === deal.id}
               rejecting={rejecting === deal.id}
-              creds={creds?.dealId === deal.id ? creds : null}
+              onCredsGenerated={setCreds}
               promotorSettings={promotorSettings}
             />
           ))}
+        </div>
+      )}
+
+      {/* ── Credential Modal ── */}
+      {creds && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+          <div className="w-full max-w-md rounded-2xl bg-white p-6 shadow-2xl">
+            <div className="mb-4 flex items-center gap-3">
+              <div className="rounded-xl bg-emerald-100 p-2">
+                <KeyRound className="size-5 text-emerald-700" />
+              </div>
+              <div>
+                <h2 className="font-bold text-slate-900">Kredensial Sponsor Siap!</h2>
+                <p className="text-sm text-slate-500">Simpan atau kirim ke sponsor sekarang</p>
+              </div>
+            </div>
+
+            <div className="mb-4 rounded-xl border border-slate-200 bg-slate-50 p-4">
+              <p className="mb-3 text-xs font-bold uppercase tracking-widest text-slate-400">
+                Akses Login Sponsor
+              </p>
+              <div className="space-y-2">
+                <div className="flex items-center justify-between">
+                  <span className="text-sm text-slate-500">Email</span>
+                  <span className="font-mono text-sm font-semibold text-slate-900">{creds.email || '-'}</span>
+                </div>
+                <div className="flex items-center justify-between">
+                  <span className="text-sm text-slate-500">Username</span>
+                  <span className="font-mono text-sm font-semibold text-slate-900">{creds.username}</span>
+                </div>
+                <div className="flex items-center justify-between">
+                  <span className="text-sm text-slate-500">Password</span>
+                  <span className="font-mono text-sm font-bold text-emerald-800">{creds.password}</span>
+                </div>
+                <div className="border-t border-slate-200 pt-2">
+                  <span className="text-xs text-slate-400">Login: nexeventapp.tech/login?role=sponsor</span>
+                </div>
+              </div>
+            </div>
+
+            <div className="mb-3 grid grid-cols-3 gap-2">
+              <button
+                type="button"
+                onClick={() => {
+                  const text = `Kredensial Sponsor nexEvent\nEmail: ${creds.email}\nUsername: ${creds.username}\nPassword: ${creds.password}\nLogin: https://nexeventapp.tech/login?role=sponsor`
+                  navigator.clipboard.writeText(text)
+                }}
+                className="flex items-center justify-center gap-1.5 rounded-xl border border-slate-200 py-2.5 text-xs font-semibold text-slate-700 hover:bg-slate-50"
+              >
+                <Copy className="size-3.5" />
+                Salin
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  const pesan = `Halo! Berikut akses Sponsor Dashboard nexEvent Anda:\n\n*Email:* ${creds.email}\n*Username:* ${creds.username}\n*Password:* ${creds.password}\n\nLogin di: https://nexeventapp.tech/login?role=sponsor`
+                  window.open(`https://wa.me/?text=${encodeURIComponent(pesan)}`, "_blank")
+                }}
+                className="flex items-center justify-center gap-1.5 rounded-xl bg-green-500 py-2.5 text-xs font-semibold text-white hover:bg-green-600"
+              >
+                <MessageCircle className="size-3.5" />
+                WA
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  const subjek = "Akses Dashboard Sponsor — nexEvent"
+                  const isi = `Halo,\n\nBerikut kredensial login Sponsor Dashboard nexEvent:\n\nEmail: ${creds.email}\nUsername: ${creds.username}\nPassword: ${creds.password}\nLink Login: https://nexeventapp.tech/login?role=sponsor\n\nMohon simpan informasi ini dengan aman.`
+                  window.open(`mailto:?subject=${encodeURIComponent(subjek)}&body=${encodeURIComponent(isi)}`, "_blank")
+                }}
+                className="flex items-center justify-center gap-1.5 rounded-xl bg-slate-700 py-2.5 text-xs font-semibold text-white hover:bg-slate-800"
+              >
+                <Mail className="size-3.5" />
+                Email
+              </button>
+            </div>
+
+            <p className="mb-4 rounded-lg border border-amber-200 bg-amber-50 p-3 text-xs text-amber-700">
+              Simpan password ini sekarang — tidak bisa dilihat lagi setelah modal ditutup. Gunakan tombol "Kirim Ulang Credential" jika sponsor lupa password.
+            </p>
+
+            <button
+              type="button"
+              onClick={() => setCreds(null)}
+              className="w-full rounded-xl bg-emerald-800 py-2.5 font-semibold text-white hover:bg-emerald-900"
+            >
+              Sudah Disimpan, Tutup
+            </button>
+          </div>
         </div>
       )}
     </section>

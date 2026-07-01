@@ -96,15 +96,25 @@ export default function PLReportPage() {
       const res = await fetch(`/api/pl-report/export-pdf?eventId=${selectedEventId}`, {
         headers: { Authorization: `Bearer ${getToken()}` },
       })
+      const contentType = res.headers.get("content-type") ?? ""
+      if (!res.ok || !contentType.includes("pdf")) {
+        const errData = await res.json().catch(() => ({}))
+        alert("Gagal generate PDF: " + ((errData as Record<string, unknown>).message ?? "Server error"))
+        return
+      }
       const blob = await res.blob()
+      if (blob.size < 100) { alert("PDF kosong — coba lagi."); return }
       const url = URL.createObjectURL(blob)
       const a = document.createElement("a")
       a.href = url
       a.download = `PL-Report-${selectedEventId}.pdf`
+      document.body.appendChild(a)
       a.click()
+      document.body.removeChild(a)
       URL.revokeObjectURL(url)
-    } catch {}
-    finally { setExportingPdf(false) }
+    } catch (e) {
+      alert("Gagal mengunduh PDF: " + (e instanceof Error ? e.message : "Unknown error"))
+    } finally { setExportingPdf(false) }
   }
 
   const handleAddOtherIncome = async (e: React.FormEvent) => {

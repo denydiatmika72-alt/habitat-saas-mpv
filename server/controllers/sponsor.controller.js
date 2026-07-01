@@ -496,7 +496,7 @@ const resendCredential = async (req, res) => {
       password: newPassword,
     });
 
-    return res.status(200).json({ success: true, message: 'Kredensial baru berhasil dikirim ke email promotor.' });
+    return res.status(200).json({ success: true, message: 'Kredensial baru berhasil dikirim ke email promotor.', data: { username: account.username, password: newPassword } });
   } catch (error) {
     console.error('[SPONSOR ERROR]', error.message, error.stack);
     return res.status(500).json({ success: false, message: error.message });
