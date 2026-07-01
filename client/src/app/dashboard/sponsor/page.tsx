@@ -1088,8 +1088,13 @@ function DealTracker() {
                       headers: authHeaders(),
                     })
                     const data = await res.json()
-                    if (data.success) setEmailSent(true)
-                    else alert('Gagal kirim email: ' + (data.message ?? 'Server error'))
+                    if (data.success) {
+                      setEmailSent(true)
+                      // Sync modal dengan password baru yang di-generate saat kirim email
+                      if (data.data?.password) {
+                        setCreds(c => c ? { ...c, password: data.data.password } : c)
+                      }
+                    } else alert('Gagal kirim email: ' + (data.message ?? 'Server error'))
                   } catch {
                     alert('Gagal menghubungi server.')
                   } finally {
