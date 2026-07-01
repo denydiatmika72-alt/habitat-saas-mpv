@@ -302,3 +302,18 @@ File ini adalah log permanen bug yang sudah pernah terjadi di project ini besert
   - Lock UI untuk Starter (bukan redirect/hide menu) — sama dengan pola di expenses/crew pages.
   - `npx prisma db push` (bukan `migrate dev`) untuk apply schema di VPS.
 - Tag: #pl-report #feature #prisma #schema #pdfkit #recharts #petty-cash #pro-feature
+
+---
+
+## [2026-07-01] Vercel build error setelah install recharts v3.9.1
+
+- Gejala: Vercel deployment gagal dalam 27 detik (sangat cepat → compile error, bukan runtime). Dua deploy berturut-turut gagal setelah P&L Report feature di-push.
+- Root cause: Dua masalah terpisah ditemukan dari `npm run build` lokal:
+  1. **Missing `react-is` package** — recharts v3.9.1 melakukan `import { isFragment } from 'react-is'` tapi package ini bukan transitive dependency yang otomatis terinstall di Next.js 16 / React 19. Error: `Module not found: Can't resolve 'react-is'`
+  2. **TypeScript type mismatch di Tooltip formatter** — recharts `Tooltip` `formatter` prop menerima `Formatter<ValueType, NameType>` di mana `ValueType` bisa `undefined`. Tipe eksplisit `(v: number) => string` tidak assignable karena `number` tidak menerima `undefined`. Error muncul karena TypeScript strict mode di Vercel.
+- File terkait: `client/src/app/dashboard/pl-report/page.tsx`, `client/package.json`
+- Fix:
+  1. `npm install react-is --legacy-peer-deps` di folder `client`
+  2. Ganti `formatter={(v: number) => IDR.format(v)}` → `formatter={(v) => IDR.format(Number(v))}` pada semua instance Tooltip di file (ada 2 — PieChart dan BarChart)
+  3. Verifikasi `npm run build` lokal sukses sebelum push
+- Tag: #vercel #build-error #recharts #typescript #react-is #peer-dependency
