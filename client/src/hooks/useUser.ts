@@ -11,6 +11,7 @@ export interface UserProfile {
   proEventId?: string | null;
   proExpiresAt?: string | null;
   proStartedAt?: string | null;
+  isAdmin?: boolean;
 }
 
 const getToken = () =>

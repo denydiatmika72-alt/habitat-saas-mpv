@@ -24,7 +24,7 @@ const register = async (req, res) => {
 
     const user = await prisma.user.create({
       data: { name, email, password: hashed, phone: phone ?? null, status: 'pending', role: userRole },
-      select: { id: true, name: true, email: true, phone: true, status: true, plan: true, role: true, createdAt: true },
+      select: { id: true, name: true, email: true, phone: true, status: true, plan: true, role: true, isAdmin: true, createdAt: true },
     });
 
     sendNewUserNotification(user); // fire-and-forget — jangan await agar tidak blokir response
@@ -72,7 +72,7 @@ const login = async (req, res) => {
       success: true,
       message: 'Login berhasil!',
       token,
-      data: { id: user.id, name: user.name, email: user.email, plan: user.plan, role: user.role },
+      data: { id: user.id, name: user.name, email: user.email, plan: user.plan, role: user.role, isAdmin: user.isAdmin },
     });
   } catch (err) {
     console.error('[LOGIN ERROR]', err);
@@ -85,7 +85,7 @@ const getMe = async (req, res) => {
     const user = await prisma.user.findUnique({
       where: { id: req.user.id },
       select: {
-        id: true, name: true, email: true, phone: true, status: true, plan: true, role: true, createdAt: true,
+        id: true, name: true, email: true, phone: true, status: true, plan: true, role: true, isAdmin: true, createdAt: true,
         proEventId: true, proExpiresAt: true, proStartedAt: true,
       },
     });

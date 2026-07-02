@@ -20,6 +20,7 @@ model User {
   status    String   @default("pending")
   plan      String   @default("starter")
   role      String   @default("promotor")
+  isAdmin   Boolean  @default(false)
 
   proEventId   String?
   proExpiresAt DateTime?

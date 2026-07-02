@@ -124,6 +124,49 @@ export default function ExpensesPage() {
     )
   }
 
+  if (!isPro) {
+    return (
+      <div className="mx-auto flex w-full max-w-7xl flex-col gap-6">
+        <div className="flex items-start gap-4">
+          <div className="flex size-11 items-center justify-center rounded-xl bg-emerald-50 text-emerald-800">
+            <Receipt className="size-5" />
+          </div>
+          <div>
+            <div className="flex items-center gap-2">
+              <h1 className="text-2xl font-semibold tracking-tight text-slate-900">
+                Expense Tracker
+              </h1>
+              <span className="rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-bold text-amber-800">
+                PRO
+              </span>
+            </div>
+            <p className="mt-0.5 text-sm text-slate-500">
+              Catat dan pantau pengeluaran event secara real-time.
+            </p>
+          </div>
+        </div>
+        <div className="flex flex-col items-center gap-4 rounded-xl border border-slate-200 bg-white p-10 text-center">
+          <div className="flex size-14 items-center justify-center rounded-xl bg-emerald-50">
+            <Lock className="size-7 text-emerald-800" />
+          </div>
+          <div>
+            <p className="text-lg font-semibold text-slate-900">🔒 Fitur Pro</p>
+            <p className="mx-auto mt-2 max-w-xs text-sm leading-relaxed text-slate-500">
+              Expense Tracker tersedia untuk pengguna Pro. Upgrade ke Pro untuk mencatat
+              dan memantau pengeluaran event secara real-time.
+            </p>
+          </div>
+          <Link
+            href="/dashboard/upgrade"
+            className="mt-2 inline-flex items-center gap-2 rounded-lg bg-emerald-800 px-6 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-emerald-900"
+          >
+            Upgrade ke Pro →
+          </Link>
+        </div>
+      </div>
+    )
+  }
+
   return (
     <div className="mx-auto flex w-full max-w-7xl flex-col gap-6">
       {/* Header */}
@@ -180,30 +223,6 @@ export default function ExpensesPage() {
 
       {/* Content area */}
       {selectedEventId && (
-        !isPro ? (
-          /* Starter lock UI */
-          <div className="rounded-xl border border-slate-200 bg-white p-10 text-center">
-            <div className="flex flex-col items-center gap-4">
-              <div className="flex size-14 items-center justify-center rounded-xl bg-emerald-50">
-                <Lock className="size-7 text-emerald-800" />
-              </div>
-              <div>
-                <p className="text-lg font-semibold text-slate-900">🔒 Fitur Pro</p>
-                <p className="mx-auto mt-2 max-w-xs text-sm leading-relaxed text-slate-500">
-                  Expense Tracker tersedia untuk pengguna Pro. Upgrade ke Pro untuk mencatat
-                  dan memantau pengeluaran event secara real-time.
-                </p>
-              </div>
-              <Link
-                href="/dashboard/upgrade"
-                className="mt-2 inline-flex items-center gap-2 rounded-lg bg-emerald-800 px-6 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-emerald-900"
-              >
-                Upgrade ke Pro →
-              </Link>
-            </div>
-          </div>
-        ) : (
-          /* Pro content */
           <div className="grid gap-6 lg:grid-cols-5">
             {/* Left: summary + form */}
             <div className="space-y-4 lg:col-span-2">
@@ -327,7 +346,6 @@ export default function ExpensesPage() {
               </div>
             </div>
           </div>
-        )
       )}
     </div>
   )

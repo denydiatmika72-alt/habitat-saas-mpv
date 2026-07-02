@@ -3,6 +3,7 @@
 import { useState, useEffect } from "react"
 import { useRouter } from "next/navigation"
 import { CheckCircle, Clock, Phone, Mail, User } from "lucide-react"
+import { useUser } from "@/hooks/useUser"
 
 const API_BASE = "/api"
 const getToken = () =>
@@ -22,10 +23,17 @@ interface PendingUser {
 
 export default function AdminUsersPage() {
   const router = useRouter()
+  const { user, loading: userLoading } = useUser()
   const [users, setUsers] = useState<PendingUser[]>([])
   const [loading, setLoading] = useState(true)
   const [approvingId, setApprovingId] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
+
+  useEffect(() => {
+    if (!userLoading && user && !user.isAdmin) {
+      router.replace("/dashboard")
+    }
+  }, [user, userLoading, router])
 
   useEffect(() => {
     const token = getToken()
@@ -35,6 +43,9 @@ export default function AdminUsersPage() {
     }
     fetchPendingUsers()
   }, [])
+
+  if (userLoading) return <div className="py-16 text-center text-sm text-slate-400">Memuat...</div>
+  if (!user?.isAdmin) return null
 
   async function fetchPendingUsers() {
     setLoading(true)

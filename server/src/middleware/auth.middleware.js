@@ -30,4 +30,25 @@ const protect = async (req, res, next) => {
   }
 };
 
-module.exports = { protect, verifyToken: protect };
+const requireAdmin = async (req, res, next) => {
+  try {
+    if (!req.user?.id) {
+      return res.status(401).json({ success: false, message: 'Unauthorized' });
+    }
+    const user = await prisma.user.findUnique({
+      where: { id: req.user.id },
+      select: { isAdmin: true },
+    });
+    if (!user?.isAdmin) {
+      return res.status(403).json({
+        success: false,
+        message: 'Akses ditolak. Hanya admin yang bisa mengakses ini.',
+      });
+    }
+    next();
+  } catch (error) {
+    res.status(500).json({ success: false, message: 'Server error' });
+  }
+};
+
+module.exports = { protect, verifyToken: protect, requireAdmin };
