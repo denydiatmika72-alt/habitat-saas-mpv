@@ -584,3 +584,16 @@ File ini adalah log permanen bug yang sudah pernah terjadi di project ini besert
   - **Sponsor & Partner SENGAJA tidak dikunci** — halaman `dashboard/sponsor/page.tsx` (1931 baris) adalah fitur deal management inti yang sudah ada sejak awal (invite code, deal tracker, credential sponsor, deliverables), bukan fitur tambahan Pro. Tidak ditambah lock UI maupun badge Pro di sidebar, supaya tidak menyesatkan (badge Pro tanpa gating = janji palsu ke user).
 - Verifikasi: Build client sukses tanpa TypeScript error. `GET https://www.nexeventapp.tech/dashboard/simulasi` dan `/dashboard/admin` return 200 (tidak ada server error). Logic gating divalidasi via data `isAdmin`/`plan` dari `GET /api/auth/me` yang sudah diverifikasi akurat di entry sebelumnya.
 - Tag: #pro-feature #lock-ui #simulasi #sidebar #admin #rbac #consistency
+
+---
+
+## [2026-07-02] KOREKSI: Sponsor & Partner ternyata HARUS dikunci sebagai fitur Pro
+
+- Gejala: Entry sebelumnya (di atas) menyimpulkan `dashboard/sponsor/page.tsx` "sengaja tidak dikunci karena fitur inti" — keputusan ini SALAH. Mandor konfirmasi langsung: Sponsor & Partner memang harus Pro-only, sesuai pricing model di CLAUDE.md ("Starter (Gratis): RAB Builder + Export RAB PDF only").
+- Root cause: Keputusan sebelumnya murni dari asumsi "halaman ini besar dan sudah lama ada, berarti core/gratis" — tidak benar-benar mengecek pricing model tertulis di CLAUDE.md yang sudah jelas menyatakan Starter cuma dapat RAB Builder. Pelajaran: JANGAN infer status Pro/gratis suatu fitur dari ukuran/usia kode. Selalu cross-check ke pricing model tertulis, atau tanya langsung kalau ambigu.
+- File terkait:
+  - `client/src/app/dashboard/sponsor/page.tsx` — komponen default export `SponsorManagementPage` (baris ~1888) ditambah `if (!isPro) return lockUI`, sebelum `return (` utama, setelah semua hooks di level itu (`useState`, `useEffect`) — CATATAN: file ini punya banyak sub-komponen dengan hooks sendiri (`InvitationCodeGenerator`, `DealTracker`, dst) yang TIDAK disentuh; hanya komponen page-level paling luar yang di-gate, karena me-return early di situ otomatis mencegah semua sub-komponen di-render.
+  - `client/src/components/dashboard/sidebar.tsx` — tambah `badge: "Pro"` ke item "Sponsor & Partner"
+- Fix: Pola lock UI sama persis dengan expenses/crew/pl-report/simulasi (icon Lock, judul "Fitur Pro", copy custom "Sponsor & Partner tersedia untuk pengguna Pro...", tombol ke `/dashboard/upgrade`).
+- Verifikasi: Build sukses. Cek visual browser dengan akun `test@habitat.com` (plan starter) — lock UI tampil sempurna di `/dashboard/sponsor`, badge Pro muncul di sidebar.
+- Tag: #pro-feature #lock-ui #sponsor #correction #pricing-model
