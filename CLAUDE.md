@@ -211,6 +211,58 @@ petty_cash_transactions
 - Sistem invite crew ke event
 - Integrasi petty cash ke P&L Report
 
+## Pricing & Subscription Model
+
+### Tier Structure
+- **Starter** (Gratis): RAB Builder + Export RAB PDF only. 1 event aktif.
+- **Pro Per-Event** (Rp 499.000): Semua fitur, 1 event, aktif 90 hari sejak bayar.
+- **Perpanjangan** (Rp 99.000): Tambah +30 hari per perpanjangan.
+- Growth Plan: DITUNDA — belum diluncurkan untuk MVP.
+
+### Aturan Pro Per-Event
+- 1 lisensi Pro = 1 event spesifik yang dipilih saat checkout
+- Setelah 90 hari: fitur dikunci otomatis (CRON job harian)
+- Data tetap tersimpan setelah expired — tidak pernah dihapus
+- Perpanjangan bisa dilakukan berkali-kali selama dibutuhkan
+- Notifikasi H-7 sebelum expired dikirim via email ke promotor
+
+### Event Lifecycle
+1. Promotor beli Pro → pilih event → akses 90 hari aktif
+2. H-7 expired → email notifikasi otomatis
+3. Expired → fitur dikunci, data tetap ada, bisa perpanjang
+4. Promotor klik "Tandai Event Selesai" (manual) →
+   sistem generate Event Summary Report → kirim via email
+
+### Event Summary Report (dikirim saat event selesai)
+Isi laporan:
+- Ringkasan keuangan: pemasukan, pengeluaran, laba bersih
+- Daftar sponsor + status bayar (Lunas/DP Terbayar)
+- Ringkasan pengeluaran (promotor + crew lapangan)
+- Status deliverables sponsor
+- Data penjualan tiket per kategori + platform
+
+### Ticket Sales Manual Input
+Field: nama kategori, harga, jumlah terjual, platform
+Platform dropdown (untuk riset internal nexEvent):
+LOKET, Tix.id, BookMyShow, Dewatiket, Artatix, Goers,
+Eratix, Snaptix, TipTip, Eventbrite,
+Tiket Offline, WhatsApp/DM, Transfer Manual,
+nexEvent Ticketing, Platform Lain (input manual)
+Data platform disimpan di DB untuk analytics internal.
+
+### Midtrans Integration
+- Digunakan UNTUK: pembayaran upgrade Pro (Rp 499.000) + perpanjangan (Rp 99.000)
+- TIDAK digunakan untuk: pembayaran sponsor (transfer manual langsung ke promotor)
+- Mode: Sandbox dulu → Production setelah verified
+- Sandbox credentials tersimpan di server/.env (JANGAN di-commit ke GitHub)
+- Merchant ID: M908488969 (Sandbox)
+- Setelah bayar → webhook update user.plan = "pro" + set proExpiresAt
+
+### Fields yang perlu ditambah ke schema users
+- proEventId: String? — event yang dilindungi lisensi Pro
+- proExpiresAt: DateTime? — tanggal expired lisensi Pro
+- proStartedAt: DateTime? — tanggal aktivasi Pro
+
 ## Next Priority (Roadmap)
 
 1. Selesaikan Expense Tracker (warna + kategori RAB dinamis) ← sedang berjalan
