@@ -1,4 +1,5 @@
 const { Resend } = require('resend');
+const QRCode = require('qrcode');
 const resend = new Resend(process.env.RESEND_API_KEY);
 
 const sendNewUserNotification = async (user) => {
@@ -102,4 +103,52 @@ const sendProExpiryReminder = async (user, daysLeft) => {
   }
 };
 
-module.exports = { sendNewUserNotification, sendSponsorCredential, sendProExpiryReminder };
+// tickets: [{ ticketCode, ticketTypeName }]
+const sendTicketEmail = async ({ buyerName, buyerEmail, orderId, eventTitle, tickets }) => {
+  try {
+    const ticketHTML = await Promise.all(
+      tickets.map(async (ticket) => {
+        const qrDataUrl = await QRCode.toDataURL(ticket.ticketCode, { width: 200 });
+        return `
+          <div style="border:1px solid #e2e8f0; padding:16px; margin:16px 0; border-radius:8px;">
+            <h3 style="margin:0 0 8px;color:#065f46">${ticket.ticketTypeName}</h3>
+            <p style="margin:0 0 8px">Kode: <strong style="font-family:monospace">${ticket.ticketCode}</strong></p>
+            <img src="${qrDataUrl}" alt="QR Code" width="200" height="200" />
+            <p style="font-size:12px;color:#64748b;margin-top:8px">Tunjukkan QR code ini saat masuk venue.</p>
+          </div>
+        `;
+      })
+    );
+
+    const orderUrl = `https://nexeventapp.tech/order/${orderId}`;
+    const waText = encodeURIComponent(
+      `Tiket nexEvent saya untuk ${eventTitle}:\n${tickets.map((t) => t.ticketCode).join(', ')}\n\nCek detail tiket di: ${orderUrl}`
+    );
+
+    await resend.emails.send({
+      from: 'onboarding@resend.dev',
+      to: [buyerEmail],
+      subject: `Tiket Anda untuk ${eventTitle} — nexEvent`,
+      html: `
+        <div style="font-family:sans-serif;max-width:520px;margin:0 auto;color:#0f172a">
+          <h1 style="color:#065f46;font-size:20px">Terima kasih, ${buyerName}!</h1>
+          <p>Pembayaran Anda telah dikonfirmasi. Berikut tiket Anda untuk <strong>${eventTitle}</strong>:</p>
+          ${ticketHTML.join('')}
+          <p style="margin-top:16px">
+            <a href="https://wa.me/?text=${waText}" style="background:#25D366;color:white;padding:12px 24px;border-radius:8px;text-decoration:none;display:inline-block;font-weight:600">
+              Bagikan ke WhatsApp
+            </a>
+          </p>
+          <p style="font-size:12px;color:#64748b;margin-top:24px">
+            Simpan email ini. Tiket ini adalah bukti pembelian Anda yang sah. Lihat detail pesanan di: <a href="${orderUrl}" style="color:#065f46">${orderUrl}</a>
+          </p>
+        </div>
+      `,
+    });
+    console.log(`[EMAIL] E-ticket terkirim ke ${buyerEmail} (order ${orderId})`);
+  } catch (error) {
+    console.error('[EMAIL] Gagal kirim e-ticket:', error.message);
+  }
+};
+
+module.exports = { sendNewUserNotification, sendSponsorCredential, sendProExpiryReminder, sendTicketEmail };

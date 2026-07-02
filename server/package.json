@@ -26,9 +26,13 @@
     "jsonwebtoken": "^9.0.3",
     "midtrans-client": "^1.4.3",
     "node-cron": "^4.5.0",
+    "nodemailer": "^9.0.3",
     "pdfkit": "^0.19.1",
     "pg": "^8.22.0",
-    "resend": "^6.16.0"
+    "qrcode": "^1.5.4",
+    "resend": "^6.16.0",
+    "slugify": "^1.6.9",
+    "uuid": "^14.0.1"
   },
   "devDependencies": {
     "cross-env": "^10.1.0",

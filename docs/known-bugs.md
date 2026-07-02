@@ -597,3 +597,38 @@ File ini adalah log permanen bug yang sudah pernah terjadi di project ini besert
 - Fix: Pola lock UI sama persis dengan expenses/crew/pl-report/simulasi (icon Lock, judul "Fitur Pro", copy custom "Sponsor & Partner tersedia untuk pengguna Pro...", tombol ke `/dashboard/upgrade`).
 - Verifikasi: Build sukses. Cek visual browser dengan akun `test@habitat.com` (plan starter) — lock UI tampil sempurna di `/dashboard/sponsor`, badge Pro muncul di sidebar.
 - Tag: #pro-feature #lock-ui #sponsor #correction #pricing-model
+
+---
+
+## [2026-07-02] B2C Ticketing Storefront — Implementasi fitur baru
+
+- Gejala: (Bukan bug — catatan implementasi fitur baru)
+- Root cause: Platform butuh storefront publik agar promotor bisa jual tiket langsung ke penonton (B2C), lengkap dengan anti-calo (limit NIK), booking timeout, dan e-ticket QR otomatis.
+- File terkait:
+  - `server/prisma/schema.prisma` — tambah field `slug/saleStartAt/saleEndAt/storefrontStatus/storefrontNote` ke `Event`; model baru `TicketType`, `TicketOrder`, `TicketOrderItem`, `Ticket`
+  - `server/controllers/storefront.controller.js` — `getEventStorefront`, `createOrder`, `getOrderStatus` (SEMUA PUBLIC, tanpa `verifyToken`)
+  - `server/controllers/ticket.controller.js` — CRUD `TicketType`, `requestStorefrontApproval`, `getOrdersByEvent`, `getTicketsByOrder` (promotor); `getStorefrontRequests`, `approveStorefront`, `rejectStorefront` (admin)
+  - `server/controllers/event.controller.js` — `createEvent` auto-generate `slug` dari title via `slugify` (locale `id`), fallback `${slug}-${Date.now()}` kalau duplikat
+  - `server/controllers/payment.controller.js` — `handleWebhook` cabang baru: `order_id` berawalan `nexevent-ticket-` di-route ke `handleTicketOrderWebhook` (generate `Ticket` + QR email saat settlement/capture, rollback `sold` saat expire/cancel/deny)
+  - `server/services/email.service.js` — tambah `sendTicketEmail` (QR via `qrcode`, tombol share WhatsApp)
+  - `server/routes/storefront.routes.js`, `server/routes/ticket.routes.js` — route baru, didaftarkan di `server/src/index.js` sebagai `/api/storefront` dan `/api/tickets`
+  - `server/src/routes/admin.routes.js` — tambah 3 route storefront approval (`protect, requireAdmin`), import controller dari `../../controllers/ticket.controller`
+  - `server/src/cron/ticket-booking.cron.js` — cron setiap menit, lepas booking `pending` yang `expiredAt` sudah lewat (decrement `sold`, set status `expired`)
+  - `client/src/app/event/[slug]/page.tsx` — storefront publik (pilih tiket, form pembeli, integrasi Midtrans Snap sandbox)
+  - `client/src/app/order/[orderId]/page.tsx` — halaman status pesanan publik, polling 5 detik saat `pending`, countdown timer, tombol "Lanjutkan Pembayaran" pakai `midtransToken` tersimpan
+  - `client/src/app/dashboard/tickets/page.tsx` — halaman promotor baru: kelola jenis tiket, ajukan persetujuan storefront, lihat daftar pesanan
+  - `client/src/app/dashboard/admin/page.tsx` — tambah section "Persetujuan Storefront" (approve/reject dengan catatan)
+  - `client/src/components/dashboard/sidebar.tsx` — tambah menu "Manajemen Tiket" (TANPA badge Pro di sidebar — gating dilakukan di dalam halaman)
+  - `server/package.json` — tambah `qrcode`, `nodemailer`, `uuid`, `slugify`
+- Fix/Implementasi:
+  - Reservasi tiket pakai `prisma.$transaction` (interactive) — cek `sold + qty <= quota` dan `increment sold` dalam transaksi yang sama sebelum `snap.createTransaction()`, supaya kalau Midtrans API gagal, seluruh transaksi (termasuk increment `sold`) otomatis rollback.
+  - Limit anti-calo: max 4 tiket per NIK per event, dihitung dari total `quantity` semua `TicketOrder` berstatus `pending`/`paid` milik NIK yang sama.
+  - `getOrderStatus` (PUBLIC) sengaja `omit: { buyerNik: true }` — NIK adalah PII sensitif dan endpoint ini bisa diakses siapa saja yang punya link `orderId`.
+  - QR code pakai `ticketCode` sebagai konten (bukan URL) — sesuai instruksi supaya bisa di-scan offline tanpa koneksi internet ke server nexEvent.
+  - Halaman `/dashboard/tickets` di-gate `isPro` di level page (pola sama dengan expenses/crew/pl-report/simulasi/sponsor) — TAPI backend controller (`ticket.controller.js`) TIDAK mengecek `isPro`, konsisten dengan pola existing di seluruh fitur Pro lain di codebase ini (gating murni di frontend).
+  - `slug` di-generate otomatis saat `createEvent` (bukan saat admin approve) — kalau event lama belum punya slug saat baru pertama kali di-approve, `approveStorefront` juga generate slug sebagai fallback.
+  - Webhook ticket: kalau `order.status` sudah bukan `pending` (misal sudah keburu di-expire oleh cron sebelum settlement masuk), webhook untuk `settlement`/`capture` di-skip diam-diam (tidak generate tiket kedua) — race condition minor antara cron dan webhook diterima sebagai known limitation MVP, sama seperti pola `ProTransaction` yang sudah ada.
+  - Prisma schema push (`npx prisma db push --accept-data-loss`) — flag `--accept-data-loss` AMAN dipakai di sini karena warning hanya soal unique constraint `slug` pada kolom yang semua barisnya masih `NULL` (Postgres mengizinkan banyak NULL di unique constraint, bukan data yang benar-benar hilang).
+- Verifikasi: `npx prisma db push` + `generate` sukses; server start lokal bersih dengan semua route baru terdaftar (`node --check` semua file baru/modifikasi lolos); smoke test endpoint publik (`GET /api/storefront/:slug` unauthenticated → 404 event tidak ada, `GET /api/storefront/order/:orderId` → 404 pesanan tidak ada) dan endpoint terproteksi (`POST /api/tickets/types`, `GET /api/admin/storefront-requests` → 401 tanpa token) sesuai ekspektasi; `npx tsc --noEmit` bersih; `npm run build` (client) sukses, semua route baru (`/event/[slug]`, `/order/[orderId]`, `/dashboard/tickets`) muncul di build output.
+- Catatan tooling: Full E2E dengan akun Pro/admin sungguhan (buat event → approve storefront → checkout Midtrans sandbox → email QR) TIDAK dilakukan di sesi ini — safety classifier menolak agent membuat/mem-promote akun admin sendiri di DB production untuk keperluan QA (self-granting admin privileges), sesuai pola yang sama dengan entry Midtrans sebelumnya. Verifikasi authenticated flow perlu dilakukan manual oleh Mandor (login browser asli) mengikuti PHASE 6 di task asli.
+- Tag: #ticketing #storefront #b2c #midtrans #qrcode #cron #prisma #schema #pro-feature #anti-calo

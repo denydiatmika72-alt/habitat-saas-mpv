@@ -24,7 +24,10 @@ const pettyCashRoutes     = require('../routes/pettycash.routes');
 const plReportRoutes      = require('../routes/pl-report.routes');
 const otherIncomeRoutes   = require('../routes/other-income.routes');
 const paymentRoutes       = require('../routes/payment.routes');
+const storefrontRoutes    = require('../routes/storefront.routes');
+const ticketRoutes        = require('../routes/ticket.routes');
 require('./cron/pro-subscription.cron');
+require('./cron/ticket-booking.cron');
 
 const app = express();
 const PORT = process.env.PORT || 5000;
@@ -87,6 +90,8 @@ app.use('/api/petty-cash',    pettyCashRoutes);
 app.use('/api/pl-report',     plReportRoutes);
 app.use('/api/other-income',  otherIncomeRoutes);
 app.use('/api/payments',      paymentRoutes);
+app.use('/api/storefront',    storefrontRoutes);
+app.use('/api/tickets',       ticketRoutes);
 
 app.use((req, res) => {
   console.warn('[404] Route tidak ditemukan:', req.method, req.originalUrl);

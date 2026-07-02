@@ -12,6 +12,7 @@ import {
   Crown,
   ShieldCheck,
   Wallet,
+  Ticket,
 } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { useUser } from "@/hooks/useUser"
@@ -35,6 +36,7 @@ const nav: NavItem[] = [
   { label: "Invoice & Purchase Order", icon: ReceiptText, href: "/dashboard/invoice" },
   { label: "Expense Tracker", icon: Wallet, href: "/dashboard/expenses", badge: "Pro" },
   { label: "Field Crew", icon: Users, href: "/dashboard/crew", badge: "Pro" },
+  { label: "Manajemen Tiket", icon: Ticket, href: "/dashboard/tickets" },
   { label: "Laporan P&L", icon: BarChart2, href: "/dashboard/pl-report", badge: "Pro" },
   { label: "Approve User", icon: ShieldCheck, href: "/dashboard/admin", adminOnly: true },
 ]

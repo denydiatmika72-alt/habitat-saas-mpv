@@ -1,4 +1,9 @@
 const prisma = require('../src/lib/prisma'); // Singleton dengan PrismaPg adapter (wajib Prisma v7)
+const slugify = require('slugify');
+
+function generateSlug(title) {
+  return slugify(title, { lower: true, strict: true, locale: 'id' });
+}
 
 // GET /api/events — Ambil semua event milik promotor yang login
 const getEvents = async (req, res) => {
@@ -23,6 +28,10 @@ const createEvent = async (req, res) => {
       return res.status(400).json({ success: false, message: 'Semua field wajib diisi.' });
     }
 
+    const baseSlug = generateSlug(title);
+    const existingSlug = await prisma.event.findUnique({ where: { slug: baseSlug } });
+    const slug = existingSlug ? `${baseSlug}-${Date.now()}` : baseSlug;
+
     const event = await prisma.event.create({
       data: {
         title,
@@ -32,6 +41,7 @@ const createEvent = async (req, res) => {
         target_profit: Number(target_profit),
         target_sponsorship: Number(target_sponsorship),
         promotor_id: req.user.id,
+        slug,
       },
     });
 

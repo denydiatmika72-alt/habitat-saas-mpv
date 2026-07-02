@@ -1,6 +1,7 @@
 const crypto = require('crypto');
 const prisma = require('../src/lib/prisma');
 const { snap } = require('../services/midtrans.service');
+const { sendTicketEmail } = require('../services/email.service');
 
 const PRICE = { activation: 499000, extension: 99000 };
 const ACTIVATION_DAYS = 90;
@@ -82,6 +83,10 @@ const handleWebhook = async (req, res) => {
       return res.status(200).json({ success: false, message: 'Invalid signature.' });
     }
 
+    if (order_id.startsWith('nexevent-ticket-')) {
+      return handleTicketOrderWebhook(order_id, transaction_status, res);
+    }
+
     const transaction = await prisma.proTransaction.findUnique({ where: { orderId: order_id } });
     if (!transaction) {
       console.warn('[WEBHOOK] ProTransaction tidak ditemukan untuk order_id:', order_id);
@@ -124,6 +129,66 @@ const handleWebhook = async (req, res) => {
     return res.status(200).json({ success: true });
   } catch (err) {
     console.error('[WEBHOOK ERROR]', err);
+    return res.status(200).json({ success: false, message: 'Server error.' });
+  }
+};
+
+const handleTicketOrderWebhook = async (orderId, transactionStatus, res) => {
+  try {
+    const order = await prisma.ticketOrder.findUnique({
+      where: { orderId },
+      include: { items: true, event: true },
+    });
+
+    if (!order) {
+      console.warn('[WEBHOOK] TicketOrder tidak ditemukan untuk order_id:', orderId);
+      return res.status(200).json({ success: false, message: 'Order not found.' });
+    }
+
+    if (transactionStatus === 'settlement' || transactionStatus === 'capture') {
+      if (order.status === 'pending') {
+        const createdTickets = [];
+        for (const item of order.items) {
+          for (let i = 0; i < item.quantity; i++) {
+            const ticketCode = `NE-${Date.now()}-${Math.random().toString(36).slice(2, 8).toUpperCase()}`;
+            const ticket = await prisma.ticket.create({ data: { orderItemId: item.id, ticketCode } });
+            createdTickets.push({ ticketCode: ticket.ticketCode, ticketTypeId: item.ticketTypeId });
+          }
+        }
+
+        await prisma.ticketOrder.update({
+          where: { orderId },
+          data: { status: 'paid', paidAt: new Date() },
+        });
+
+        const ticketTypeNames = {};
+        for (const item of order.items) {
+          const tt = await prisma.ticketType.findUnique({ where: { id: item.ticketTypeId }, select: { name: true } });
+          ticketTypeNames[item.ticketTypeId] = tt?.name || 'Tiket';
+        }
+
+        await sendTicketEmail({
+          buyerName: order.buyerName,
+          buyerEmail: order.buyerEmail,
+          orderId: order.orderId,
+          eventTitle: order.event.title,
+          tickets: createdTickets.map((t) => ({ ticketCode: t.ticketCode, ticketTypeName: ticketTypeNames[t.ticketTypeId] })),
+        });
+      }
+    } else if (['expire', 'cancel', 'deny'].includes(transactionStatus)) {
+      if (order.status === 'pending') {
+        await prisma.$transaction([
+          ...order.items.map((item) =>
+            prisma.ticketType.update({ where: { id: item.ticketTypeId }, data: { sold: { decrement: item.quantity } } })
+          ),
+          prisma.ticketOrder.update({ where: { orderId }, data: { status: transactionStatus === 'expire' ? 'expired' : 'cancelled' } }),
+        ]);
+      }
+    }
+
+    return res.status(200).json({ success: true });
+  } catch (err) {
+    console.error('[TICKET WEBHOOK ERROR]', err);
     return res.status(200).json({ success: false, message: 'Server error.' });
   }
 };

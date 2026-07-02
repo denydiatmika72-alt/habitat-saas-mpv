@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from "react"
 import { useRouter } from "next/navigation"
-import { CheckCircle, Clock, Phone, Mail, User } from "lucide-react"
+import { CheckCircle, Clock, Phone, Mail, User, Ticket, XCircle } from "lucide-react"
 import { useUser } from "@/hooks/useUser"
 
 const API_BASE = "/api"
@@ -21,6 +21,14 @@ interface PendingUser {
   createdAt: string
 }
 
+interface StorefrontRequest {
+  id: string
+  title: string
+  saleStartAt: string | null
+  saleEndAt: string | null
+  promotor: { name: string; email: string }
+}
+
 export default function AdminUsersPage() {
   const router = useRouter()
   const { user, loading: userLoading } = useUser()
@@ -28,6 +36,12 @@ export default function AdminUsersPage() {
   const [loading, setLoading] = useState(true)
   const [approvingId, setApprovingId] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
+
+  const [storefrontRequests, setStorefrontRequests] = useState<StorefrontRequest[]>([])
+  const [loadingStorefront, setLoadingStorefront] = useState(true)
+  const [processingEventId, setProcessingEventId] = useState<string | null>(null)
+  const [rejectNoteFor, setRejectNoteFor] = useState<string | null>(null)
+  const [rejectNote, setRejectNote] = useState("")
 
   useEffect(() => {
     if (!userLoading && user && !user.isAdmin) {
@@ -42,6 +56,7 @@ export default function AdminUsersPage() {
       return
     }
     fetchPendingUsers()
+    fetchStorefrontRequests()
   }, [])
 
   if (userLoading) return <div className="py-16 text-center text-sm text-slate-400">Memuat...</div>
@@ -80,6 +95,56 @@ export default function AdminUsersPage() {
       alert("Tidak dapat menghubungi server.")
     } finally {
       setApprovingId(null)
+    }
+  }
+
+  async function fetchStorefrontRequests() {
+    setLoadingStorefront(true)
+    try {
+      const res = await fetch(`${API_BASE}/admin/storefront-requests`, { headers: authHeaders() })
+      const json = await res.json()
+      if (json.success) setStorefrontRequests(json.data)
+    } catch {}
+    finally { setLoadingStorefront(false) }
+  }
+
+  async function handleApproveStorefront(eventId: string) {
+    setProcessingEventId(eventId)
+    try {
+      const res = await fetch(`${API_BASE}/admin/storefront-requests/${eventId}/approve`, {
+        method: "PATCH",
+        headers: authHeaders(),
+      })
+      const json = await res.json()
+      if (json.success) setStorefrontRequests((prev) => prev.filter((e) => e.id !== eventId))
+      else alert(json.message || "Gagal menyetujui storefront")
+    } catch {
+      alert("Tidak dapat menghubungi server.")
+    } finally {
+      setProcessingEventId(null)
+    }
+  }
+
+  async function handleRejectStorefront(eventId: string) {
+    setProcessingEventId(eventId)
+    try {
+      const res = await fetch(`${API_BASE}/admin/storefront-requests/${eventId}/reject`, {
+        method: "PATCH",
+        headers: authHeaders(),
+        body: JSON.stringify({ note: rejectNote }),
+      })
+      const json = await res.json()
+      if (json.success) {
+        setStorefrontRequests((prev) => prev.filter((e) => e.id !== eventId))
+        setRejectNoteFor(null)
+        setRejectNote("")
+      } else {
+        alert(json.message || "Gagal menolak storefront")
+      }
+    } catch {
+      alert("Tidak dapat menghubungi server.")
+    } finally {
+      setProcessingEventId(null)
     }
   }
 
@@ -208,6 +273,75 @@ export default function AdminUsersPage() {
               </div>
             ))}
           </div>
+        </div>
+      )}
+
+      {/* Persetujuan Storefront */}
+      <div>
+        <h2 className="text-xl font-semibold text-slate-900">Persetujuan Storefront</h2>
+        <p className="mt-1 text-sm text-slate-500">
+          Event yang mengajukan izin jual tiket publik lewat nexEvent.
+        </p>
+      </div>
+
+      {loadingStorefront ? (
+        <div className="py-16 text-center text-sm text-slate-400">Memuat data...</div>
+      ) : storefrontRequests.length === 0 ? (
+        <div className="rounded-xl border border-slate-200 bg-white py-16 text-center">
+          <Ticket className="mx-auto mb-3 size-10 text-emerald-500" />
+          <p className="text-sm font-medium text-slate-700">Tidak ada pengajuan storefront</p>
+          <p className="mt-1 text-xs text-slate-400">Semua pengajuan sudah diproses.</p>
+        </div>
+      ) : (
+        <div className="divide-y divide-slate-100 rounded-xl border border-slate-200 bg-white">
+          {storefrontRequests.map((ev) => (
+            <div key={ev.id} className="p-4 space-y-3">
+              <div className="flex items-start justify-between gap-2">
+                <div>
+                  <p className="font-medium text-slate-900">{ev.title}</p>
+                  <p className="text-sm text-slate-500">{ev.promotor.name} · {ev.promotor.email}</p>
+                  <p className="mt-1 text-xs text-slate-400">
+                    Jual: {ev.saleStartAt ? formatDate(ev.saleStartAt) : "-"} s/d {ev.saleEndAt ? formatDate(ev.saleEndAt) : "-"}
+                  </p>
+                </div>
+                <div className="flex shrink-0 items-center gap-2">
+                  <button
+                    onClick={() => handleApproveStorefront(ev.id)}
+                    disabled={processingEventId === ev.id}
+                    className="inline-flex items-center gap-1.5 rounded-md bg-emerald-800 px-3 py-1.5 text-xs font-medium text-white transition-colors hover:bg-emerald-900 disabled:opacity-50"
+                  >
+                    <CheckCircle className="size-3.5" />
+                    Setujui
+                  </button>
+                  <button
+                    onClick={() => setRejectNoteFor(rejectNoteFor === ev.id ? null : ev.id)}
+                    disabled={processingEventId === ev.id}
+                    className="inline-flex items-center gap-1.5 rounded-md bg-red-50 px-3 py-1.5 text-xs font-medium text-red-600 transition-colors hover:bg-red-100 disabled:opacity-50"
+                  >
+                    <XCircle className="size-3.5" />
+                    Tolak
+                  </button>
+                </div>
+              </div>
+              {rejectNoteFor === ev.id && (
+                <div className="flex items-center gap-2">
+                  <input
+                    value={rejectNote}
+                    onChange={(e) => setRejectNote(e.target.value)}
+                    placeholder="Alasan penolakan (opsional)"
+                    className="flex-1 rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-red-400 focus:ring-1 focus:ring-red-200"
+                  />
+                  <button
+                    onClick={() => handleRejectStorefront(ev.id)}
+                    disabled={processingEventId === ev.id}
+                    className="rounded-lg bg-red-600 px-4 py-2 text-xs font-semibold text-white hover:bg-red-700 disabled:opacity-50"
+                  >
+                    {processingEventId === ev.id ? "Memproses..." : "Konfirmasi Tolak"}
+                  </button>
+                </div>
+              )}
+            </div>
+          ))}
         </div>
       )}
     </div>
