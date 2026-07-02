@@ -30,13 +30,42 @@ function forwardHeaders(req: NextRequest): Record<string, string> {
   return h;
 }
 
+// Multipart uploads (file forms) must be forwarded raw — never re-encoded as JSON text,
+// which would corrupt the boundary-delimited binary body.
+function isMultipart(req: NextRequest): boolean {
+  return (req.headers.get('content-type') || '').startsWith('multipart/form-data');
+}
+
 export async function POST(req: NextRequest, { params }: { params: Promise<{ proxy: string[] }> }) {
   const { proxy } = await params;
   const path = proxy.join('/');
   const targetUrl = buildUrl(BACKEND_URL, path);
+  console.log(`[PROXY] POST ${targetUrl} -- auth:${!!req.headers.get('authorization')}`);
+
+  if (isMultipart(req)) {
+    try {
+      const buffer = await req.arrayBuffer();
+      const contentType = req.headers.get('content-type')!;
+      const res = await fetch(targetUrl, {
+        method: 'POST',
+        headers: { 'Content-Type': contentType, ...forwardHeaders(req) },
+        body: buffer,
+        signal: AbortSignal.timeout(25000),
+      });
+      console.log(`[PROXY] POST (multipart) ${targetUrl} -> ${res.status}`);
+      const resText = await res.text();
+      let data: unknown = {};
+      try { data = resText ? JSON.parse(resText) : {}; } catch { data = { message: resText }; }
+      return NextResponse.json(data, { status: res.status });
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : 'Backend tidak dapat dijangkau.';
+      console.error(`[PROXY] POST (multipart) ${targetUrl} FAILED:`, msg);
+      return NextResponse.json({ success: false, message: msg }, { status: 503 });
+    }
+  }
+
   const text = await req.text();
   const body = text || '{}';
-  console.log(`[PROXY] POST ${targetUrl} -- auth:${!!req.headers.get('authorization')}`);
   try {
     const res = await fetch(targetUrl, {
       method: 'POST',

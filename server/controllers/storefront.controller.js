@@ -3,6 +3,7 @@ const { snap } = require('../services/midtrans.service');
 
 const MAX_TICKETS_PER_NIK = 4;
 const BOOKING_MINUTES = 15;
+const DEFAULT_FEE_PERCENT = 3.5;
 
 // GET /api/storefront/:slug — PUBLIC
 const getEventStorefront = async (req, res) => {
@@ -39,7 +40,13 @@ const getEventStorefront = async (req, res) => {
 
     return res.json({
       success: true,
-      event: { ...event, ticketTypes: ticketTypesWithAvailability },
+      event: {
+        ...event,
+        ticketTypes: ticketTypesWithAvailability,
+        feePercent: event.platformFeePercent || DEFAULT_FEE_PERCENT,
+        feeBearer: event.feeBearer,
+        taxEnabled: event.taxEnabled,
+      },
       status: 'active',
     });
   } catch (err) {
@@ -119,10 +126,19 @@ const createOrder = async (req, res) => {
 
         const orderId = `nexevent-ticket-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
         const expiredAt = new Date(Date.now() + BOOKING_MINUTES * 60 * 1000);
-        const totalAmount = items.reduce((sum, item) => {
+        const subtotal = items.reduce((sum, item) => {
           const tt = ticketTypes.find((t) => t.id === item.ticketTypeId);
           return sum + tt.price * Number(item.quantity);
         }, 0);
+
+        const feePercent = event.platformFeePercent || DEFAULT_FEE_PERCENT;
+        const feeBearer = event.feeBearer === 'audience' ? 'audience' : 'promotor';
+        const taxAmount = event.taxEnabled ? Math.round(subtotal * 0.1) : 0;
+        const feeAmount = Math.round(subtotal * (feePercent / 100));
+
+        // Kalau fee ditanggung penonton, fee ditambahkan ke total tagihan. Kalau ditanggung promotor,
+        // penonton hanya bayar subtotal + pajak — fee dipotong dari hasil penjualan promotor (tidak ditagih ke penonton).
+        const totalAmount = feeBearer === 'audience' ? subtotal + taxAmount + feeAmount : subtotal + taxAmount;
 
         const created = await tx.ticketOrder.create({
           data: {
@@ -133,6 +149,9 @@ const createOrder = async (req, res) => {
             buyerPhone,
             buyerNik,
             totalAmount,
+            feeAmount,
+            feeBearer,
+            taxAmount,
             expiredAt,
             status: 'pending',
             items: {
@@ -146,17 +165,35 @@ const createOrder = async (req, res) => {
           include: { items: true },
         });
 
+        const itemDetails = items.map((item) => {
+          const tt = ticketTypes.find((t) => t.id === item.ticketTypeId);
+          return {
+            id: item.ticketTypeId,
+            price: tt.price,
+            quantity: Number(item.quantity),
+            name: `Tiket ${tt.name} — ${event.title}`.slice(0, 50),
+          };
+        });
+        if (feeBearer === 'audience' && feeAmount > 0) {
+          itemDetails.push({
+            id: 'platform-fee',
+            price: feeAmount,
+            quantity: 1,
+            name: `Biaya Layanan nexEvent (${feePercent}%)`,
+          });
+        }
+        if (taxAmount > 0) {
+          itemDetails.push({
+            id: 'tax',
+            price: taxAmount,
+            quantity: 1,
+            name: 'Pajak (10%)',
+          });
+        }
+
         const parameter = {
           transaction_details: { order_id: orderId, gross_amount: totalAmount },
-          item_details: items.map((item) => {
-            const tt = ticketTypes.find((t) => t.id === item.ticketTypeId);
-            return {
-              id: item.ticketTypeId,
-              price: tt.price,
-              quantity: Number(item.quantity),
-              name: `Tiket ${tt.name} — ${event.title}`.slice(0, 50),
-            };
-          }),
+          item_details: itemDetails,
           customer_details: { first_name: buyerName, email: buyerEmail, phone: buyerPhone },
         };
         const transaction = await snap.createTransaction(parameter);

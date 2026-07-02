@@ -26,6 +26,7 @@ interface StorefrontRequest {
   title: string
   saleStartAt: string | null
   saleEndAt: string | null
+  feeBearer: "audience" | "promotor" | null
   promotor: { name: string; email: string }
 }
 
@@ -42,6 +43,8 @@ export default function AdminUsersPage() {
   const [processingEventId, setProcessingEventId] = useState<string | null>(null)
   const [rejectNoteFor, setRejectNoteFor] = useState<string | null>(null)
   const [rejectNote, setRejectNote] = useState("")
+  const [approvalEventId, setApprovalEventId] = useState<string | null>(null)
+  const [approvalFeePercent, setApprovalFeePercent] = useState(3.5)
 
   useEffect(() => {
     if (!userLoading && user && !user.isAdmin) {
@@ -108,16 +111,21 @@ export default function AdminUsersPage() {
     finally { setLoadingStorefront(false) }
   }
 
-  async function handleApproveStorefront(eventId: string) {
+  async function handleApproveStorefront(eventId: string, feePercent: number) {
     setProcessingEventId(eventId)
     try {
       const res = await fetch(`${API_BASE}/admin/storefront-requests/${eventId}/approve`, {
         method: "PATCH",
         headers: authHeaders(),
+        body: JSON.stringify({ platformFeePercent: feePercent }),
       })
       const json = await res.json()
-      if (json.success) setStorefrontRequests((prev) => prev.filter((e) => e.id !== eventId))
-      else alert(json.message || "Gagal menyetujui storefront")
+      if (json.success) {
+        setStorefrontRequests((prev) => prev.filter((e) => e.id !== eventId))
+        setApprovalEventId(null)
+      } else {
+        alert(json.message || "Gagal menyetujui storefront")
+      }
     } catch {
       alert("Tidak dapat menghubungi server.")
     } finally {
@@ -306,7 +314,7 @@ export default function AdminUsersPage() {
                 </div>
                 <div className="flex shrink-0 items-center gap-2">
                   <button
-                    onClick={() => handleApproveStorefront(ev.id)}
+                    onClick={() => { setApprovalEventId(approvalEventId === ev.id ? null : ev.id); setApprovalFeePercent(3.5) }}
                     disabled={processingEventId === ev.id}
                     className="inline-flex items-center gap-1.5 rounded-md bg-emerald-800 px-3 py-1.5 text-xs font-medium text-white transition-colors hover:bg-emerald-900 disabled:opacity-50"
                   >
@@ -323,6 +331,34 @@ export default function AdminUsersPage() {
                   </button>
                 </div>
               </div>
+              {approvalEventId === ev.id && (
+                <div className="space-y-3 rounded-lg border border-emerald-200 bg-emerald-50 p-3">
+                  <p className="text-sm font-medium text-slate-800">Set biaya layanan platform untuk event ini:</p>
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="number"
+                      min="1.5"
+                      max="5"
+                      step="0.5"
+                      value={approvalFeePercent}
+                      onChange={(e) => setApprovalFeePercent(Number(e.target.value))}
+                      className="w-24 rounded-lg border border-slate-200 px-3 py-2 text-sm"
+                    />
+                    <span className="text-sm text-slate-500">% per transaksi</span>
+                  </div>
+                  <p className="text-xs text-slate-400">Standar: 3.5% | Minimum: 1.5% | Maksimum: 5%</p>
+                  <p className="text-xs text-amber-600">
+                    Fee bearer dipilih promotor: {ev.feeBearer === "audience" ? "Penonton" : ev.feeBearer === "promotor" ? "Promotor" : "Belum dipilih"}
+                  </p>
+                  <button
+                    onClick={() => handleApproveStorefront(ev.id, approvalFeePercent)}
+                    disabled={processingEventId === ev.id || approvalFeePercent < 1.5 || approvalFeePercent > 5}
+                    className="w-full rounded-xl bg-emerald-800 py-2 text-sm font-bold text-white hover:bg-emerald-900 disabled:opacity-50"
+                  >
+                    {processingEventId === ev.id ? "Memproses..." : `Setujui dengan Fee ${approvalFeePercent}%`}
+                  </button>
+                </div>
+              )}
               {rejectNoteFor === ev.id && (
                 <div className="flex items-center gap-2">
                   <input

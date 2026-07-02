@@ -26,6 +26,7 @@ const otherIncomeRoutes   = require('../routes/other-income.routes');
 const paymentRoutes       = require('../routes/payment.routes');
 const storefrontRoutes    = require('../routes/storefront.routes');
 const ticketRoutes        = require('../routes/ticket.routes');
+const uploadRoutes        = require('../routes/upload.routes');
 require('./cron/pro-subscription.cron');
 require('./cron/ticket-booking.cron');
 
@@ -92,6 +93,7 @@ app.use('/api/other-income',  otherIncomeRoutes);
 app.use('/api/payments',      paymentRoutes);
 app.use('/api/storefront',    storefrontRoutes);
 app.use('/api/tickets',       ticketRoutes);
+app.use('/api/upload',        uploadRoutes);
 
 app.use((req, res) => {
   console.warn('[404] Route tidak ditemukan:', req.method, req.originalUrl);

@@ -2,10 +2,12 @@
 
 import { useEffect, useState, useCallback } from "react"
 import Link from "next/link"
-import { Lock, Ticket as TicketIcon, Plus, Trash2, Pencil, Copy, Check, ExternalLink } from "lucide-react"
+import { Lock, Ticket as TicketIcon, Plus, Trash2, Pencil, Copy, Check, ExternalLink, Upload } from "lucide-react"
 import { useUser } from "@/hooks/useUser"
 
 type Event = { id: string; title: string }
+
+type FeeBearer = "audience" | "promotor"
 
 type FullEvent = {
   id: string
@@ -15,6 +17,26 @@ type FullEvent = {
   saleEndAt: string | null
   storefrontStatus: "draft" | "pending_approval" | "approved" | "rejected"
   storefrontNote: string | null
+  bannerUrl: string | null
+  logoUrl: string | null
+  taxEnabled: boolean
+  feeBearer: FeeBearer | null
+  platformFeePercent: number | null
+}
+
+function ToggleSwitch({ checked, onChange, disabled }: { checked: boolean; onChange: () => void; disabled?: boolean }) {
+  return (
+    <button
+      type="button"
+      onClick={onChange}
+      disabled={disabled}
+      className={`relative inline-flex h-6 w-11 shrink-0 items-center rounded-full transition-colors focus:outline-none disabled:opacity-50 ${checked ? "bg-emerald-600" : "bg-slate-200"}`}
+    >
+      <span
+        className={`inline-block h-4 w-4 transform rounded-full bg-white shadow-sm transition-transform ${checked ? "translate-x-6" : "translate-x-1"}`}
+      />
+    </button>
+  )
 }
 
 type TicketType = {
@@ -85,6 +107,12 @@ export default function TicketsPage() {
   const [submittingApproval, setSubmittingApproval] = useState(false)
   const [approvalError, setApprovalError] = useState("")
   const [copied, setCopied] = useState(false)
+
+  const [savingFeeBearer, setSavingFeeBearer] = useState(false)
+  const [savingTax, setSavingTax] = useState(false)
+  const [uploadingBanner, setUploadingBanner] = useState(false)
+  const [uploadingLogo, setUploadingLogo] = useState(false)
+  const [uploadError, setUploadError] = useState("")
 
   useEffect(() => {
     fetch("/api/events", { headers: authHeaders() })
@@ -219,6 +247,88 @@ export default function TicketsPage() {
       setApprovalError("Gagal menghubungi server.")
     } finally {
       setSubmittingApproval(false)
+    }
+  }
+
+  const saveStorefrontSettings = async (patch: Partial<Pick<FullEvent, "feeBearer" | "taxEnabled" | "bannerUrl" | "logoUrl">>) => {
+    const res = await fetch("/api/tickets/storefront-settings", {
+      method: "PATCH",
+      headers: authHeaders(),
+      body: JSON.stringify({ eventId: selectedEventId, ...patch }),
+    })
+    const data = await res.json()
+    if (data.success) setEvent(data.data)
+    return data
+  }
+
+  const handleSetFeeBearer = async (bearer: FeeBearer) => {
+    setSavingFeeBearer(true)
+    try {
+      await saveStorefrontSettings({ feeBearer: bearer })
+    } finally {
+      setSavingFeeBearer(false)
+    }
+  }
+
+  const handleToggleTax = async () => {
+    if (!event) return
+    setSavingTax(true)
+    try {
+      await saveStorefrontSettings({ taxEnabled: !event.taxEnabled })
+    } finally {
+      setSavingTax(false)
+    }
+  }
+
+  const handleUploadBanner = async (file: File | null | undefined) => {
+    setUploadError("")
+    if (!file) {
+      await saveStorefrontSettings({ bannerUrl: null })
+      return
+    }
+    setUploadingBanner(true)
+    try {
+      const form = new FormData()
+      form.append("file", file)
+      form.append("eventId", selectedEventId)
+      const res = await fetch("/api/upload/event-banner", {
+        method: "POST",
+        headers: { Authorization: `Bearer ${getToken()}` },
+        body: form,
+      })
+      const data = await res.json()
+      if (data.success) setEvent((prev) => (prev ? { ...prev, bannerUrl: data.url } : prev))
+      else setUploadError(data.message || "Gagal upload banner.")
+    } catch {
+      setUploadError("Gagal menghubungi server.")
+    } finally {
+      setUploadingBanner(false)
+    }
+  }
+
+  const handleUploadLogo = async (file: File | null | undefined) => {
+    setUploadError("")
+    if (!file) {
+      await saveStorefrontSettings({ logoUrl: null })
+      return
+    }
+    setUploadingLogo(true)
+    try {
+      const form = new FormData()
+      form.append("file", file)
+      form.append("eventId", selectedEventId)
+      const res = await fetch("/api/upload/event-logo", {
+        method: "POST",
+        headers: { Authorization: `Bearer ${getToken()}` },
+        body: form,
+      })
+      const data = await res.json()
+      if (data.success) setEvent((prev) => (prev ? { ...prev, logoUrl: data.url } : prev))
+      else setUploadError(data.message || "Gagal upload logo.")
+    } catch {
+      setUploadError("Gagal menghubungi server.")
+    } finally {
+      setUploadingLogo(false)
     }
   }
 
@@ -360,13 +470,13 @@ export default function TicketsPage() {
                             </div>
                             <p className="text-xs text-slate-500">{IDR.format(tt.price)} · {tt.sold}/{tt.quota} terjual</p>
                           </div>
-                          <div className="flex shrink-0 items-center gap-1">
-                            <button
-                              onClick={() => toggleActive(tt)}
-                              className="rounded-md px-2 py-1 text-[10px] font-medium text-slate-500 hover:bg-slate-200"
-                            >
-                              {tt.isActive ? "Nonaktifkan" : "Aktifkan"}
-                            </button>
+                          <div className="flex shrink-0 items-center gap-2">
+                            <div className="flex items-center gap-1.5">
+                              <ToggleSwitch checked={tt.isActive} onChange={() => toggleActive(tt)} />
+                              <span className={`text-[11px] font-medium ${tt.isActive ? "text-emerald-700" : "text-slate-400"}`}>
+                                {tt.isActive ? "Aktif" : "Nonaktif"}
+                              </span>
+                            </div>
                             <button onClick={() => startEdit(tt)} className="flex size-7 items-center justify-center rounded-md text-slate-400 hover:bg-slate-200 hover:text-slate-700">
                               <Pencil className="size-3.5" />
                             </button>
@@ -427,6 +537,67 @@ export default function TicketsPage() {
               </form>
             </div>
 
+            {/* Banner + Logo upload */}
+            <div className="rounded-xl border border-slate-200 bg-white p-5">
+              <p className="mb-4 text-sm font-semibold text-slate-900">Tampilan Storefront</p>
+
+              <div className="mb-5">
+                <p className="mb-1 text-sm font-bold text-slate-700">Banner Event</p>
+                <p className="mb-2 text-xs text-slate-400">
+                  Tampil sebagai hero image di halaman tiket publik. Rekomendasi: 1200×400px, maks 5MB.
+                </p>
+                {event.bannerUrl ? (
+                  <div className="relative">
+                    <img src={event.bannerUrl} alt="Banner" className="h-32 w-full rounded-xl border border-slate-200 object-cover" />
+                    <button
+                      onClick={() => handleUploadBanner(null)}
+                      className="absolute right-2 top-2 rounded-lg bg-red-500 px-2 py-1 text-xs font-semibold text-white hover:bg-red-600"
+                    >
+                      Hapus
+                    </button>
+                  </div>
+                ) : (
+                  <label className="flex h-32 w-full cursor-pointer flex-col items-center justify-center rounded-xl border-2 border-dashed border-slate-300 hover:bg-slate-50">
+                    <Upload className="mb-1 size-6 text-slate-400" />
+                    <span className="text-xs text-slate-400">{uploadingBanner ? "Mengupload..." : "Klik untuk upload banner"}</span>
+                    <input
+                      type="file"
+                      accept="image/jpeg,image/png,image/webp"
+                      className="hidden"
+                      disabled={uploadingBanner}
+                      onChange={(e) => handleUploadBanner(e.target.files?.[0])}
+                    />
+                  </label>
+                )}
+              </div>
+
+              <div>
+                <p className="mb-2 text-sm font-bold text-slate-700">Logo Event</p>
+                {event.logoUrl ? (
+                  <div className="flex items-center gap-3">
+                    <img src={event.logoUrl} alt="Logo" className="size-16 rounded-xl border border-slate-200 object-cover" />
+                    <button onClick={() => handleUploadLogo(null)} className="text-xs font-medium text-red-500 hover:text-red-600">
+                      Hapus
+                    </button>
+                  </div>
+                ) : (
+                  <label className="flex size-24 cursor-pointer flex-col items-center justify-center rounded-xl border-2 border-dashed border-slate-300 hover:bg-slate-50">
+                    <Upload className="mb-1 size-5 text-slate-400" />
+                    <span className="text-center text-[10px] text-slate-400">{uploadingLogo ? "Mengupload..." : "Upload logo"}</span>
+                    <input
+                      type="file"
+                      accept="image/jpeg,image/png,image/webp"
+                      className="hidden"
+                      disabled={uploadingLogo}
+                      onChange={(e) => handleUploadLogo(e.target.files?.[0])}
+                    />
+                  </label>
+                )}
+              </div>
+
+              {uploadError && <p className="mt-3 rounded-lg bg-red-50 px-3 py-2 text-xs text-red-600">{uploadError}</p>}
+            </div>
+
             {/* Storefront settings */}
             <div className="rounded-xl border border-slate-200 bg-white p-5">
               <div className="mb-4 flex items-center justify-between">
@@ -443,17 +614,87 @@ export default function TicketsPage() {
               )}
 
               {event.storefrontStatus === "approved" && event.slug ? (
-                <div className="flex items-center gap-2 rounded-lg bg-emerald-50 px-3 py-2.5">
-                  <ExternalLink className="size-4 shrink-0 text-emerald-700" />
-                  <a href={`https://${storefrontUrl}`} target="_blank" rel="noopener noreferrer" className="min-w-0 flex-1 truncate text-sm font-medium text-emerald-800 hover:underline">
-                    {storefrontUrl}
-                  </a>
-                  <button onClick={copyUrl} className="flex size-7 shrink-0 items-center justify-center rounded-md text-emerald-700 hover:bg-emerald-100">
-                    {copied ? <Check className="size-4" /> : <Copy className="size-4" />}
-                  </button>
+                <div className="rounded-xl border border-emerald-200 bg-emerald-50 p-4">
+                  <p className="mb-1 text-sm font-bold text-emerald-800">✅ Storefront Aktif</p>
+                  <p className="mb-2 text-xs text-emerald-600">Bagikan link ini ke calon penonton:</p>
+                  <div className="flex items-center gap-2 rounded-lg border border-emerald-200 bg-white p-2">
+                    <ExternalLink className="size-4 shrink-0 text-emerald-700" />
+                    <a href={`https://${storefrontUrl}`} target="_blank" rel="noopener noreferrer" className="min-w-0 flex-1 truncate text-sm text-slate-700 hover:underline">
+                      {storefrontUrl}
+                    </a>
+                    <button
+                      onClick={copyUrl}
+                      className="flex shrink-0 items-center gap-1 rounded-lg bg-emerald-800 px-3 py-1 text-xs font-bold text-white hover:bg-emerald-900"
+                    >
+                      {copied ? <Check className="size-3.5" /> : <Copy className="size-3.5" />}
+                      {copied ? "Tersalin" : "Salin"}
+                    </button>
+                  </div>
+                  <p className="mt-2 text-xs text-emerald-600">
+                    Biaya layanan: {event.platformFeePercent}% · Ditanggung {event.feeBearer === "audience" ? "penonton" : "promotor"}
+                  </p>
                 </div>
               ) : (
-                <div className="flex flex-col gap-3">
+                <div className="flex flex-col gap-4">
+                  {/* Fee bearer selection — WAJIB DIISI */}
+                  <div className="rounded-xl border border-slate-200 p-4">
+                    <p className="mb-1 text-sm font-bold text-slate-700">
+                      Siapa yang menanggung biaya layanan platform?
+                    </p>
+                    <p className="mb-3 text-xs text-slate-400">
+                      Wajib dipilih sebelum mengajukan persetujuan. Biaya layanan: {event.platformFeePercent || 3.5}% per transaksi.
+                    </p>
+
+                    <div className="flex flex-col gap-2">
+                      <label className="flex cursor-pointer items-start gap-3 rounded-lg border border-slate-200 p-3 hover:bg-slate-50">
+                        <input
+                          type="radio"
+                          name="feeBearer"
+                          value="audience"
+                          checked={event.feeBearer === "audience"}
+                          disabled={savingFeeBearer}
+                          onChange={() => handleSetFeeBearer("audience")}
+                          className="mt-0.5"
+                        />
+                        <div>
+                          <p className="text-sm font-medium text-slate-800">Penonton yang bayar</p>
+                          <p className="text-xs text-slate-400">Harga tiket + biaya layanan ditampilkan transparan di checkout</p>
+                          <p className="mt-1 text-xs font-medium text-emerald-600">
+                            Contoh: Tiket Rp 50.000 → Penonton bayar Rp {(50000 + Math.round(50000 * ((event.platformFeePercent || 3.5) / 100))).toLocaleString("id-ID")}
+                          </p>
+                        </div>
+                      </label>
+
+                      <label className="flex cursor-pointer items-start gap-3 rounded-lg border border-slate-200 p-3 hover:bg-slate-50">
+                        <input
+                          type="radio"
+                          name="feeBearer"
+                          value="promotor"
+                          checked={event.feeBearer === "promotor"}
+                          disabled={savingFeeBearer}
+                          onChange={() => handleSetFeeBearer("promotor")}
+                          className="mt-0.5"
+                        />
+                        <div>
+                          <p className="text-sm font-medium text-slate-800">Promotor yang bayar</p>
+                          <p className="text-xs text-slate-400">Penonton bayar harga bersih, biaya layanan dipotong dari hasil penjualan</p>
+                          <p className="mt-1 text-xs font-medium text-amber-600">
+                            Contoh: Tiket Rp 50.000 → Anda menerima Rp {(50000 - Math.round(50000 * ((event.platformFeePercent || 3.5) / 100))).toLocaleString("id-ID")}
+                          </p>
+                        </div>
+                      </label>
+                    </div>
+                  </div>
+
+                  {/* Tax toggle */}
+                  <div className="flex items-center justify-between rounded-xl border border-slate-200 p-3">
+                    <div>
+                      <p className="text-sm font-medium text-slate-800">Aktifkan Pajak 10%</p>
+                      <p className="text-xs text-slate-400">Pajak ditanggung penonton, ditambahkan ke total</p>
+                    </div>
+                    <ToggleSwitch checked={event.taxEnabled} onChange={handleToggleTax} disabled={savingTax} />
+                  </div>
+
                   <div>
                     <label className="mb-1 block text-xs font-medium text-slate-500">Mulai Jual Tiket</label>
                     <input
@@ -474,13 +715,18 @@ export default function TicketsPage() {
                       className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500/30 disabled:bg-slate-50 disabled:text-slate-400"
                     />
                   </div>
+                  {!event.feeBearer && (
+                    <p className="rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-700">
+                      Pilih siapa yang menanggung biaya layanan di atas sebelum mengajukan persetujuan.
+                    </p>
+                  )}
                   {approvalError && <p className="rounded-lg bg-red-50 px-3 py-2 text-xs text-red-600">{approvalError}</p>}
                   {event.storefrontStatus === "pending_approval" ? (
                     <p className="rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-700">Menunggu review admin nexEvent.</p>
                   ) : (
                     <button
                       onClick={requestApproval}
-                      disabled={submittingApproval}
+                      disabled={submittingApproval || !event.feeBearer}
                       className="rounded-lg bg-emerald-800 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-emerald-900 disabled:opacity-50"
                     >
                       {submittingApproval ? "Mengajukan..." : "Ajukan Persetujuan"}

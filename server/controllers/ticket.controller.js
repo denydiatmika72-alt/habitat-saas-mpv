@@ -119,9 +119,19 @@ const requestStorefrontApproval = async (req, res) => {
     const event = await prisma.event.findFirst({ where: { id: eventId, promotor_id: req.user.id } });
     if (!event) return res.status(404).json({ success: false, message: 'Event tidak ditemukan.' });
 
+    if (!['audience', 'promotor'].includes(event.feeBearer)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Anda harus memilih siapa yang menanggung fee platform sebelum mengajukan persetujuan',
+      });
+    }
+
     const ticketTypeCount = await prisma.ticketType.count({ where: { eventId } });
     if (ticketTypeCount === 0) {
-      return res.status(400).json({ success: false, message: 'Buat minimal 1 jenis tiket sebelum mengajukan persetujuan.' });
+      return res.status(400).json({
+        success: false,
+        message: 'Anda harus membuat minimal 1 jenis tiket sebelum mengajukan persetujuan',
+      });
     }
 
     const updated = await prisma.event.update({
@@ -137,6 +147,36 @@ const requestStorefrontApproval = async (req, res) => {
     return res.json({ success: true, data: updated });
   } catch (err) {
     console.error('[REQUEST STOREFRONT APPROVAL ERROR]', err);
+    return res.status(500).json({ success: false, message: 'Server error.' });
+  }
+};
+
+// PATCH /api/tickets/storefront-settings — promotor set fee bearer, pajak, banner/logo
+const updateStorefrontSettings = async (req, res) => {
+  try {
+    const { eventId, feeBearer, taxEnabled, bannerUrl, logoUrl } = req.body;
+    if (!eventId) return res.status(400).json({ success: false, message: 'eventId wajib diisi.' });
+
+    const event = await prisma.event.findFirst({ where: { id: eventId, promotor_id: req.user.id } });
+    if (!event) return res.status(404).json({ success: false, message: 'Event tidak ditemukan.' });
+
+    if (feeBearer !== undefined && feeBearer !== null && !['audience', 'promotor'].includes(feeBearer)) {
+      return res.status(400).json({ success: false, message: 'feeBearer harus "audience" atau "promotor".' });
+    }
+
+    const updated = await prisma.event.update({
+      where: { id: eventId },
+      data: {
+        ...(feeBearer !== undefined && { feeBearer }),
+        ...(taxEnabled !== undefined && { taxEnabled: Boolean(taxEnabled) }),
+        ...(bannerUrl !== undefined && { bannerUrl }),
+        ...(logoUrl !== undefined && { logoUrl }),
+      },
+    });
+
+    return res.json({ success: true, data: updated });
+  } catch (err) {
+    console.error('[UPDATE STOREFRONT SETTINGS ERROR]', err);
     return res.status(500).json({ success: false, message: 'Server error.' });
   }
 };
@@ -203,6 +243,13 @@ const getStorefrontRequests = async (req, res) => {
 const approveStorefront = async (req, res) => {
   try {
     const { eventId } = req.params;
+    const { platformFeePercent } = req.body;
+
+    const feePercent = Number(platformFeePercent);
+    if (!Number.isFinite(feePercent) || feePercent < 1.5 || feePercent > 5.0) {
+      return res.status(400).json({ success: false, message: 'platformFeePercent wajib diisi, antara 1.5 dan 5.0.' });
+    }
+
     const event = await prisma.event.findUnique({ where: { id: eventId } });
     if (!event) return res.status(404).json({ success: false, message: 'Event tidak ditemukan.' });
 
@@ -215,7 +262,7 @@ const approveStorefront = async (req, res) => {
 
     const updated = await prisma.event.update({
       where: { id: eventId },
-      data: { storefrontStatus: 'approved', storefrontNote: null, slug },
+      data: { storefrontStatus: 'approved', storefrontNote: null, slug, platformFeePercent: feePercent },
     });
 
     return res.json({ success: true, data: updated });
@@ -252,6 +299,7 @@ module.exports = {
   deleteTicketType,
   getTicketTypes,
   requestStorefrontApproval,
+  updateStorefrontSettings,
   getOrdersByEvent,
   getTicketsByOrder,
   getStorefrontRequests,

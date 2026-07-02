@@ -73,6 +73,12 @@ model Event {
   storefrontStatus  String    @default("draft") @map("storefront_status")
   storefrontNote    String?   @map("storefront_note")
 
+  bannerUrl          String?  @map("banner_url")
+  logoUrl            String?  @map("logo_url")
+  taxEnabled         Boolean  @default(false) @map("tax_enabled")
+  feeBearer          String?  @map("fee_bearer")
+  platformFeePercent Float?   @map("platform_fee_percent")
+
   createdAt          DateTime @default(now()) @map("created_at")
   updatedAt          DateTime @updatedAt      @map("updated_at")
 
@@ -116,6 +122,9 @@ model TicketOrder {
   buyerPhone      String    @map("buyer_phone")
   buyerNik        String    @map("buyer_nik")
   totalAmount     Int       @map("total_amount")
+  feeAmount       Int       @default(0) @map("fee_amount")
+  feeBearer       String    @default("promotor") @map("fee_bearer")
+  taxAmount       Int       @default(0) @map("tax_amount")
   status          String    @default("pending")
   midtransToken   String?   @map("midtrans_token")
   paidAt          DateTime? @map("paid_at")

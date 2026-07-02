@@ -7,6 +7,7 @@ const {
   deleteTicketType,
   getTicketTypes,
   requestStorefrontApproval,
+  updateStorefrontSettings,
   getOrdersByEvent,
   getTicketsByOrder,
 } = require('../controllers/ticket.controller');
@@ -18,6 +19,7 @@ router.patch('/types/:id', verifyToken, updateTicketType);
 router.delete('/types/:id', verifyToken, deleteTicketType);
 
 router.post('/request-approval', verifyToken, requestStorefrontApproval);
+router.patch('/storefront-settings', verifyToken, updateStorefrontSettings);
 
 router.get('/orders', verifyToken, getOrdersByEvent);
 router.get('/by-order/:orderId', verifyToken, getTicketsByOrder);
