@@ -21,6 +21,10 @@ model User {
   plan      String   @default("starter")
   role      String   @default("promotor")
 
+  proEventId   String?
+  proExpiresAt DateTime?
+  proStartedAt DateTime?
+
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @updatedAt      @map("updated_at")
 
@@ -29,8 +33,26 @@ model User {
   eventCrew         EventCrew[]
   pettyCashAccounts PettyCashAccount[]
   otherIncomes      OtherIncome[]
+  proTransactions   ProTransaction[]
 
   @@map("users")
+}
+
+model ProTransaction {
+  id            String    @id @default(uuid())
+  userId        String    @map("user_id")
+  eventId       String?   @map("event_id")
+  type          String    // "activation" | "extension"
+  amount        Int
+  orderId       String    @unique @map("order_id")
+  status        String    @default("pending") // "pending" | "paid" | "failed" | "expired"
+  midtransToken String?   @map("midtrans_token")
+  paidAt        DateTime? @map("paid_at")
+  createdAt     DateTime  @default(now()) @map("created_at")
+
+  user          User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("pro_transactions")
 }
 
 model Event {

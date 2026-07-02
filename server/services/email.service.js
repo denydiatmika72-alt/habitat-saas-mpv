@@ -80,4 +80,26 @@ const sendSponsorCredential = async ({ promotorEmail, sponsorName, sponsorEmail,
   console.log(`[EMAIL] Sponsor (${sponsorEmail}): ${results[1].status}${results[1].status === 'rejected' ? ' — ' + results[1].reason?.message : ''}`);
 };
 
-module.exports = { sendNewUserNotification, sendSponsorCredential };
+const sendProExpiryReminder = async (user, daysLeft) => {
+  try {
+    await resend.emails.send({
+      from: 'onboarding@resend.dev',
+      to: user.email,
+      subject: `Lisensi Pro nexEvent kamu berakhir dalam ${daysLeft} hari`,
+      html: `
+        <div style="font-family:sans-serif;max-width:480px;margin:0 auto;color:#0f172a">
+          <h2 style="color:#065f46">Lisensi Pro kamu segera berakhir</h2>
+          <p>Halo ${user.name}, lisensi Pro nexEvent kamu untuk event ini akan berakhir dalam <strong>${daysLeft} hari</strong> (${new Date(user.proExpiresAt).toLocaleDateString('id-ID')}).</p>
+          <p>Perpanjang sekarang agar fitur Pro (Sponsor Magic Link, Expense Tracker, Field Crew, Laporan P&L, dll) tetap aktif.</p>
+          <a href="https://nexeventapp.tech/dashboard/upgrade" style="display:inline-block;background:#065f46;color:#fff;padding:10px 20px;border-radius:8px;text-decoration:none;font-weight:600;margin-top:12px">Perpanjang Sekarang</a>
+          <p style="color:#64748b;font-size:12px;margin-top:24px">Email otomatis dari nexEvent — nexeventapp.tech</p>
+        </div>
+      `,
+    });
+    console.log(`[EMAIL] Reminder expiry Pro terkirim ke ${user.email}`);
+  } catch (error) {
+    console.error('[EMAIL] Gagal kirim reminder expiry Pro:', error.message);
+  }
+};
+
+module.exports = { sendNewUserNotification, sendSponsorCredential, sendProExpiryReminder };

@@ -1,6 +1,7 @@
 import { Sidebar, MobileNav } from "@/components/dashboard/sidebar"
 import { TopBar } from "@/components/dashboard/top-bar"
 import { DashboardGuard } from "@/components/dashboard/dashboard-guard"
+import { ProExpiryBanner } from "@/components/dashboard/pro-expiry-banner"
 
 export default function DashboardLayout({
   children,
@@ -20,6 +21,7 @@ export default function DashboardLayout({
 
           {/* Page Content — extra bottom padding on mobile for the nav bar */}
           <main className="flex-1 px-4 py-6 pb-24 md:px-8 md:py-8 lg:pb-8">
+            <ProExpiryBanner />
             {children}
           </main>
         </div>

@@ -8,6 +8,9 @@ export interface UserProfile {
   phone?: string | null;
   status: string;
   plan: 'starter' | 'pro';
+  proEventId?: string | null;
+  proExpiresAt?: string | null;
+  proStartedAt?: string | null;
 }
 
 const getToken = () =>
@@ -40,5 +43,11 @@ export function useUser() {
 
   const isPro = user?.plan === 'pro';
 
-  return { user, loading, isPro };
+  const daysUntilExpiry = user?.proExpiresAt
+    ? Math.ceil((new Date(user.proExpiresAt).getTime() - Date.now()) / (1000 * 60 * 60 * 24))
+    : null;
+
+  const isProExpiringSoon = isPro && daysUntilExpiry !== null && daysUntilExpiry <= 7;
+
+  return { user, loading, isPro, daysUntilExpiry, isProExpiringSoon };
 }

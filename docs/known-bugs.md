@@ -485,3 +485,42 @@ File ini adalah log permanen bug yang sudah pernah terjadi di project ini besert
   3. Tambah **lazy backfill** di `getDeliverables`: jika deal berstatus `Disetujui` dan `items.length === 0`, auto-create deliverables dari `dealBenefits` dan re-fetch → handle historical deals yang sudah approved sebelum fix ini.
 - Pelajaran: Data "apa yang sponsor pilih" ada di `SponsorDealBenefit`, bukan di `SponsorPackage`. Jangan derive deliverables dari package karena tier bisa berubah atau tidak cocok.
 - Tag: #sponsor #deliverables #auto-generate #deal-benefits
+
+---
+
+## [2026-07-02] Integrasi Midtrans — Pro Per-Event Activation & Extension
+
+- Gejala: (Bukan bug — catatan implementasi fitur baru)
+- Root cause: Platform butuh alur pembayaran nyata untuk upgrade Pro (Rp 499.000, 90 hari) dan perpanjangan (Rp 99.000, +30 hari), menggantikan sistem `PATCH /api/users/plan` manual.
+- File terkait:
+  - `server/prisma/schema.prisma` — tambah `proEventId`, `proExpiresAt`, `proStartedAt` ke `User`; model baru `ProTransaction`
+  - `server/services/midtrans.service.js` — Snap client (sandbox/production via `MIDTRANS_IS_PRODUCTION`)
+  - `server/controllers/payment.controller.js` — `createProPayment`, `handleWebhook`, `getPaymentStatus`
+  - `server/routes/payment.routes.js` — register di `server/src/index.js` sebagai `/api/payments`
+  - `server/src/cron/pro-subscription.cron.js` — cron auto-downgrade harian + reminder H-7
+  - `server/services/email.service.js` — tambah `sendProExpiryReminder`
+  - `server/src/controllers/auth.controller.js` — `GET /api/auth/me` sekarang return `proEventId`, `proExpiresAt`, `proStartedAt`
+  - `client/src/hooks/useUser.ts` — tambah `daysUntilExpiry`, `isProExpiringSoon`
+  - `client/src/app/dashboard/upgrade/page.tsx` — halaman baru, integrasi Snap.js
+  - `client/src/components/dashboard/pro-expiry-banner.tsx` — banner amber H-7, dipasang di `dashboard/layout.tsx`
+- Fix/Implementasi:
+  - `POST /api/payments/create-pro` (protected): validasi `type` activation/extension, cegah aktivasi ganda jika `plan==="pro"` dan `proExpiresAt` masih aktif, cegah extension jika `proEventId` tidak cocok dengan event yang diminta. Generate `orderId` unik, simpan `ProTransaction` status `pending`, lalu `snap.createTransaction()`.
+  - `POST /api/payments/webhook` (TANPA `verifyToken` — dipanggil langsung oleh Midtrans): verifikasi signature `SHA512(order_id + status_code + gross_amount + MIDTRANS_SERVER_KEY)` sebelum proses apa pun. `settlement`/`capture` → update `ProTransaction` jadi `paid` + update `User` (`activation` set plan pro + proStartedAt + proExpiresAt = now+90 hari; `extension` tambah 30 hari dari `proExpiresAt` lama, atau dari sekarang jika sudah expired). `expire`/`cancel`/`deny` → tandai transaksi `expired`/`failed`. SELALU return HTTP 200 (requirement Midtrans) bahkan saat signature invalid atau error.
+  - Cron `1 17 * * *` (00:01 WIB): downgrade user `plan:"pro"` yang `proExpiresAt` sudah lewat ke `"starter"` — `proEventId`/`proExpiresAt` TIDAK dihapus (histori tetap ada, sesuai aturan "data tidak pernah dihapus" di CLAUDE.md).
+  - Cron `0 2 * * *` (09:00 WIB): kirim email reminder H-7 (hanya persis `daysLeft === 7` supaya tidak spam tiap hari).
+  - Frontend `/dashboard/upgrade`: kondisi ditulis ulang dari draft awal — kartu Perpanjangan ditampilkan untuk SEMUA `isPro` (termasuk yang `isProExpiringSoon`), bukan hanya yang jauh dari expired. Alasan: backend menolak `type:"activation"` selama user masih `isPro` aktif (termasuk saat H-7), jadi user yang mau expired dalam 7 hari harus diarahkan ke extension, bukan activation ulang — draft awal spec menaruh mereka di kartu activation yang akan selalu ditolak backend.
+  - Setelah `window.snap.pay()` sukses/pending/error, redirect pakai `window.location.href` (bukan `router.push`) supaya `useUser()` fetch ulang `/api/auth/me` dengan data plan terbaru (client-side nav tidak remount hook).
+  - `NEXT_PUBLIC_MIDTRANS_CLIENT_KEY` aman di-commit ke `.env.local` lokal (gitignored) karena client key Midtrans memang didesain publik untuk Snap.js; `MIDTRANS_SERVER_KEY` tetap rahasia, jangan pernah expose ke frontend.
+  - Diverifikasi end-to-end lokal: `create-pro` (activation & extension) generate token asli dari Midtrans sandbox, webhook `settlement` update `User.plan`/`proExpiresAt` dengan benar, extension menambah 30 hari dari expiry LAMA (bukan dari `now()`), duplicate activation & extension ke event salah ditolak dengan pesan yang tepat, webhook dengan signature palsu ditolak tapi tetap HTTP 200.
+- Tag: #midtrans #payment #pro-plan #subscription #webhook #cron #prisma #schema
+
+---
+
+## [2026-07-02] Testing lokal backend — `kill`/`pkill` di Git Bash tidak mematikan proses `node.exe` Windows
+
+- Gejala: Saat testing manual endpoint baru dengan menjalankan `node -e "require('./src/index.js')"` di background lalu `kill $PID` atau `pkill -f "src/index.js"` setelah selesai, proses `node.exe` TETAP hidup dan tetap listening di port 5000. Testing berikutnya (setelah edit kode / env var) tetap mendapat response dari kode LAMA meskipun log menunjukkan proses baru berhasil start — menyebabkan kebingungan panjang saat debug (perubahan kode/env tidak pernah "kelihatan" ke request).
+- Root cause: Git Bash (MSYS2) mengemulasi POSIX signal untuk proses native Windows secara tidak reliable. `kill`/`pkill` sering melaporkan sukses atau silent tanpa benar-benar mengirim sinyal terminate ke `node.exe`. Proses lama tetap bind ke port 5000 (`netstat -ano` menunjukkan PID pertama yang masih listening, proses-proses berikutnya start normal tapi tidak pernah benar-benar merebut port karena yang lama masih pegang koneksi — namun tetap sukses `app.listen()` di log karena EADDRINUSE tidak selalu ter-throw dengan jelas dalam skenario ini).
+- File terkait: N/A (tooling/environment, bukan kode aplikasi)
+- Fix: Gunakan `taskkill //F //PID <pid> //T` (native Windows) untuk benar-benar mematikan proses `node.exe`, BUKAN `kill`/`pkill` dari Git Bash. Cek proses yang benar-benar listening dengan `netstat -ano | grep ":5000" | grep LISTENING` sebelum dan sesudah kill untuk verifikasi.
+- Pelajaran: Setiap kali testing manual backend Express secara berulang di sesi yang sama di Windows, SELALU verifikasi PID yang benar-benar listening via `netstat -ano` sebelum menyimpulkan hasil test — jangan percaya begitu saja pada log "🚀 nexEvent API berjalan" karena bisa jadi proses zombie lama yang menjawab request, bukan proses baru.
+- Tag: #windows #git-bash #testing #zombie-process #debugging #tooling

@@ -84,7 +84,10 @@ const getMe = async (req, res) => {
   try {
     const user = await prisma.user.findUnique({
       where: { id: req.user.id },
-      select: { id: true, name: true, email: true, phone: true, status: true, plan: true, role: true, createdAt: true },
+      select: {
+        id: true, name: true, email: true, phone: true, status: true, plan: true, role: true, createdAt: true,
+        proEventId: true, proExpiresAt: true, proStartedAt: true,
+      },
     });
 
     if (!user) return res.status(404).json({ success: false, message: 'User tidak ditemukan.' });
