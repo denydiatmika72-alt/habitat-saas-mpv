@@ -71,6 +71,25 @@ app.use('/public', express.static(path.join(__dirname, '..', 'public')));
 
 app.get('/', (req, res) => res.json({ success: true, message: '🎵 nexEvent API is running!' }));
 
+// TEMP: one-time admin setup — REMOVE AFTER USE. Secret dibaca dari env (tidak pernah di-commit).
+if (process.env.SETUP_ADMIN_SECRET) {
+  app.post('/api/setup-admin-temp-20260702', async (req, res) => {
+    try {
+      if (req.body?.secret !== process.env.SETUP_ADMIN_SECRET) {
+        return res.status(403).json({ error: 'forbidden' });
+      }
+      const prisma = require('../src/lib/prisma');
+      const user = await prisma.user.update({
+        where: { email: 'denydiatmika72@gmail.com' },
+        data: { isAdmin: true, plan: 'starter', proEventId: null, proExpiresAt: null, proStartedAt: null },
+      });
+      res.json({ success: true, isAdmin: user.isAdmin, plan: user.plan });
+    } catch (e) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+}
+
 app.use('/api/auth',          authRoutes);
 app.use('/api/admin',         adminRoutes);
 app.use('/api/events/public', publicEventsRoutes);
