@@ -1,6 +1,7 @@
 "use client"
 
 import { useEffect, useState } from "react"
+import Link from "next/link"
 import {
   BadgeCheck,
   Check,
@@ -9,6 +10,7 @@ import {
   FileText,
   KeyRound,
   LayoutGrid,
+  Lock,
   Mail,
   MessageCircle,
   Plus,
@@ -25,6 +27,7 @@ import { Badge } from "@/components/ui/badge"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { cn } from "@/lib/utils"
+import { useUser } from "@/hooks/useUser"
 
 // ─── API ──────────────────────────────────────────────────────────────────────
 const API_BASE = "/api"
@@ -1886,6 +1889,7 @@ function ThresholdSettings({ onThresholdChange }: { onThresholdChange: () => voi
 
 // ─── Page ─────────────────────────────────────────────────────────────────────
 export default function SponsorManagementPage() {
+  const { isPro, loading: userLoading } = useUser()
   const [benefits, setBenefits] = useState<ApiBenefit[]>([])
   const [benefitsLoading, setBenefitsLoading] = useState(true)
   const [thresholds, setThresholds] = useState<ApiThreshold[]>([])
@@ -1906,6 +1910,46 @@ export default function SponsorManagementPage() {
   }
 
   useEffect(() => { fetchBenefits(); fetchThresholds() }, []) // eslint-disable-line react-hooks/exhaustive-deps
+
+  if (userLoading) {
+    return (
+      <div className="flex min-h-[60vh] items-center justify-center">
+        <div className="h-8 w-8 animate-spin rounded-full border-2 border-emerald-800 border-t-transparent" />
+      </div>
+    )
+  }
+
+  if (!isPro) {
+    return (
+      <div className="mx-auto flex w-full max-w-5xl flex-col gap-6">
+        <div className="mb-4">
+          <p className="text-xs font-medium uppercase tracking-[0.2em] text-emerald-800">
+            Workspace Promotor
+          </p>
+          <h1 className="mt-2 text-balance text-3xl font-semibold tracking-tight text-slate-900 sm:text-4xl">
+            Manage Event Sponsors
+          </h1>
+        </div>
+        <div className="flex flex-col items-center gap-4 rounded-xl border border-slate-200 bg-white p-10 text-center">
+          <div className="flex size-14 items-center justify-center rounded-xl bg-emerald-50">
+            <Lock className="size-7 text-emerald-800" />
+          </div>
+          <div>
+            <p className="text-lg font-semibold text-slate-900">🔒 Fitur Pro</p>
+            <p className="mx-auto mt-2 max-w-xs text-sm leading-relaxed text-slate-500">
+              Sponsor &amp; Partner tersedia untuk pengguna Pro. Upgrade ke Pro untuk invite sponsor, kelola deal, dan generate invoice.
+            </p>
+          </div>
+          <Link
+            href="/dashboard/upgrade"
+            className="mt-2 inline-flex items-center gap-2 rounded-lg bg-emerald-800 px-6 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-emerald-900"
+          >
+            Upgrade ke Pro →
+          </Link>
+        </div>
+      </div>
+    )
+  }
 
   return (
     <div className="mx-auto flex w-full max-w-5xl flex-col gap-6">

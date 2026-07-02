@@ -30,7 +30,7 @@ type NavItem =
 const nav: NavItem[] = [
   { label: "Dashboard", icon: LayoutDashboard, href: "/dashboard" },
   { label: "Simulasi Harga Tiket", icon: Calculator, href: "/dashboard/simulasi", badge: "Pro" },
-  { label: "Sponsor & Partner", icon: Handshake, href: "/dashboard/sponsor" },
+  { label: "Sponsor & Partner", icon: Handshake, href: "/dashboard/sponsor", badge: "Pro" },
   { label: "Vendor & Talent", icon: Users, onClick: () => alert("Fitur Vendor Segera Hadir") },
   { label: "Invoice & Purchase Order", icon: ReceiptText, href: "/dashboard/invoice" },
   { label: "Expense Tracker", icon: Wallet, href: "/dashboard/expenses", badge: "Pro" },
