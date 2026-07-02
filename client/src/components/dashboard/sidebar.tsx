@@ -14,6 +14,7 @@ import {
   Wallet,
 } from "lucide-react"
 import { cn } from "@/lib/utils"
+import { useUser } from "@/hooks/useUser"
 
 const mobileNavItems = [
   { label: "Dashboard", icon: LayoutDashboard, href: "/dashboard" },
@@ -23,23 +24,25 @@ const mobileNavItems = [
 ]
 
 type NavItem =
-  | { label: string; icon: React.ElementType; href: string; badge?: string; onClick?: never }
-  | { label: string; icon: React.ElementType; onClick: () => void; badge?: string; href?: never }
+  | { label: string; icon: React.ElementType; href: string; badge?: string; adminOnly?: boolean; onClick?: never }
+  | { label: string; icon: React.ElementType; onClick: () => void; badge?: string; adminOnly?: boolean; href?: never }
 
 const nav: NavItem[] = [
   { label: "Dashboard", icon: LayoutDashboard, href: "/dashboard" },
-  { label: "Simulasi Harga Tiket", icon: Calculator, href: "/dashboard/simulasi" },
+  { label: "Simulasi Harga Tiket", icon: Calculator, href: "/dashboard/simulasi", badge: "Pro" },
   { label: "Sponsor & Partner", icon: Handshake, href: "/dashboard/sponsor" },
   { label: "Vendor & Talent", icon: Users, onClick: () => alert("Fitur Vendor Segera Hadir") },
   { label: "Invoice & Purchase Order", icon: ReceiptText, href: "/dashboard/invoice" },
   { label: "Expense Tracker", icon: Wallet, href: "/dashboard/expenses", badge: "Pro" },
   { label: "Field Crew", icon: Users, href: "/dashboard/crew", badge: "Pro" },
   { label: "Laporan P&L", icon: BarChart2, href: "/dashboard/pl-report", badge: "Pro" },
-  { label: "Approve User", icon: ShieldCheck, href: "/dashboard/admin" },
+  { label: "Approve User", icon: ShieldCheck, href: "/dashboard/admin", adminOnly: true },
 ]
 
 export function Sidebar() {
   const pathname = usePathname()
+  const { isAdmin } = useUser()
+  const visibleNav = nav.filter((item) => !item.adminOnly || isAdmin)
 
   return (
     // Komentar sudah saya pindahkan ke luar JSX agar tidak error
@@ -65,7 +68,7 @@ export function Sidebar() {
           Menu Utama
         </p>
         <ul className="flex flex-col gap-1">
-          {nav.map((item) => {
+          {visibleNav.map((item) => {
             const isActive = !!item.href && pathname === item.href
             const baseClass = cn(
               "flex w-full items-center gap-3 rounded-md px-3 py-2.5 text-sm font-medium transition-colors",

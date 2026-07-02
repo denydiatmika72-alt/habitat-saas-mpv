@@ -3,10 +3,12 @@
 import { useMemo, useState, useEffect } from "react"
 import { useRouter } from "next/navigation"
 import axios from "axios"
+import Link from "next/link"
 import {
-  Activity, Sparkles, Users, Wallet, Target, Gauge, Ticket, TrendingUp, CheckCircle2, ArrowLeft, Loader2,
+  Activity, Sparkles, Users, Wallet, Target, Gauge, Ticket, TrendingUp, CheckCircle2, ArrowLeft, Loader2, Lock,
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
+import { useUser } from "@/hooks/useUser"
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 type ClassKey = "earlybird" | "presale" | "normal"
@@ -94,6 +96,7 @@ function AllocSlider({ label, colorClass, accentClass, value, onChange }: { labe
 // ─── Main Page ────────────────────────────────────────────────────────────────
 export default function RevenueStrategyCenter() {
   const router = useRouter()
+  const { isPro, loading: userLoading } = useUser()
 
   const [events, setEvents]           = useState<EventFromAPI[]>([])
   const [loadingEvents, setLoadingEvents] = useState(true)
@@ -190,6 +193,39 @@ export default function RevenueStrategyCenter() {
 
   const allocTotal = earlybirdAlloc + presaleAlloc + normalAlloc
   const bepPct     = capacity > 0 ? Math.min(100, (result.bep / capacity) * 100) : 0
+
+  if (userLoading) {
+    return (
+      <div className="flex min-h-[60vh] items-center justify-center">
+        <div className="h-8 w-8 animate-spin rounded-full border-2 border-emerald-800 border-t-transparent" />
+      </div>
+    )
+  }
+
+  if (!isPro) {
+    return (
+      <div className="flex min-h-[60vh] flex-col items-center justify-center gap-6 p-8">
+        <div className="max-w-md text-center">
+          <div className="mb-4 flex justify-center">
+            <div className="flex size-14 items-center justify-center rounded-xl bg-emerald-50">
+              <Lock className="size-7 text-emerald-800" />
+            </div>
+          </div>
+          <h2 className="mb-2 text-xl font-bold text-slate-900">Fitur Pro</h2>
+          <p className="mb-6 text-slate-500">
+            Simulasi Harga Tiket tersedia untuk pengguna Pro.
+            Upgrade sekarang untuk mengakses semua fitur nexEvent.
+          </p>
+          <Link
+            href="/dashboard/upgrade"
+            className="inline-flex items-center justify-center rounded-xl bg-emerald-800 px-6 py-3 font-bold text-white transition-colors hover:bg-emerald-900"
+          >
+            Upgrade ke Pro →
+          </Link>
+        </div>
+      </div>
+    )
+  }
 
   return (
     <div className="mx-auto w-full max-w-7xl flex flex-col gap-6">

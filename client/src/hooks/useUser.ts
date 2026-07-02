@@ -50,5 +50,7 @@ export function useUser() {
 
   const isProExpiringSoon = isPro && daysUntilExpiry !== null && daysUntilExpiry <= 7;
 
-  return { user, loading, isPro, daysUntilExpiry, isProExpiringSoon };
+  const isAdmin = !!user?.isAdmin;
+
+  return { user, loading, isPro, daysUntilExpiry, isProExpiringSoon, isAdmin };
 }
