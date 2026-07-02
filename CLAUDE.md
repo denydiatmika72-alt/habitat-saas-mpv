@@ -274,12 +274,47 @@ Data platform disimpan di DB untuk analytics internal.
 
 ### Pending — Harus Dikerjakan Sebelum Customer Pertama
 
-#### 1. Fee Platform (PRIORITAS TERTINGGI)
-- Fee platform BELUM aktif — transaksi pertama tidak kena fee
-- Fee diatur di Admin Panel per promotor (bukan hardcoded)
-- Model fee: diputuskan antara "fee ke pembeli", "fee ke promotor", atau kombinasi
-- BELUM diputuskan: persentase fee dan siapa yang menanggung
-- JANGAN implementasi fee sampai model bisnis diputuskan Mandor
+#### 1. Fee Platform — KEPUTUSAN FINAL (Belum Diimplementasi)
+
+**Struktur Fee:**
+- Default/Standar: 3.5% per transaksi tiket
+- Negosiasi promotor besar: 2%
+- Minimum absolut (case khusus early adopter/volume sangat besar): 1.5%
+- Diatur oleh Admin nexEvent per promotor di Admin Panel
+- Promotor TIDAK bisa ubah besaran fee — hanya bisa pilih siapa yang menanggung
+
+**Siapa yang Menanggung Fee:**
+- Promotor WAJIB memilih sebelum storefront bisa diajukan ke admin untuk approval
+- Tidak ada default — pilihan harus eksplisit
+- Pilihan A: Fee ditanggung PENONTON → harga tiket + fee ditampilkan transparan di storefront
+  Contoh: tiket Rp 50.000 + fee Rp 1.750 = total Rp 51.750
+- Pilihan B: Fee ditanggung PROMOTOR → pembeli bayar harga bersih, promotor terima hasil dikurangi fee
+  Contoh: tiket Rp 50.000, promotor terima Rp 48.250
+
+**Alur Wajib Sebelum Storefront Live:**
+1. Promotor buat event + jenis tiket
+2. Promotor WAJIB pilih: siapa yang bayar fee (tidak bisa skip)
+3. Baru bisa klik "Ajukan Persetujuan ke Admin"
+4. Admin review + set fee % untuk promotor ini + approve
+5. Storefront live
+
+**Aturan Bisnis:**
+- Agent nexEvent saat pitching: mulai dari 3.5%, turun ke 2% untuk volume besar, 1.5% hanya untuk case sangat khusus
+- Fee 1.5% adalah kartu truf — jangan jadikan harga normal
+- Setiap transaksi tiket WAJIB catat: harga tiket, fee amount, fee bearer (penonton/promotor) terpisah di database
+- Fee nexEvent TIDAK boleh dicampur dengan revenue promotor di laporan keuangan
+- P&L Report promotor: pendapatan tiket ditampilkan SETELAH dipotong fee platform (jika fee ditanggung promotor)
+
+**Fields yang perlu ditambah ke database (belum diimplementasi):**
+- Event model: feeBearer String? — "audience" atau "promotor" (wajib diisi sebelum approval)
+- Event model: platformFeePercent Float? — fee % khusus untuk event ini (diset admin saat approve)
+- TicketOrder model: feeAmount Int — nominal fee yang dikumpulkan nexEvent per transaksi
+- TicketOrder model: feeBearer String — siapa yang menanggung fee di transaksi ini
+
+**Catatan Implementasi:**
+- Fee platform BELUM aktif — semua transaksi saat ini tidak kena fee
+- Jangan implementasi fee sampai seluruh flow di atas siap (pilihan promotor + admin set fee % + kalkulasi di checkout)
+- Storefront yang sudah approved perlu direview ulang setelah fee diaktifkan
 
 #### 2. Pajak 10% (Opsional per Event)
 - Promotor bisa aktifkan opsi pajak 10% per event
@@ -313,6 +348,8 @@ Data platform disimpan di DB untuk analytics internal.
   terpisah di database — untuk keperluan laporan keuangan yang akurat
 - Fee platform yang masuk ke nexEvent TIDAK boleh dicampur dengan revenue promotor
 - P&L Report promotor: tampilkan pendapatan tiket SETELAH dipotong fee platform
+- Agent nexEvent WAJIB jelaskan fee kepada promotor saat pitching dengan contoh angka nyata sebelum event dibuat
+- Promotor yang tidak memahami struktur fee tidak boleh disetujui storefrontnya
 
 ### Fields yang Perlu Ditambah ke Event Model (Belum Diimplementasi)
 - taxEnabled: Boolean @default(false) — opsi pajak 10%
@@ -329,8 +366,11 @@ Data platform disimpan di DB untuk analytics internal.
 5. ✅ Midtrans Pro Payment (Rp 499.000/event, 90 hari)
 6. ✅ Security Fix (Admin panel protection + Lock UI consistency)
 7. ✅ Storefront Ticketing B2C (Live — tapi belum ada fee)
-8. 🔴 Fee Platform Setup (URGENT — belum ada revenue dari tiket)
-   → Butuh keputusan model bisnis dari Mandor dulu
+8. 🔴 Fee Platform Implementation (URGENT — keputusan sudah final, siap dikoding)
+   → Default 3.5%, min 1.5%, diatur admin per promotor
+   → Promotor pilih siapa yang menanggung (penonton/promotor)
+   → Wajib pilih sebelum bisa ajukan approval storefront
+   → Fields baru: Event.feeBearer, Event.platformFeePercent, TicketOrder.feeAmount, TicketOrder.feeBearer
 9. UI Storefront Redesign (banner + logo upload + desain lebih menarik)
 10. Pajak 10% opsional per event
 11. Toggle aktif/nonaktif jenis tiket (UX improvement)
