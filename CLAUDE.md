@@ -263,14 +263,81 @@ Data platform disimpan di DB untuk analytics internal.
 - proExpiresAt: DateTime? — tanggal expired lisensi Pro
 - proStartedAt: DateTime? — tanggal aktivasi Pro
 
+## Storefront Ticketing — Keputusan & Pending Features
+
+### Yang Sudah Live
+- Public storefront: nexeventapp.tech/event/[slug] (tanpa login pembeli)
+- Anti-calo: max 4 tiket per NIK per event (dihitung kumulatif, bukan per transaksi)
+- Timeout booking: 15 menit, CRON job release expired orders setiap menit
+- E-ticket: QR code dikirim via email (Resend) + tombol bagikan ke WhatsApp
+- Approval flow: Draft → Pending Approval → Admin Approve/Reject → Live
+
+### Pending — Harus Dikerjakan Sebelum Customer Pertama
+
+#### 1. Fee Platform (PRIORITAS TERTINGGI)
+- Fee platform BELUM aktif — transaksi pertama tidak kena fee
+- Fee diatur di Admin Panel per promotor (bukan hardcoded)
+- Model fee: diputuskan antara "fee ke pembeli", "fee ke promotor", atau kombinasi
+- BELUM diputuskan: persentase fee dan siapa yang menanggung
+- JANGAN implementasi fee sampai model bisnis diputuskan Mandor
+
+#### 2. Pajak 10% (Opsional per Event)
+- Promotor bisa aktifkan opsi pajak 10% per event
+- Jika diaktifkan: pajak ditanggung pembeli (ditambahkan ke total)
+- Tampil transparan di halaman storefront: "Harga sudah termasuk pajak 10%"
+- Butuh field baru di Event: taxEnabled Boolean @default(false)
+- Kalkulasi: totalAmount = subtotal + (subtotal * 0.1) if taxEnabled
+
+#### 3. Toggle Aktif/Nonaktif Jenis Tiket
+- Tombol teks "Aktifkan/Nonaktifkan" diganti dengan Toggle switch
+- Status aktif = hijau, nonaktif = abu-abu
+- Lebih intuitif untuk promotor yang kelola banyak jenis tiket
+
+#### 4. UI Storefront Publik (WAJIB DIPERBAIKI)
+- Halaman /event/[slug] terlalu polos — ini wajah utama nexEvent ke audience
+- Promotor WAJIB bisa upload: banner event (hero image) + logo event
+- Banner tampil sebagai hero section di atas halaman storefront
+- Logo tampil di header/card event
+- Butuh field baru di Event: bannerUrl String?, logoUrl String?
+- Upload via Supabase Storage (sudah ada di stack)
+- Desain ulang: tambah warna, tipografi lebih bold, card tiket lebih menarik
+
+#### 5. Merchandise + Bundling (SPRINT TERPISAH — Jangan gabung sekarang)
+- Storefront akan support penjualan merchandise + tiket dalam satu checkout
+- Bisa buat bundling: "Tiket Regular + T-Shirt = Rp 150.000"
+- Ini fitur besar — butuh schema baru (MerchItem, Bundle) dan UI terpisah
+- JANGAN dikerjakan sampai storefront dasar sudah stabil
+
+### Aturan Baru untuk Storefront
+- Setiap transaksi tiket WAJIB mencatat: harga tiket, fee platform, pajak (jika ada)
+  terpisah di database — untuk keperluan laporan keuangan yang akurat
+- Fee platform yang masuk ke nexEvent TIDAK boleh dicampur dengan revenue promotor
+- P&L Report promotor: tampilkan pendapatan tiket SETELAH dipotong fee platform
+
+### Fields yang Perlu Ditambah ke Event Model (Belum Diimplementasi)
+- taxEnabled: Boolean @default(false) — opsi pajak 10%
+- bannerUrl: String? — banner/hero image storefront
+- logoUrl: String? — logo event di storefront
+- platformFeePercent: Float? — fee platform khusus untuk event ini (override default)
+
 ## Next Priority (Roadmap)
 
-1. Selesaikan Expense Tracker (warna + kategori RAB dinamis) ← sedang berjalan
-2. Petty Cash System (Promotor dashboard + Field Crew mobile UI)
-3. P&L Report otomatis (gabungkan expenses + petty cash type:`"expense"`)
-4. Integrasi Midtrans payment gateway
-5. Ticketing storefront B2C dengan Row-Level Locking
-6. CRON Job booking timeout 15 menit
+1. ✅ Expense Tracker
+2. ✅ Field Crew + Petty Cash
+3. ✅ P&L Report + PDF Export
+4. ✅ Sponsor Auth Redesign
+5. ✅ Midtrans Pro Payment (Rp 499.000/event, 90 hari)
+6. ✅ Security Fix (Admin panel protection + Lock UI consistency)
+7. ✅ Storefront Ticketing B2C (Live — tapi belum ada fee)
+8. 🔴 Fee Platform Setup (URGENT — belum ada revenue dari tiket)
+   → Butuh keputusan model bisnis dari Mandor dulu
+9. UI Storefront Redesign (banner + logo upload + desain lebih menarik)
+10. Pajak 10% opsional per event
+11. Toggle aktif/nonaktif jenis tiket (UX improvement)
+12. Ticket Sales Manual Input (untuk promotor yang pakai platform lain)
+13. Event Summary Report (kirim via email saat event selesai)
+14. Merchandise + Bundling (sprint terpisah)
+15. CRON Job booking timeout (sudah ada — verifikasi)
 
 _Update bagian ini setiap prioritas berubah, supaya Claude Code dan Claude.ai selalu tahu fokus development saat ini._
 
