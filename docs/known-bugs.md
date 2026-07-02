@@ -550,6 +550,10 @@ File ini adalah log permanen bug yang sudah pernah terjadi di project ini besert
   - Verifikasi: `GET /api/admin/users` dengan token non-admin → 403; dengan token admin → 200. `GET /api/auth/me` untuk akun founder → `isAdmin: true, plan: "starter", proEventId: null`.
 - Tag: #security #admin #rbac #isAdmin #pro-legacy #lock-ui #consistency #public-repo #secret-management
 
+---
+
+## [2026-07-02] Deploy Midtrans ke production — webhook redirect apex→www + bug user Pro legacy
+
 - Gejala 1: Test webhook langsung ke `https://nexeventapp.tech/api/payments/webhook` (tanpa follow redirect) mengembalikan `308 Permanent Redirect` ke `https://www.nexeventapp.tech/api/payments/webhook`, bukan langsung diproses. Response body cuma `"Redirecting..."` — kalau pengirim (Midtrans) tidak mem-follow redirect untuk request POST, notifikasi pembayaran TIDAK PERNAH sampai ke handler, padahal Midtrans akan menganggap notifikasi sudah terkirim (tidak retry selamanya, hanya retry terbatas dengan backoff).
 - Gejala 2: User dengan `plan:"pro"` hasil upgrade manual lama (sebelum sistem Midtrans ada) punya `proEventId`/`proExpiresAt`/`proStartedAt` semuanya `null`. Di `/dashboard/upgrade`, kondisi `isPro` (tanpa cek `proEventId`) membuat user ini melihat kartu "Perpanjangan", tapi tombolnya PASTI gagal karena backend `createProPayment` menolak `type:"extension"` ketika `proEventId` user tidak cocok dengan event manapun (di sini `null !== eventId apa pun`). User pro-legacy begini tidak bisa aktivasi (kartu activation tidak muncul karena `isPro` true) maupun extension (selalu ditolak) — stuck.
 - Root cause 1: Vercel domain config redirect otomatis domain apex (`nexeventapp.tech`) ke `www.nexeventapp.tech` (atau sebaliknya, tergantung domain mana yang di-set primary) via 308. Ini bukan bug kode, tapi konfigurasi domain Vercel yang harus diperhitungkan saat kasih URL webhook ke pihak ketiga.
@@ -561,3 +565,22 @@ File ini adalah log permanen bug yang sudah pernah terjadi di project ini besert
 - Verifikasi: `create-pro` (activation & extension) dan webhook settlement diuji end-to-end langsung ke production (`145.79.12.170:3001` dan `https://www.nexeventapp.tech/api/payments/webhook` via redirect-follow) pakai akun test disposable — `plan` berubah ke `"pro"`, `proExpiresAt` +90 hari saat aktivasi dan +30 hari dari expiry lama saat extension, lalu direvert ke `starter` via `PATCH /api/users/plan`.
 - Catatan tooling: Safety classifier sesi ini memblokir agent membaca/memakai `JWT_SECRET` production (untuk forge token testing) dan membatasi query DB langsung dengan TLS-bypass (`NODE_TLS_REJECT_UNAUTHORIZED=0`) ke Supabase production — solusinya testing dilakukan murni lewat API resmi pakai token asli yang di-generate oleh Mandor sendiri (login browser → ambil dari localStorage), bukan lewat script ad-hoc di server.
 - Tag: #midtrans #webhook #vercel #domain-redirect #pro-legacy #deployment #production
+
+---
+
+## [2026-07-02] Simulasi Harga Tiket belum ada lock UI Pro + menu admin tetap muncul untuk non-admin
+
+- Gejala 1: Halaman `/dashboard/simulasi` (Revenue Strategy Center / Simulasi Harga Tiket) bisa diakses penuh oleh Starter user — tidak ada lock UI sama sekali, padahal fitur ini seharusnya Pro-only.
+- Gejala 2: Menu "Approve User" tetap tampil di sidebar untuk SEMUA user (termasuk non-admin), meskipun backend sudah menolak akses (403) sejak fix RBAC sebelumnya — non-admin bisa lihat dan klik menunya, baru ditolak setelah masuk halaman.
+- Root cause 1: Halaman `simulasi/page.tsx` tidak pernah diberi cek `isPro` saat pertama dibuat.
+- Root cause 2: Item nav "Approve User" di `sidebar.tsx` tidak punya kondisi render berbasis role — semua item nav statis tampil untuk semua user, proteksi hanya ada di level backend dan halaman admin, bukan di sidebar.
+- File terkait:
+  - `client/src/app/dashboard/simulasi/page.tsx` — tambah lock UI Pro (pola sama dengan pl-report/expenses/crew)
+  - `client/src/components/dashboard/sidebar.tsx` — filter nav item admin-only berdasarkan `isAdmin`, tambah badge Pro ke Simulasi Harga Tiket
+  - `client/src/hooks/useUser.ts` — expose `isAdmin` sebagai derived boolean (`!!user?.isAdmin`), bukan cuma field di dalam `user` object
+- Fix/Implementasi:
+  - `simulasi/page.tsx`: tambah `if (!isPro) return lockUI` sebelum `return (` utama, setelah semua hooks (useMemo/useEffect) sudah dipanggil — konsisten dengan pola pl-report (jangan taruh early-return sebelum hooks, akan melanggar Rules of Hooks).
+  - `sidebar.tsx`: `NavItem` type ditambah field opsional `adminOnly?: boolean`. Item "Approve User" ditandai `adminOnly: true`. Render pakai `visibleNav = nav.filter((item) => !item.adminOnly || isAdmin)` — bukan render lalu sembunyikan via CSS, item benar-benar tidak masuk DOM untuk non-admin.
+  - **Sponsor & Partner SENGAJA tidak dikunci** — halaman `dashboard/sponsor/page.tsx` (1931 baris) adalah fitur deal management inti yang sudah ada sejak awal (invite code, deal tracker, credential sponsor, deliverables), bukan fitur tambahan Pro. Tidak ditambah lock UI maupun badge Pro di sidebar, supaya tidak menyesatkan (badge Pro tanpa gating = janji palsu ke user).
+- Verifikasi: Build client sukses tanpa TypeScript error. `GET https://www.nexeventapp.tech/dashboard/simulasi` dan `/dashboard/admin` return 200 (tidak ada server error). Logic gating divalidasi via data `isAdmin`/`plan` dari `GET /api/auth/me` yang sudah diverifikasi akurat di entry sebelumnya.
+- Tag: #pro-feature #lock-ui #simulasi #sidebar #admin #rbac #consistency
