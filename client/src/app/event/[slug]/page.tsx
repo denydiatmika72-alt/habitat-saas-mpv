@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState } from "react"
 import { useParams } from "next/navigation"
 import Script from "next/script"
-import { Calendar, MapPin, Check, Minus, Plus, ChevronDown, Ticket, Shield, Mail, Loader2, AlertCircle } from "lucide-react"
+import { Calendar, MapPin, Check, Minus, Plus, Ticket, Shield, Mail, Loader2, AlertCircle } from "lucide-react"
 
 declare global {
   interface Window {
@@ -83,7 +83,6 @@ export default function EventStorefrontPage() {
   const [buyerEmail, setBuyerEmail] = useState("")
   const [buyerPhone, setBuyerPhone] = useState("")
   const [buyerNik, setBuyerNik] = useState("")
-  const [showTerms, setShowTerms] = useState(false)
 
   const [submitting, setSubmitting] = useState(false)
   const [formError, setFormError] = useState("")
@@ -382,22 +381,13 @@ export default function EventStorefrontPage() {
               </div>
             )}
 
-            {/* TERMS & CONDITIONS */}
+            {/* TERMS & CONDITIONS — selalu tampil supaya bisa dibaca audience */}
             {event.termsConditions && (
               <div className="py-6">
-                <button
-                  type="button"
-                  onClick={() => setShowTerms(!showTerms)}
-                  className="flex w-full items-center justify-between text-left"
-                >
-                  <h2 className="text-base font-bold text-slate-900">Syarat &amp; Ketentuan</h2>
-                  <ChevronDown className={`h-5 w-5 text-slate-400 transition-transform ${showTerms ? "rotate-180" : ""}`} />
-                </button>
-                {showTerms && (
-                  <div className="mt-3 whitespace-pre-line rounded-xl bg-slate-50 p-4 text-sm leading-relaxed text-slate-600">
-                    {event.termsConditions}
-                  </div>
-                )}
+                <h2 className="mb-3 text-base font-bold text-slate-900">Syarat &amp; Ketentuan</h2>
+                <div className="whitespace-pre-line rounded-xl bg-slate-50 p-4 text-sm leading-relaxed text-slate-600">
+                  {event.termsConditions}
+                </div>
               </div>
             )}
           </div>
