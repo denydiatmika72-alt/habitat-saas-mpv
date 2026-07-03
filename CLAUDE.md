@@ -128,8 +128,9 @@ Lihat **`docs/known-bugs.md`** untuk daftar lengkap bug yang sudah pernah terjad
 ## Email
 
 - Provider: Resend v6
-- Sender: `onboarding@resend.dev` (domain nexeventapp.tech belum diverifikasi di Resend)
-- Jangan ganti sender sampai domain diverifikasi
+- Domain `nexeventapp.tech` sudah diverifikasi di Resend (per 2026-07-02) — email bisa deliver ke alamat eksternal mana pun, bukan cuma email owner akun Resend
+- Sender: `nexEvent <noreply@nexeventapp.tech>` — semua fungsi kirim email di `server/services/email.service.js` pakai sender ini
+- Jangan pakai `onboarding@resend.dev` lagi (sender testing lama, sudah tidak dipakai)
 
 ## PDF Generation
 

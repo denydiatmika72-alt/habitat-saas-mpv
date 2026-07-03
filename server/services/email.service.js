@@ -5,7 +5,7 @@ const resend = new Resend(process.env.RESEND_API_KEY);
 const sendNewUserNotification = async (user) => {
   try {
     await resend.emails.send({
-      from: 'onboarding@resend.dev',
+      from: 'nexEvent <noreply@nexeventapp.tech>',
       to: process.env.ADMIN_EMAIL || 'denydiatmika72@gmail.com',
       subject: `Pendaftar baru menunggu approval — ${user.name}`,
       html: `
@@ -32,9 +32,8 @@ const sendNewUserNotification = async (user) => {
   }
 };
 
-// Kirim ke KEDUANYA: promotor (guaranteed) dan sponsor (best-effort).
-// onboarding@resend.dev hanya deliver ke email terdaftar di akun Resend.
-// Sponsor email mungkin tidak sampai, tapi promotor pasti terima.
+// Kirim ke KEDUANYA: promotor (untuk arsip) dan sponsor (kredensial asli mereka).
+// Domain nexeventapp.tech sudah diverifikasi di Resend — keduanya deliver normal.
 const sendSponsorCredential = async ({ promotorEmail, sponsorName, sponsorEmail, username, password }) => {
   const loginUrl = 'https://nexeventapp.tech/login?role=sponsor';
   const waText = encodeURIComponent(
@@ -55,7 +54,7 @@ const sendSponsorCredential = async ({ promotorEmail, sponsorName, sponsorEmail,
       <p style="margin-bottom:8px">Teruskan ke sponsor via:</p>
       <a href="https://wa.me/?text=${waText}" style="display:inline-block;background:#25d366;color:#fff;padding:10px 18px;border-radius:8px;text-decoration:none;font-weight:600;margin-right:8px">WhatsApp</a>
       <a href="mailto:${sponsorEmail}?subject=Akun%20Sponsor%20Anda%20Siap%20%E2%80%94%20nexEvent&body=Halo%20${encodeURIComponent(sponsorName)}%2C%0A%0ABerikut%20kredensial%20login%3A%0ALink%3A%20${encodeURIComponent(loginUrl)}%0AUsername%3A%20${encodeURIComponent(username)}%0APassword%3A%20${encodeURIComponent(password)}" style="display:inline-block;background:#065f46;color:#fff;padding:10px 18px;border-radius:8px;text-decoration:none;font-weight:600">Email ke Sponsor</a>
-      <p style="color:#64748b;font-size:12px;margin-top:24px">Email ini dikirim ke promotor. Setelah domain nexeventapp.tech diverifikasi di Resend, email akan langsung ke sponsor.</p>
+      <p style="color:#64748b;font-size:12px;margin-top:24px">Email ini juga dikirim langsung ke sponsor.</p>
     </div>
   `;
 
@@ -73,8 +72,8 @@ const sendSponsorCredential = async ({ promotorEmail, sponsorName, sponsorEmail,
   `;
 
   const results = await Promise.allSettled([
-    resend.emails.send({ from: 'onboarding@resend.dev', to: [promotorEmail], subject: `Kredensial Sponsor ${sponsorName} Berhasil Dibuat`, html: promotorHtml }),
-    resend.emails.send({ from: 'onboarding@resend.dev', to: [sponsorEmail], subject: 'Akun Sponsor nexEvent Anda Sudah Aktif', html: sponsorHtml }),
+    resend.emails.send({ from: 'nexEvent <noreply@nexeventapp.tech>', to: [promotorEmail], subject: `Kredensial Sponsor ${sponsorName} Berhasil Dibuat`, html: promotorHtml }),
+    resend.emails.send({ from: 'nexEvent <noreply@nexeventapp.tech>', to: [sponsorEmail], subject: 'Akun Sponsor nexEvent Anda Sudah Aktif', html: sponsorHtml }),
   ]);
 
   console.log(`[EMAIL] Promotor (${promotorEmail}): ${results[0].status}${results[0].status === 'rejected' ? ' — ' + results[0].reason?.message : ''}`);
@@ -84,7 +83,7 @@ const sendSponsorCredential = async ({ promotorEmail, sponsorName, sponsorEmail,
 const sendProExpiryReminder = async (user, daysLeft) => {
   try {
     await resend.emails.send({
-      from: 'onboarding@resend.dev',
+      from: 'nexEvent <noreply@nexeventapp.tech>',
       to: user.email,
       subject: `Lisensi Pro nexEvent kamu berakhir dalam ${daysLeft} hari`,
       html: `
@@ -126,7 +125,7 @@ const sendTicketEmail = async ({ buyerName, buyerEmail, orderId, eventTitle, tic
     );
 
     await resend.emails.send({
-      from: 'onboarding@resend.dev',
+      from: 'nexEvent <noreply@nexeventapp.tech>',
       to: [buyerEmail],
       subject: `Tiket Anda untuk ${eventTitle} — nexEvent`,
       html: `
