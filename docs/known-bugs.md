@@ -766,3 +766,19 @@ File ini adalah log permanen bug yang sudah pernah terjadi di project ini besert
   - `npx tsc --noEmit` bersih, `npm run build` (client) sukses, backend `node --check` semua file lolos, server lokal boot bersih.
 - Catatan: Event "Throne Party" sekarang berstatus `storefrontStatus: "approved"` dengan slug `throne-party` LIVE di production (bukan cuma draft) sebagai hasil verifikasi E2E — sengaja TIDAK dikembalikan ke draft karena approval flow adalah bagian yang perlu dibuktikan bekerja, dan event ini sudah dipakai berulang kali sebagai event uji coba di sesi-sesi sebelumnya. **Perhatian untuk Mandor**: jenis tiket "Regular" (Rp50.000, kuota 100) sekarang benar-benar bisa dibeli publik oleh siapa saja yang menemukan link `nexeventapp.tech/event/throne-party` — reset kuota/nonaktifkan/hapus event ini kalau tidak dimaksudkan untuk publik.
 - Tag: #storefront #redesign #description #facilities #terms-conditions #ui #e2e-verified #prisma #schema
+
+---
+
+## [2026-07-03] Hapus tampilan stok/ketersediaan tiket dari storefront publik
+
+- Gejala: (Bukan bug — perubahan produk berdasarkan pertimbangan psikologi pembeli) Ticket card di `/event/[slug]` menampilkan progress bar stok ("X tiket tersisa" + "Y% terjual") dan label "Maks. 4 tiket per NIK" di sebelah quantity selector. Keputusan: stok tinggi bikin pembeli merasa tidak perlu buru-buru (menunda beli), stok rendah bikin event terkesan kurang laku (menurunkan kepercayaan) — keduanya kontraproduktif untuk konversi.
+- Root cause: N/A — bukan bug, permintaan hapus fitur yang sudah pernah diimplementasi.
+- File terkait: `client/src/app/event/[slug]/page.tsx`
+- Fix:
+  1. Hapus seluruh blok progress bar stok (div berisi "X tiket tersisa" / "Y% terjual" + bar warna dinamis hijau/amber/merah).
+  2. Hapus variabel `soldPercent` (`const soldPercent = ticket.quota > 0 ? (ticket.sold / ticket.quota) * 100 : 0`) — dicek dulu, ternyata HANYA dipakai di progress bar yang baru dihapus, jadi aman dihapus juga (tidak ada sisa unused-variable).
+  3. Hapus label `<span>Maks. 4 tiket per NIK</span>` di baris quantity selector pada ticket card — teks pengingat yang sama TETAP ada di form Data Pembeli (di bawah field NIK KTP: "Maks. 4 tiket per NIK per event. Data hanya digunakan untuk verifikasi."), jadi informasinya tidak hilang, cuma tidak diulang dua kali.
+  4. Quantity selector (tombol - / angka / +) diubah dari `justify-between` (dulu berbagi ruang dengan label yang sekarang dihapus) jadi `justify-end` — tetap di posisi kanan card, tidak berubah visual selain hilangnya label.
+  5. State "Habis Terjual" (badge merah) SENGAJA TIDAK dihapus — beda dari progress bar, ini bukan "spoiler" jumlah stok, tapi informasi penting yang mencegah pembeli buang waktu isi form untuk tiket yang sudah tidak bisa dibeli. `ticket.available` (dipakai untuk validasi max quantity button `disabled`) dan field lain di `TicketType` type tetap dipakai di tempat lain (`updateQty`), tidak dihapus.
+- Verifikasi: `npx tsc --noEmit` bersih, `npm run build` sukses tanpa warning unused-variable. Dicek LANGSUNG di production setelah Vercel auto-deploy — `nexeventapp.tech/event/throne-party` (event yang sama dari entry sebelumnya, masih live) dikonfirmasi via screenshot: progress bar dan label "Maks. 4 tiket per NIK" sudah tidak tampil, ticket card sekarang cuma nama+harga+quantity selector, layout tetap rapi tanpa progress bar.
+- Tag: #storefront #ui #ux #psychology #stock-display #cleanup
