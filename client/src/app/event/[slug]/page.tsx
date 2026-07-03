@@ -191,35 +191,37 @@ export default function EventStorefrontPage() {
 
       {event && (status === "not_started" || status === "ended" || status === "active") && (
         <>
-          {/* Banner */}
-          <div className="relative h-48 w-full shrink-0 overflow-hidden">
-            {event.bannerUrl ? (
-              <img src={event.bannerUrl} alt={event.title} className="h-full w-full object-cover" />
-            ) : (
-              <div className="flex h-full w-full items-center justify-center bg-gradient-to-r from-emerald-800 to-emerald-600 px-6">
-                <p className="text-center text-xl font-bold text-white">{event.title}</p>
-              </div>
-            )}
-            <div className="absolute inset-x-0 bottom-0 h-20 bg-gradient-to-t from-black/60 to-transparent" />
-          </div>
+          {/* Banner + Logo — logo overlaps the banner's bottom edge (Facebook/LinkedIn cover-photo style) */}
+          <div className="relative">
+            <div className="h-48 w-full shrink-0 overflow-hidden">
+              {event.bannerUrl ? (
+                <img src={event.bannerUrl} alt={event.title} className="h-full w-full object-cover" />
+              ) : (
+                <div className="flex h-full w-full items-center justify-center bg-gradient-to-r from-emerald-800 to-emerald-600 px-6">
+                  <p className="text-center text-xl font-bold text-white">{event.title}</p>
+                </div>
+              )}
+              <div className="absolute inset-x-0 bottom-0 h-20 bg-gradient-to-t from-black/60 to-transparent" />
+            </div>
 
-          {/* Event header */}
-          <div className="px-4 pb-6 pt-3 sm:px-6">
-            <div className="-mt-10 flex items-end gap-3">
+            <div className="absolute -bottom-8 left-4 sm:left-6">
               {event.logoUrl ? (
                 <img
                   src={event.logoUrl}
                   alt="Logo"
-                  className="size-14 shrink-0 rounded-full border-4 border-white object-cover shadow-sm"
+                  className="size-16 rounded-2xl border-4 border-white object-cover shadow-md"
                 />
               ) : (
-                <div className="flex size-14 shrink-0 items-center justify-center rounded-full border-4 border-white bg-emerald-100 text-sm font-bold text-emerald-800 shadow-sm">
-                  {initials(event.title)}
+                <div className="flex size-16 items-center justify-center rounded-2xl border-4 border-white bg-emerald-800 shadow-md">
+                  <span className="text-xl font-bold text-white">{initials(event.title)}</span>
                 </div>
               )}
             </div>
+          </div>
 
-            <h1 className="mt-3 text-2xl font-bold tracking-tight text-slate-900">{event.title}</h1>
+          {/* Event header — pt-10 leaves room for the overlapping logo */}
+          <div className="px-4 pb-6 pt-10 sm:px-6">
+            <h1 className="text-2xl font-bold tracking-tight text-slate-900">{event.title}</h1>
             <div className="mt-3 flex flex-col gap-1.5 text-sm text-slate-600">
               <div className="flex items-center gap-2">
                 <CalendarDays className="size-4 shrink-0 text-emerald-700" />

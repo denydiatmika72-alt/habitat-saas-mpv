@@ -718,3 +718,22 @@ File ini adalah log permanen bug yang sudah pernah terjadi di project ini besert
 - Pelajaran: (1) Project ini pakai format API key BARU Supabase (`sb_secret_...`/`sb_publishable_...`, bukan JWT `service_role` lama) — artinya secret key BISA dirotasi individual tanpa perlu regenerate seluruh JWT secret project (yang akan invalidate SEMUA key termasuk anon key dan bikin downtime lebih luas). (2) Urutan rotasi yang aman: buat key baru → verifikasi key baru jalan di production → baru hapus key lama. Jangan hapus dulu baru buat baru (downtime gap). (3) Kalau agent butuh memindahkan sebuah secret dari dashboard pihak ketiga ke server, JANGAN coba baca nilainya sendiri (lewat DOM, clipboard, atau cara lain) — itu cuma mindahkan risiko exposure dari chat ke tempat lain. Minta user yang copy-paste langsung dari sumber ke tujuan tanpa lewat agent.
 - Verifikasi: `pm2 describe nexevent-api` → `status: online`, uptime naik terus tanpa crash setelah restart dengan key baru. `curl http://145.79.12.170:3001/` → `200`. Upload test via `fetch()` di browser console (session Mandor) ke `/api/upload/event-banner` dengan key baru → `200 {success:true}`. Supabase dashboard → hanya tersisa 1 secret key (`nexevent_backend_20260703`), key `default` lama sudah terhapus permanen.
 - Tag: #security #credential-rotation #supabase #secret-key #safety-classifier #tooling-lesson
+
+---
+
+## [2026-07-03] Logo event tidak overlap banner di storefront publik — floating terpisah, bukan menumpuk
+
+- Gejala: Di `nexeventapp.tech/event/[slug]`, logo event seharusnya menumpuk di atas tepi bawah banner (setengah di banner, setengah di bawah — gaya foto profil Facebook/LinkedIn di atas cover photo). Yang terjadi: logo tampil "melayang" terpisah di bawah banner, tidak overlap sama sekali.
+- Root cause: Logo dibungkus `<div className="-mt-10 flex items-end gap-3">` yang berada DI DALAM container "Event header" (`px-4 pb-6 pt-3 sm:px-6`) — sebuah elemen SIBLING dari banner, bukan child dari container `relative` yang membungkus banner. Negative margin (`-mt-10`) pada elemen yang masih ikut alur dokumen normal (bukan `position: absolute`) tidak menghasilkan overlap visual yang presisi terhadap banner — cuma menggeser posisi elemen itu sendiri relatif terhadap tempatnya semula di flow, dan besarnya overlap jadi tidak terprediksi (dipengaruhi `pt-3` milik parent, margin collapsing, dll), bukan overlap yang benar-benar terkunci ke tepi bawah banner.
+- File terkait: `client/src/app/event/[slug]/page.tsx`
+- Fix: Restrukturisasi jadi pola overlap yang benar — banner DAN logo dibungkus bersama dalam SATU wrapper `relative`, logo di-posisikan `absolute -bottom-8 left-4 sm:left-6` (bukan pakai negative margin di flow normal):
+  ```tsx
+  <div className="relative">
+    <div className="h-48 w-full overflow-hidden">{/* banner img/gradient + gradient overlay absolute */}</div>
+    <div className="absolute -bottom-8 left-4 sm:left-6">{/* logo, size-16 rounded-2xl border-4 border-white */}</div>
+  </div>
+  <div className="px-4 pb-6 pt-10 sm:px-6">{/* konten di bawah — pt-10 kasih ruang buat logo yang overlap */}</div>
+  ```
+  Matematika overlap: logo `size-16` (64px) dengan `-bottom-8` (-32px) dari tepi bawah wrapper `relative` (= tepi bawah banner) → tepi atas logo 32px DI ATAS tepi banner, tepi bawah logo 32px DI BAWAH tepi banner = overlap 50/50 persis sesuai spek. Logo diganti dari `rounded-full` (lingkaran) ke `rounded-2xl` (kotak membulat) sesuai instruksi desain terbaru.
+- Verifikasi: Tidak dites lewat approve storefront production (event test "Throne Party" masih `storefrontStatus: draft`, belum ada slug) — untuk menghindari mengubah state approval production cuma demi cek CSS. Sebagai gantinya, markup + class Tailwind yang SAMA PERSIS di-render di halaman statis standalone (`Tailwind Play CDN`, di-serve via local HTTP server sementara, bukan lewat aplikasi nexEvent) pada lebar `max-w-lg` (lebar asli yang dipakai storefront publik) — visual dikonfirmasi lewat screenshot & zoom: logo persis menumpuk 50/50 di tepi banner, border putih kontras, sesuai diagram referensi di bug report. `npx tsc --noEmit` bersih, `npm run build` sukses, tidak ada perubahan pada route lain.
+- Tag: #storefront #ui #css #overlap #banner #logo #tailwind #positioning
