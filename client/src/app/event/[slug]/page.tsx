@@ -317,7 +317,6 @@ export default function EventStorefrontPage() {
                   <h2 className="mb-4 text-base font-bold text-slate-900">Pilih Tiket</h2>
                   <div className="space-y-3">
                     {event.ticketTypes.map((ticket) => {
-                      const soldPercent = ticket.quota > 0 ? (ticket.sold / ticket.quota) * 100 : 0
                       const isSoldOut = ticket.isSoldOut
                       const qty = quantities[ticket.id] || 0
 
@@ -342,50 +341,29 @@ export default function EventStorefrontPage() {
                             <p className="shrink-0 text-base font-black text-emerald-700">{IDR.format(ticket.price)}</p>
                           </div>
 
-                          {/* Stock progress bar */}
-                          {!isSoldOut && (
-                            <div className="mb-3">
-                              <div className="mb-1 flex justify-between text-xs text-slate-400">
-                                <span>{ticket.available} tiket tersisa</span>
-                                <span>{Math.round(soldPercent)}% terjual</span>
-                              </div>
-                              <div className="h-1.5 w-full rounded-full bg-slate-200">
-                                <div
-                                  className={`h-1.5 rounded-full transition-all ${
-                                    soldPercent > 80 ? "bg-red-500" : soldPercent > 50 ? "bg-amber-500" : "bg-emerald-500"
-                                  }`}
-                                  style={{ width: `${soldPercent}%` }}
-                                />
-                              </div>
-                            </div>
-                          )}
-
                           {isSoldOut ? (
                             <span className="inline-block rounded-full bg-red-100 px-3 py-1 text-xs font-bold text-red-600">
                               Habis Terjual
                             </span>
                           ) : (
-                            <div className="flex items-center justify-between">
-                              <span className="text-xs text-slate-400">Maks. 4 tiket per NIK</span>
-                              <div className="flex items-center gap-3">
-                                <button
-                                  type="button"
-                                  onClick={() => updateQty(ticket.id, -1)}
-                                  disabled={qty === 0}
-                                  className="flex size-8 items-center justify-center rounded-full border border-slate-300 text-slate-600 transition-colors hover:border-emerald-500 hover:text-emerald-600 disabled:opacity-30"
-                                >
-                                  <Minus className="h-3 w-3" />
-                                </button>
-                                <span className="w-6 text-center font-bold text-slate-900">{qty}</span>
-                                <button
-                                  type="button"
-                                  onClick={() => updateQty(ticket.id, 1)}
-                                  disabled={qty >= Math.min(MAX_QTY_PER_TYPE, ticket.available)}
-                                  className="flex size-8 items-center justify-center rounded-full bg-emerald-800 text-white transition-colors hover:bg-emerald-700 disabled:opacity-30"
-                                >
-                                  <Plus className="h-3 w-3" />
-                                </button>
-                              </div>
+                            <div className="flex items-center justify-end gap-3">
+                              <button
+                                type="button"
+                                onClick={() => updateQty(ticket.id, -1)}
+                                disabled={qty === 0}
+                                className="flex size-8 items-center justify-center rounded-full border border-slate-300 text-slate-600 transition-colors hover:border-emerald-500 hover:text-emerald-600 disabled:opacity-30"
+                              >
+                                <Minus className="h-3 w-3" />
+                              </button>
+                              <span className="w-6 text-center font-bold text-slate-900">{qty}</span>
+                              <button
+                                type="button"
+                                onClick={() => updateQty(ticket.id, 1)}
+                                disabled={qty >= Math.min(MAX_QTY_PER_TYPE, ticket.available)}
+                                className="flex size-8 items-center justify-center rounded-full bg-emerald-800 text-white transition-colors hover:bg-emerald-700 disabled:opacity-30"
+                              >
+                                <Plus className="h-3 w-3" />
+                              </button>
                             </div>
                           )}
                         </div>
