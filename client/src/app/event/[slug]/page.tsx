@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState } from "react"
 import { useParams } from "next/navigation"
 import Script from "next/script"
-import { Minus, Plus, MapPin, CalendarDays, Ticket as TicketIcon, Loader2, AlertCircle } from "lucide-react"
+import { Calendar, MapPin, Check, Minus, Plus, ChevronDown, Ticket, Shield, Mail, Loader2, AlertCircle } from "lucide-react"
 
 declare global {
   interface Window {
@@ -32,6 +32,8 @@ type TicketType = {
   isSoldOut: boolean
 }
 
+type Facility = { id: string; name: string; isCustom?: boolean }
+
 type EventData = {
   id: string
   title: string
@@ -44,6 +46,9 @@ type EventData = {
   feePercent: number
   feeBearer: "audience" | "promotor" | null
   taxEnabled: boolean
+  description: string | null
+  facilities: Facility[] | null
+  termsConditions: string | null
   ticketTypes: TicketType[]
 }
 
@@ -78,6 +83,7 @@ export default function EventStorefrontPage() {
   const [buyerEmail, setBuyerEmail] = useState("")
   const [buyerPhone, setBuyerPhone] = useState("")
   const [buyerNik, setBuyerNik] = useState("")
+  const [showTerms, setShowTerms] = useState(false)
 
   const [submitting, setSubmitting] = useState(false)
   const [formError, setFormError] = useState("")
@@ -113,7 +119,9 @@ export default function EventStorefrontPage() {
   const feeAmount = event ? Math.round(subtotal * (event.feePercent / 100)) : 0
   const totalAmount = feeBearer === "audience" ? subtotal + taxAmount + feeAmount : subtotal + taxAmount
 
-  const setQty = (ticketTypeId: string, delta: number, maxAvailable: number) => {
+  const updateQty = (ticketTypeId: string, delta: number) => {
+    const tt = event?.ticketTypes.find((t) => t.id === ticketTypeId)
+    const maxAvailable = tt?.available ?? 0
     setQuantities((prev) => {
       const current = prev[ticketTypeId] || 0
       const next = Math.max(0, Math.min(current + delta, Math.min(MAX_QTY_PER_TYPE, maxAvailable)))
@@ -121,7 +129,7 @@ export default function EventStorefrontPage() {
     })
   }
 
-  const handleSubmit = async () => {
+  const handleBuy = async () => {
     setFormError("")
     if (totalQty === 0) return
     if (!buyerName.trim()) return setFormError("Nama lengkap wajib diisi.")
@@ -159,261 +167,395 @@ export default function EventStorefrontPage() {
     }
   }
 
+  if (status === "loading") {
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-slate-50">
+        <Loader2 className="size-8 animate-spin text-emerald-800" />
+      </div>
+    )
+  }
+
+  if (status === "not_found") {
+    return (
+      <div className="flex min-h-screen flex-col items-center justify-center gap-2 bg-slate-50 px-4 text-center">
+        <AlertCircle className="size-10 text-slate-300" />
+        <p className="text-lg font-semibold text-slate-900">Event tidak ditemukan</p>
+        <p className="text-sm text-slate-500">Pastikan link yang Anda buka sudah benar.</p>
+      </div>
+    )
+  }
+
+  if (status === "error") {
+    return (
+      <div className="flex min-h-screen flex-col items-center justify-center gap-2 bg-slate-50 px-4 text-center">
+        <AlertCircle className="size-10 text-red-300" />
+        <p className="text-lg font-semibold text-slate-900">Gagal memuat halaman</p>
+        <p className="text-sm text-slate-500">Silakan coba lagi beberapa saat lagi.</p>
+      </div>
+    )
+  }
+
+  if (!event) return null
+
   return (
-    <div className="mx-auto flex min-h-screen w-full max-w-lg flex-col bg-white">
+    <div className="min-h-screen bg-slate-50">
       <Script
         src="https://app.sandbox.midtrans.com/snap/snap.js"
         data-client-key={process.env.NEXT_PUBLIC_MIDTRANS_CLIENT_KEY}
         strategy="afterInteractive"
       />
 
-      {status === "loading" && (
-        <div className="flex flex-1 items-center justify-center py-24">
-          <Loader2 className="size-8 animate-spin text-emerald-800" />
+      {/* HERO SECTION */}
+      <div className="relative">
+        <div className="h-56 w-full overflow-hidden sm:h-64">
+          {event.bannerUrl ? (
+            <img src={event.bannerUrl} alt={event.title} className="h-full w-full object-cover" />
+          ) : (
+            <div className="h-full w-full bg-gradient-to-br from-emerald-900 via-emerald-800 to-emerald-600" />
+          )}
+          <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-black/10 to-transparent" />
         </div>
-      )}
 
-      {status === "not_found" && (
-        <div className="flex flex-1 flex-col items-center justify-center gap-2 px-4 py-24 text-center">
-          <AlertCircle className="size-10 text-slate-300" />
-          <p className="text-lg font-semibold text-slate-900">Event tidak ditemukan</p>
-          <p className="text-sm text-slate-500">Pastikan link yang Anda buka sudah benar.</p>
-        </div>
-      )}
-
-      {status === "error" && (
-        <div className="flex flex-1 flex-col items-center justify-center gap-2 px-4 py-24 text-center">
-          <AlertCircle className="size-10 text-red-300" />
-          <p className="text-lg font-semibold text-slate-900">Gagal memuat halaman</p>
-          <p className="text-sm text-slate-500">Silakan coba lagi beberapa saat lagi.</p>
-        </div>
-      )}
-
-      {event && (status === "not_started" || status === "ended" || status === "active") && (
-        <>
-          {/* Banner + Logo — logo overlaps the banner's bottom edge (Facebook/LinkedIn cover-photo style) */}
-          <div className="relative">
-            <div className="h-48 w-full shrink-0 overflow-hidden">
-              {event.bannerUrl ? (
-                <img src={event.bannerUrl} alt={event.title} className="h-full w-full object-cover" />
-              ) : (
-                <div className="flex h-full w-full items-center justify-center bg-gradient-to-r from-emerald-800 to-emerald-600 px-6">
-                  <p className="text-center text-xl font-bold text-white">{event.title}</p>
-                </div>
-              )}
-              <div className="absolute inset-x-0 bottom-0 h-20 bg-gradient-to-t from-black/60 to-transparent" />
+        {/* Logo overlapping banner */}
+        <div className="absolute -bottom-8 left-4 sm:left-6">
+          {event.logoUrl ? (
+            <img
+              src={event.logoUrl}
+              alt="Logo"
+              className="size-16 rounded-2xl border-4 border-white object-cover shadow-lg"
+            />
+          ) : (
+            <div className="flex size-16 items-center justify-center rounded-2xl border-4 border-white bg-emerald-800 shadow-lg">
+              <span className="text-2xl font-black text-white">{initials(event.title)}</span>
             </div>
+          )}
+        </div>
+      </div>
 
-            <div className="absolute -bottom-8 left-4 sm:left-6">
-              {event.logoUrl ? (
-                <img
-                  src={event.logoUrl}
-                  alt="Logo"
-                  className="size-16 rounded-2xl border-4 border-white object-cover shadow-md"
-                />
-              ) : (
-                <div className="flex size-16 items-center justify-center rounded-2xl border-4 border-white bg-emerald-800 shadow-md">
-                  <span className="text-xl font-bold text-white">{initials(event.title)}</span>
-                </div>
-              )}
+      {/* MAIN CONTENT */}
+      <div className="mx-auto max-w-lg px-4">
+        {/* Event Title & Info */}
+        <div className="border-b border-slate-200 pb-6 pt-12">
+          <h1 className="mb-3 text-2xl font-black text-slate-900">{event.title}</h1>
+          <div className="space-y-2">
+            <div className="flex items-center gap-2 text-slate-600">
+              <Calendar className="h-4 w-4 shrink-0 text-emerald-600" />
+              <span className="text-sm">
+                {new Date(event.event_date).toLocaleDateString("id-ID", {
+                  weekday: "long",
+                  day: "numeric",
+                  month: "long",
+                  year: "numeric",
+                })}
+              </span>
             </div>
+            {event.location && (
+              <div className="flex items-center gap-2 text-slate-600">
+                <MapPin className="h-4 w-4 shrink-0 text-emerald-600" />
+                <span className="text-sm">{event.location}</span>
+              </div>
+            )}
           </div>
+        </div>
 
-          {/* Event header — pt-10 leaves room for the overlapping logo */}
-          <div className="px-4 pb-6 pt-10 sm:px-6">
-            <h1 className="text-2xl font-bold tracking-tight text-slate-900">{event.title}</h1>
-            <div className="mt-3 flex flex-col gap-1.5 text-sm text-slate-600">
-              <div className="flex items-center gap-2">
-                <CalendarDays className="size-4 shrink-0 text-emerald-700" />
-                {new Date(event.event_date).toLocaleDateString("id-ID", { weekday: "long", day: "numeric", month: "long", year: "numeric" })}
-              </div>
-              <div className="flex items-center gap-2">
-                <MapPin className="size-4 shrink-0 text-emerald-700" />
-                {event.location}
-              </div>
-            </div>
+        {status === "not_started" && (
+          <div className="mt-6 rounded-xl border border-amber-200 bg-amber-50 p-4 text-center text-sm text-amber-800">
+            {message || "Penjualan tiket belum dimulai."}
+            {event.saleStartAt && (
+              <p className="mt-1 font-semibold">
+                Mulai {new Date(event.saleStartAt).toLocaleString("id-ID", { dateStyle: "long", timeStyle: "short" })}
+              </p>
+            )}
+          </div>
+        )}
 
-            {status === "not_started" && (
-              <div className="mt-6 rounded-xl border border-amber-200 bg-amber-50 p-4 text-center text-sm text-amber-800">
-                {message || "Penjualan tiket belum dimulai."}
-                {event.saleStartAt && (
-                  <p className="mt-1 font-semibold">
-                    Mulai {new Date(event.saleStartAt).toLocaleString("id-ID", { dateStyle: "long", timeStyle: "short" })}
-                  </p>
-                )}
+        {status === "ended" && (
+          <div className="mt-6 rounded-xl border border-slate-200 bg-slate-50 p-4 text-center text-sm text-slate-600">
+            {message || "Penjualan tiket telah berakhir."}
+          </div>
+        )}
+
+        {status === "active" && (
+          <>
+            {/* ABOUT THIS EVENT */}
+            {event.description && (
+              <div className="border-b border-slate-200 py-6">
+                <h2 className="mb-3 text-base font-bold text-slate-900">Tentang Event Ini</h2>
+                <p className="whitespace-pre-line text-sm leading-relaxed text-slate-600">{event.description}</p>
               </div>
             )}
 
-            {status === "ended" && (
-              <div className="mt-6 rounded-xl border border-slate-200 bg-slate-50 p-4 text-center text-sm text-slate-600">
-                {message || "Penjualan tiket telah berakhir."}
+            {/* FACILITIES */}
+            {event.facilities && event.facilities.length > 0 && (
+              <div className="border-b border-slate-200 py-6">
+                <h2 className="mb-3 text-base font-bold text-slate-900">Fasilitas</h2>
+                <div className="grid grid-cols-2 gap-2">
+                  {event.facilities.map((facility) => (
+                    <div key={facility.id} className="flex items-center gap-2 text-sm text-slate-600">
+                      <div className="flex size-5 shrink-0 items-center justify-center rounded-full bg-emerald-100">
+                        <Check className="h-3 w-3 text-emerald-600" />
+                      </div>
+                      {facility.name}
+                    </div>
+                  ))}
+                </div>
               </div>
             )}
 
-            {status === "active" && (
+            {event.ticketTypes.length === 0 ? (
+              <div className="my-6 rounded-xl border border-slate-200 bg-white p-4 text-center text-sm text-slate-500">
+                Belum ada jenis tiket tersedia.
+              </div>
+            ) : event.ticketTypes.every((t) => t.isSoldOut) ? (
+              <div className="my-6 rounded-xl border border-slate-200 bg-white p-4 text-center text-sm text-slate-600">
+                Semua tiket telah habis terjual.
+              </div>
+            ) : (
               <>
-                {event.ticketTypes.length === 0 ? (
-                  <div className="mt-6 rounded-xl border border-slate-200 bg-slate-50 p-4 text-center text-sm text-slate-500">
-                    Belum ada jenis tiket tersedia.
-                  </div>
-                ) : event.ticketTypes.every((t) => t.isSoldOut) ? (
-                  <div className="mt-6 rounded-xl border border-slate-200 bg-slate-50 p-4 text-center text-sm text-slate-600">
-                    Semua tiket telah habis terjual.
-                  </div>
-                ) : (
-                  <>
-                    {/* Ticket selection */}
-                    <div className="mt-6 flex flex-col gap-3">
-                      <p className="flex items-center gap-2 text-sm font-bold text-slate-900">
-                        <TicketIcon className="size-4 text-emerald-700" /> PILIH TIKET
-                      </p>
-                      {event.ticketTypes.map((tt) => {
-                        const qty = quantities[tt.id] || 0
-                        if (tt.isSoldOut) {
-                          return (
-                            <div key={tt.id} className="pointer-events-none opacity-50">
-                              <div className="flex items-center justify-between gap-3 rounded-xl border border-slate-200 border-l-4 border-l-slate-300 bg-white p-4 shadow-sm">
-                                <div>
-                                  <p className="font-bold text-slate-900">{tt.name}</p>
-                                  <p className="text-sm text-slate-400">{IDR.format(tt.price)}</p>
-                                </div>
-                                <span className="rounded-full bg-red-100 px-3 py-1 text-xs font-bold text-red-600">Habis</span>
+                {/* TICKET SELECTION */}
+                <div className="border-b border-slate-200 py-6">
+                  <h2 className="mb-4 text-base font-bold text-slate-900">Pilih Tiket</h2>
+                  <div className="space-y-3">
+                    {event.ticketTypes.map((ticket) => {
+                      const soldPercent = ticket.quota > 0 ? (ticket.sold / ticket.quota) * 100 : 0
+                      const isSoldOut = ticket.isSoldOut
+                      const qty = quantities[ticket.id] || 0
+
+                      return (
+                        <div
+                          key={ticket.id}
+                          className={`rounded-2xl border p-4 transition-all ${
+                            isSoldOut
+                              ? "border-slate-200 bg-slate-50 opacity-60"
+                              : qty > 0
+                                ? "border-emerald-500 bg-emerald-50/50 shadow-sm"
+                                : "border-slate-200 bg-white hover:border-emerald-300"
+                          }`}
+                        >
+                          <div className="mb-2 flex items-start justify-between">
+                            <div className="min-w-0">
+                              <p className="text-sm font-bold text-slate-900">{ticket.name}</p>
+                              {ticket.description && (
+                                <p className="mt-0.5 text-xs text-slate-400">{ticket.description}</p>
+                              )}
+                            </div>
+                            <p className="shrink-0 text-base font-black text-emerald-700">{IDR.format(ticket.price)}</p>
+                          </div>
+
+                          {/* Stock progress bar */}
+                          {!isSoldOut && (
+                            <div className="mb-3">
+                              <div className="mb-1 flex justify-between text-xs text-slate-400">
+                                <span>{ticket.available} tiket tersisa</span>
+                                <span>{Math.round(soldPercent)}% terjual</span>
+                              </div>
+                              <div className="h-1.5 w-full rounded-full bg-slate-200">
+                                <div
+                                  className={`h-1.5 rounded-full transition-all ${
+                                    soldPercent > 80 ? "bg-red-500" : soldPercent > 50 ? "bg-amber-500" : "bg-emerald-500"
+                                  }`}
+                                  style={{ width: `${soldPercent}%` }}
+                                />
                               </div>
                             </div>
-                          )
-                        }
+                          )}
+
+                          {isSoldOut ? (
+                            <span className="inline-block rounded-full bg-red-100 px-3 py-1 text-xs font-bold text-red-600">
+                              Habis Terjual
+                            </span>
+                          ) : (
+                            <div className="flex items-center justify-between">
+                              <span className="text-xs text-slate-400">Maks. 4 tiket per NIK</span>
+                              <div className="flex items-center gap-3">
+                                <button
+                                  type="button"
+                                  onClick={() => updateQty(ticket.id, -1)}
+                                  disabled={qty === 0}
+                                  className="flex size-8 items-center justify-center rounded-full border border-slate-300 text-slate-600 transition-colors hover:border-emerald-500 hover:text-emerald-600 disabled:opacity-30"
+                                >
+                                  <Minus className="h-3 w-3" />
+                                </button>
+                                <span className="w-6 text-center font-bold text-slate-900">{qty}</span>
+                                <button
+                                  type="button"
+                                  onClick={() => updateQty(ticket.id, 1)}
+                                  disabled={qty >= Math.min(MAX_QTY_PER_TYPE, ticket.available)}
+                                  className="flex size-8 items-center justify-center rounded-full bg-emerald-800 text-white transition-colors hover:bg-emerald-700 disabled:opacity-30"
+                                >
+                                  <Plus className="h-3 w-3" />
+                                </button>
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                      )
+                    })}
+                  </div>
+                </div>
+
+                {/* ORDER SUMMARY */}
+                {totalQty > 0 && (
+                  <div className="border-b border-slate-200 py-6">
+                    <h2 className="mb-3 text-base font-bold text-slate-900">Ringkasan Pesanan</h2>
+                    <div className="space-y-2 rounded-2xl bg-slate-900 p-4">
+                      {selectedItems.map((item) => {
+                        const tt = event.ticketTypes.find((t) => t.id === item.ticketTypeId)!
                         return (
-                          <div
-                            key={tt.id}
-                            className="flex items-center justify-between gap-3 rounded-xl border border-slate-200 border-l-4 border-l-emerald-600 bg-white p-4 shadow-sm"
-                          >
-                            <div className="min-w-0">
-                              <p className="truncate font-bold text-slate-900">{tt.name}</p>
-                              {tt.description && <p className="mt-0.5 truncate text-xs text-slate-500">{tt.description}</p>}
-                              <p className="mt-1 text-sm font-semibold text-emerald-800">{IDR.format(tt.price)}</p>
-                              <p className="text-xs text-slate-400">Sisa: {tt.available} tiket</p>
-                            </div>
-                            <div className="flex shrink-0 items-center gap-1 rounded-full border border-slate-200 bg-slate-50 p-1">
-                              <button
-                                type="button"
-                                onClick={() => setQty(tt.id, -1, tt.available)}
-                                disabled={qty === 0}
-                                className="flex size-7 items-center justify-center rounded-full bg-white text-slate-600 shadow-sm transition-colors hover:bg-slate-100 disabled:opacity-40"
-                              >
-                                <Minus className="size-3.5" />
-                              </button>
-                              <span className="w-5 text-center text-sm font-bold text-slate-900">{qty}</span>
-                              <button
-                                type="button"
-                                onClick={() => setQty(tt.id, 1, tt.available)}
-                                disabled={qty >= Math.min(MAX_QTY_PER_TYPE, tt.available)}
-                                className="flex size-7 items-center justify-center rounded-full bg-emerald-800 text-white shadow-sm transition-colors hover:bg-emerald-900 disabled:opacity-40"
-                              >
-                                <Plus className="size-3.5" />
-                              </button>
-                            </div>
+                          <div key={item.ticketTypeId} className="flex justify-between text-sm">
+                            <span className="text-slate-400">
+                              {item.quantity}× {tt.name}
+                            </span>
+                            <span className="font-bold text-white">{IDR.format(tt.price * item.quantity)}</span>
                           </div>
                         )
                       })}
+
+                      {feeBearer === "audience" && feeAmount > 0 && (
+                        <div className="mt-2 flex justify-between border-t border-slate-700 pt-2 text-sm">
+                          <span className="text-slate-400">Biaya layanan ({event.feePercent}%)</span>
+                          <span className="text-white">{IDR.format(feeAmount)}</span>
+                        </div>
+                      )}
+
+                      {taxAmount > 0 && (
+                        <div className="flex justify-between text-sm">
+                          <span className="text-slate-400">Pajak (10%)</span>
+                          <span className="text-white">{IDR.format(taxAmount)}</span>
+                        </div>
+                      )}
+
+                      <div className="mt-2 flex justify-between border-t border-slate-600 pt-2">
+                        <span className="font-bold text-white">Total</span>
+                        <span className="text-lg font-black text-emerald-400">{IDR.format(totalAmount)}</span>
+                      </div>
                     </div>
+                  </div>
+                )}
 
-                    {totalQty > 0 && (
-                      <>
-                        {/* Order summary */}
-                        <div className="mt-6 rounded-xl bg-emerald-800 p-4 text-white">
-                          <p className="mb-2 text-sm font-bold uppercase tracking-wide text-emerald-100">Ringkasan Pesanan</p>
-                          <div className="flex flex-col gap-1.5">
-                            {selectedItems.map((item) => {
-                              const tt = event.ticketTypes.find((t) => t.id === item.ticketTypeId)!
-                              return (
-                                <div key={item.ticketTypeId} className="flex items-center justify-between text-sm text-emerald-50">
-                                  <span>{item.quantity}× {tt.name}</span>
-                                  <span>{IDR.format(tt.price * item.quantity)}</span>
-                                </div>
-                              )
-                            })}
-                            {feeBearer === "audience" && feeAmount > 0 && (
-                              <div className="flex items-center justify-between text-sm text-emerald-50">
-                                <span>Biaya layanan ({event.feePercent}%)</span>
-                                <span>{IDR.format(feeAmount)}</span>
-                              </div>
-                            )}
-                            {taxAmount > 0 && (
-                              <div className="flex items-center justify-between text-sm text-emerald-50">
-                                <span>Pajak (10%)</span>
-                                <span>{IDR.format(taxAmount)}</span>
-                              </div>
-                            )}
-                          </div>
-                          <div className="mt-3 flex items-center justify-between border-t border-emerald-700 pt-3">
-                            <span className="text-sm font-semibold">Total</span>
-                            <span className="text-lg font-bold">{IDR.format(totalAmount)}</span>
-                          </div>
-                        </div>
-
-                        {/* Buyer form */}
-                        <div className="mt-4 flex flex-col gap-3 rounded-xl border border-slate-200 p-4">
-                          <p className="text-sm font-bold text-slate-900">DATA PEMBELI</p>
-                          <div>
-                            <label className="mb-1 block text-xs font-medium text-slate-500">Nama Lengkap</label>
-                            <input
-                              value={buyerName}
-                              onChange={(e) => setBuyerName(e.target.value)}
-                              className="w-full rounded-lg border border-slate-200 px-3 py-2.5 text-sm text-slate-900 outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500/30"
-                            />
-                          </div>
-                          <div>
-                            <label className="mb-1 block text-xs font-medium text-slate-500">Email</label>
-                            <input
-                              type="email"
-                              value={buyerEmail}
-                              onChange={(e) => setBuyerEmail(e.target.value)}
-                              className="w-full rounded-lg border border-slate-200 px-3 py-2.5 text-sm text-slate-900 outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500/30"
-                            />
-                          </div>
-                          <div>
-                            <label className="mb-1 block text-xs font-medium text-slate-500">Nomor HP</label>
-                            <input
-                              value={buyerPhone}
-                              onChange={(e) => setBuyerPhone(e.target.value)}
-                              placeholder="08xx atau +62"
-                              className="w-full rounded-lg border border-slate-200 px-3 py-2.5 text-sm text-slate-900 outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500/30"
-                            />
-                          </div>
-                          <div>
-                            <label className="mb-1 block text-xs font-medium text-slate-500">NIK KTP</label>
-                            <input
-                              value={buyerNik}
-                              onChange={(e) => setBuyerNik(e.target.value.replace(/\D/g, "").slice(0, 16))}
-                              inputMode="numeric"
-                              className="w-full rounded-lg border border-slate-200 px-3 py-2.5 text-sm text-slate-900 outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500/30"
-                            />
-                            <p className="mt-1 text-[11px] text-slate-400">ℹ️ Maksimal 4 tiket per NIK per event.</p>
-                          </div>
-                        </div>
-
-                        {formError && (
-                          <div className="mt-3 rounded-lg bg-red-50 px-3 py-2 text-sm text-red-600">{formError}</div>
-                        )}
-
-                        <button
-                          onClick={handleSubmit}
-                          disabled={submitting}
-                          className="mt-4 flex w-full items-center justify-center gap-2 rounded-xl bg-emerald-800 py-3.5 text-sm font-bold text-white shadow-sm transition-colors hover:bg-emerald-900 disabled:opacity-50"
-                        >
-                          {submitting ? "Memproses..." : `Beli Tiket — ${IDR.format(totalAmount)} →`}
-                        </button>
-                      </>
-                    )}
-                  </>
+                {/* BUYER FORM */}
+                {totalQty > 0 && (
+                  <div className="border-b border-slate-200 py-6">
+                    <h2 className="mb-4 text-base font-bold text-slate-900">Data Pembeli</h2>
+                    <div className="space-y-3">
+                      <div>
+                        <label className="text-xs font-bold uppercase tracking-wide text-slate-500">Nama Lengkap *</label>
+                        <input
+                          type="text"
+                          value={buyerName}
+                          onChange={(e) => setBuyerName(e.target.value)}
+                          placeholder="Sesuai KTP"
+                          className="mt-1 w-full rounded-xl border border-slate-200 px-4 py-3 text-sm outline-none focus:ring-2 focus:ring-emerald-500"
+                        />
+                      </div>
+                      <div>
+                        <label className="text-xs font-bold uppercase tracking-wide text-slate-500">Email *</label>
+                        <input
+                          type="email"
+                          value={buyerEmail}
+                          onChange={(e) => setBuyerEmail(e.target.value)}
+                          placeholder="E-ticket dikirim ke email ini"
+                          className="mt-1 w-full rounded-xl border border-slate-200 px-4 py-3 text-sm outline-none focus:ring-2 focus:ring-emerald-500"
+                        />
+                      </div>
+                      <div>
+                        <label className="text-xs font-bold uppercase tracking-wide text-slate-500">Nomor HP *</label>
+                        <input
+                          type="tel"
+                          value={buyerPhone}
+                          onChange={(e) => setBuyerPhone(e.target.value)}
+                          placeholder="08xx atau +628xx"
+                          className="mt-1 w-full rounded-xl border border-slate-200 px-4 py-3 text-sm outline-none focus:ring-2 focus:ring-emerald-500"
+                        />
+                      </div>
+                      <div>
+                        <label className="text-xs font-bold uppercase tracking-wide text-slate-500">
+                          NIK KTP * <span className="ml-1 font-normal normal-case text-slate-400">(16 digit)</span>
+                        </label>
+                        <input
+                          type="text"
+                          value={buyerNik}
+                          onChange={(e) => setBuyerNik(e.target.value.replace(/\D/g, "").slice(0, 16))}
+                          inputMode="numeric"
+                          placeholder="Nomor induk kependudukan"
+                          maxLength={16}
+                          className="mt-1 w-full rounded-xl border border-slate-200 px-4 py-3 text-sm outline-none focus:ring-2 focus:ring-emerald-500"
+                        />
+                        <p className="mt-1 text-xs text-slate-400">
+                          Maks. 4 tiket per NIK per event. Data hanya digunakan untuk verifikasi.
+                        </p>
+                      </div>
+                    </div>
+                  </div>
                 )}
               </>
             )}
 
-            <p className="mt-10 pb-2 text-center text-xs text-slate-400">Powered by nexEvent</p>
-          </div>
-        </>
-      )}
+            {/* TERMS & CONDITIONS */}
+            {event.termsConditions && (
+              <div className="border-b border-slate-200 py-6">
+                <button
+                  type="button"
+                  onClick={() => setShowTerms(!showTerms)}
+                  className="flex w-full items-center justify-between text-left"
+                >
+                  <h2 className="text-base font-bold text-slate-900">Syarat &amp; Ketentuan</h2>
+                  <ChevronDown className={`h-5 w-5 text-slate-400 transition-transform ${showTerms ? "rotate-180" : ""}`} />
+                </button>
+                {showTerms && (
+                  <div className="mt-3 whitespace-pre-line rounded-xl bg-slate-50 p-4 text-sm leading-relaxed text-slate-600">
+                    {event.termsConditions}
+                  </div>
+                )}
+              </div>
+            )}
+
+            {formError && (
+              <div className="mt-4 rounded-lg bg-red-50 px-3 py-2 text-sm text-red-600">{formError}</div>
+            )}
+
+            {/* BUY BUTTON */}
+            <div className="py-6 pb-8">
+              <button
+                type="button"
+                onClick={handleBuy}
+                disabled={totalQty === 0 || submitting}
+                className="flex w-full items-center justify-center gap-2 rounded-2xl bg-emerald-800 py-4 text-base font-black text-white shadow-lg shadow-emerald-800/20 transition-colors hover:bg-emerald-700 disabled:cursor-not-allowed disabled:opacity-40"
+              >
+                {submitting ? (
+                  <span>Memproses...</span>
+                ) : totalQty > 0 ? (
+                  <>
+                    <Ticket className="h-5 w-5" />
+                    Beli Tiket — {IDR.format(totalAmount)}
+                  </>
+                ) : (
+                  "Pilih Tiket untuk Melanjutkan"
+                )}
+              </button>
+
+              {/* Trust badges */}
+              <div className="mt-4 flex items-center justify-center gap-4">
+                <div className="flex items-center gap-1 text-xs text-slate-400">
+                  <Shield className="h-3 w-3" />
+                  Pembayaran aman
+                </div>
+                <div className="flex items-center gap-1 text-xs text-slate-400">
+                  <Mail className="h-3 w-3" />
+                  E-ticket via email
+                </div>
+              </div>
+            </div>
+          </>
+        )}
+
+        {/* FOOTER */}
+        <div className="border-t border-slate-200 py-4 text-center">
+          <p className="text-xs text-slate-400">
+            Powered by <span className="font-bold text-emerald-600">nexEvent</span> — Platform Manajemen Event Indonesia
+          </p>
+        </div>
+      </div>
     </div>
   )
 }

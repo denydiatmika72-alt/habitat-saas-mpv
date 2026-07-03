@@ -9,6 +9,8 @@ type Event = { id: string; title: string }
 
 type FeeBearer = "audience" | "promotor"
 
+type Facility = { id: string; name: string; isCustom?: boolean }
+
 type FullEvent = {
   id: string
   title: string
@@ -22,7 +24,36 @@ type FullEvent = {
   taxEnabled: boolean
   feeBearer: FeeBearer | null
   platformFeePercent: number | null
+  description: string | null
+  facilities: Facility[] | null
+  termsConditions: string | null
 }
+
+const DEFAULT_FACILITIES: Facility[] = [
+  { id: "toilet", name: "Toilet tersedia" },
+  { id: "musholla", name: "Musholla / Tempat ibadah" },
+  { id: "parkir_motor", name: "Area parkir motor" },
+  { id: "parkir_mobil", name: "Area parkir mobil" },
+  { id: "titip_helm", name: "Penitipan helm" },
+  { id: "atm", name: "ATM / Kasir tunai" },
+  { id: "kantin", name: "Kantin / Food court" },
+  { id: "air_minum", name: "Free drinking water" },
+  { id: "p3k", name: "First aid / P3K" },
+  { id: "smoking", name: "Smoking area" },
+  { id: "photo_booth", name: "Photo booth" },
+  { id: "merch", name: "Merchandise booth" },
+  { id: "difabel", name: "Ramah difabel" },
+  { id: "shuttle", name: "Shuttle tersedia" },
+  { id: "dekat_transport", name: "Dekat stasiun/halte" },
+]
+
+const DEFAULT_TERMS_TEMPLATE = `1. Tiket yang sudah dibeli tidak dapat dikembalikan atau ditukar.
+2. Harap membawa identitas diri (KTP/SIM) yang sesuai dengan data pembelian tiket.
+3. Dilarang membawa senjata tajam, narkoba, atau benda berbahaya lainnya.
+4. Penyelenggara berhak menolak masuk pengunjung yang tidak memenuhi syarat.
+5. Tiket hanya berlaku untuk 1 (satu) orang dan tidak dapat dipindahtangankan.
+6. Penyelenggara tidak bertanggung jawab atas kehilangan barang bawaan pengunjung.
+7. Dengan membeli tiket, pengunjung menyetujui seluruh syarat dan ketentuan ini.`
 
 function ToggleSwitch({ checked, onChange, disabled }: { checked: boolean; onChange: () => void; disabled?: boolean }) {
   return (
@@ -114,6 +145,13 @@ export default function TicketsPage() {
   const [uploadingLogo, setUploadingLogo] = useState(false)
   const [uploadError, setUploadError] = useState("")
 
+  const [description, setDescription] = useState("")
+  const [selectedFacilities, setSelectedFacilities] = useState<Facility[]>([])
+  const [customFacility, setCustomFacility] = useState("")
+  const [termsConditions, setTermsConditions] = useState("")
+  const [savingInfo, setSavingInfo] = useState(false)
+  const [infoSaved, setInfoSaved] = useState(false)
+
   useEffect(() => {
     fetch("/api/events", { headers: authHeaders() })
       .then((r) => (r.ok ? r.json() : null))
@@ -135,6 +173,9 @@ export default function TicketsPage() {
         setEvent(evData.data)
         setSaleStart(toLocalInputValue(evData.data.saleStartAt))
         setSaleEnd(toLocalInputValue(evData.data.saleEndAt))
+        setDescription(evData.data.description || "")
+        setSelectedFacilities(Array.isArray(evData.data.facilities) ? evData.data.facilities : [])
+        setTermsConditions(evData.data.termsConditions || "")
       }
       if (ttData.success) setTicketTypes(ttData.data)
       if (ordData.success) setOrders(ordData.data)
@@ -147,6 +188,9 @@ export default function TicketsPage() {
     setEvent(null)
     setTicketTypes([])
     setOrders([])
+    setDescription("")
+    setSelectedFacilities([])
+    setTermsConditions("")
     fetchDetail()
   }, [selectedEventId, isPro, fetchDetail])
 
@@ -329,6 +373,48 @@ export default function TicketsPage() {
       setUploadError("Gagal menghubungi server.")
     } finally {
       setUploadingLogo(false)
+    }
+  }
+
+  const toggleFacility = (facility: Facility) => {
+    setSelectedFacilities((prev) =>
+      prev.some((f) => f.id === facility.id) ? prev.filter((f) => f.id !== facility.id) : [...prev, facility]
+    )
+  }
+
+  const addCustomFacility = () => {
+    const name = customFacility.trim()
+    if (!name) return
+    const id = `custom_${Date.now()}`
+    setSelectedFacilities((prev) => [...prev, { id, name, isCustom: true }])
+    setCustomFacility("")
+  }
+
+  const removeFacility = (id: string) => {
+    setSelectedFacilities((prev) => prev.filter((f) => f.id !== id))
+  }
+
+  const saveEventInfo = async () => {
+    setSavingInfo(true)
+    setInfoSaved(false)
+    try {
+      const res = await fetch("/api/tickets/event-info", {
+        method: "PATCH",
+        headers: authHeaders(),
+        body: JSON.stringify({ eventId: selectedEventId, description, facilities: selectedFacilities, termsConditions }),
+      })
+      const data = await res.json()
+      if (data.success) {
+        setEvent((prev) => (prev ? { ...prev, description, facilities: selectedFacilities, termsConditions } : prev))
+        setInfoSaved(true)
+        setTimeout(() => setInfoSaved(false), 2000)
+      } else {
+        alert(data.message || "Gagal menyimpan informasi.")
+      }
+    } catch {
+      alert("Gagal menghubungi server.")
+    } finally {
+      setSavingInfo(false)
     }
   }
 
@@ -596,6 +682,105 @@ export default function TicketsPage() {
               </div>
 
               {uploadError && <p className="mt-3 rounded-lg bg-red-50 px-3 py-2 text-xs text-red-600">{uploadError}</p>}
+            </div>
+
+            {/* Informasi Storefront */}
+            <div className="rounded-xl border border-slate-200 bg-white p-5">
+              <p className="mb-4 text-sm font-semibold text-slate-900">Informasi Storefront</p>
+
+              {/* About This Event */}
+              <div className="mb-6">
+                <label className="mb-2 block text-sm font-bold text-slate-700">Tentang Event Ini</label>
+                <p className="mb-2 text-xs text-slate-400">
+                  Jelaskan event kamu — lineup artis, rundown, dress code, dll. Tampil di halaman tiket publik.
+                </p>
+                <textarea
+                  value={description}
+                  onChange={(e) => setDescription(e.target.value)}
+                  placeholder="Contoh: Malekolo Fest 2026 menghadirkan 10 artis indie terbaik Indonesia dalam satu malam penuh energi di GWK Bali..."
+                  rows={5}
+                  className="w-full resize-none rounded-xl border border-slate-200 px-4 py-3 text-sm text-slate-800 outline-none focus:ring-2 focus:ring-emerald-500"
+                />
+              </div>
+
+              {/* Fasilitas Venue */}
+              <div className="mb-6">
+                <label className="mb-2 block text-sm font-bold text-slate-700">Fasilitas yang Tersedia</label>
+                <div className="mb-3 grid grid-cols-2 gap-2">
+                  {DEFAULT_FACILITIES.map((facility) => (
+                    <label
+                      key={facility.id}
+                      className="flex cursor-pointer items-center gap-2 rounded-lg p-2 hover:bg-slate-50"
+                    >
+                      <input
+                        type="checkbox"
+                        checked={selectedFacilities.some((f) => f.id === facility.id)}
+                        onChange={() => toggleFacility(facility)}
+                        className="size-4 accent-emerald-600"
+                      />
+                      <span className="text-sm text-slate-700">{facility.name}</span>
+                    </label>
+                  ))}
+                </div>
+
+                <div className="flex gap-2">
+                  <input
+                    type="text"
+                    value={customFacility}
+                    onChange={(e) => setCustomFacility(e.target.value)}
+                    placeholder="Tambah fasilitas lain..."
+                    className="flex-1 rounded-xl border border-slate-200 px-3 py-2 text-sm outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500/30"
+                    onKeyDown={(e) => e.key === "Enter" && (e.preventDefault(), addCustomFacility())}
+                  />
+                  <button
+                    type="button"
+                    onClick={addCustomFacility}
+                    className="rounded-xl bg-emerald-800 px-4 py-2 text-sm font-bold text-white hover:bg-emerald-900"
+                  >
+                    + Tambah
+                  </button>
+                </div>
+
+                {selectedFacilities.filter((f) => f.isCustom).map((f) => (
+                  <div key={f.id} className="mt-2 flex items-center justify-between rounded-lg bg-emerald-50 px-3 py-2">
+                    <span className="text-sm text-emerald-800">{f.name}</span>
+                    <button type="button" onClick={() => removeFacility(f.id)} className="text-xs text-red-400 hover:text-red-500">
+                      Hapus
+                    </button>
+                  </div>
+                ))}
+              </div>
+
+              {/* Terms & Conditions */}
+              <div className="mb-2">
+                <label className="mb-2 block text-sm font-bold text-slate-700">Syarat &amp; Ketentuan Event</label>
+                <p className="mb-2 text-xs text-slate-400">
+                  Tampil di halaman tiket publik. Edit sesuai kebutuhan event kamu.
+                </p>
+                <button
+                  type="button"
+                  onClick={() => setTermsConditions(DEFAULT_TERMS_TEMPLATE)}
+                  className="mb-2 block text-xs text-emerald-600 underline"
+                >
+                  Gunakan template default
+                </button>
+                <textarea
+                  value={termsConditions}
+                  onChange={(e) => setTermsConditions(e.target.value)}
+                  placeholder="Isi syarat dan ketentuan event kamu..."
+                  rows={8}
+                  className="w-full resize-none rounded-xl border border-slate-200 px-4 py-3 text-sm text-slate-800 outline-none focus:ring-2 focus:ring-emerald-500"
+                />
+              </div>
+
+              <button
+                type="button"
+                onClick={saveEventInfo}
+                disabled={savingInfo}
+                className="mt-4 flex items-center justify-center gap-1.5 rounded-lg bg-emerald-800 px-4 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-emerald-900 disabled:opacity-50"
+              >
+                {savingInfo ? "Menyimpan..." : infoSaved ? "Tersimpan ✓" : "Simpan Informasi"}
+              </button>
             </div>
 
             {/* Storefront settings */}

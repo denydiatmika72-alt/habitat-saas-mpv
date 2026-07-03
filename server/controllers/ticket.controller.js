@@ -181,6 +181,35 @@ const updateStorefrontSettings = async (req, res) => {
   }
 };
 
+// PATCH /api/tickets/event-info — promotor update deskripsi, fasilitas, T&C storefront
+const updateEventStorefrontInfo = async (req, res) => {
+  try {
+    const { eventId, description, facilities, termsConditions } = req.body;
+    if (!eventId) return res.status(400).json({ success: false, message: 'eventId wajib diisi.' });
+
+    const event = await prisma.event.findFirst({ where: { id: eventId, promotor_id: req.user.id } });
+    if (!event) return res.status(404).json({ success: false, message: 'Event tidak ditemukan.' });
+
+    if (facilities !== undefined && facilities !== null && !Array.isArray(facilities)) {
+      return res.status(400).json({ success: false, message: 'facilities harus berupa array.' });
+    }
+
+    const updated = await prisma.event.update({
+      where: { id: eventId },
+      data: {
+        ...(description !== undefined && { description }),
+        ...(facilities !== undefined && { facilities }),
+        ...(termsConditions !== undefined && { termsConditions }),
+      },
+    });
+
+    return res.json({ success: true, event: updated });
+  } catch (err) {
+    console.error('[UPDATE EVENT STOREFRONT INFO ERROR]', err);
+    return res.status(500).json({ success: false, message: 'Server error.' });
+  }
+};
+
 // GET /api/tickets/orders?eventId=xxx — promotor lihat semua order
 const getOrdersByEvent = async (req, res) => {
   try {
@@ -300,6 +329,7 @@ module.exports = {
   getTicketTypes,
   requestStorefrontApproval,
   updateStorefrontSettings,
+  updateEventStorefrontInfo,
   getOrdersByEvent,
   getTicketsByOrder,
   getStorefrontRequests,
