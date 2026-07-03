@@ -197,6 +197,32 @@ export default function EventStorefrontPage() {
 
   if (!event) return null
 
+  const formattedDate = new Date(event.event_date).toLocaleDateString("id-ID", {
+    weekday: "long",
+    day: "numeric",
+    month: "long",
+    year: "numeric",
+  })
+
+  // Reused in both the single-column (not_started/ended) and 2-column (active) layouts.
+  const eventHeader = (
+    <div className="border-b border-slate-200 pb-6">
+      <h1 className="mb-3 text-2xl font-black text-slate-900">{event.title}</h1>
+      <div className="space-y-2">
+        <div className="flex items-center gap-2 text-slate-600">
+          <Calendar className="h-4 w-4 shrink-0 text-emerald-600" />
+          <span className="text-sm">{formattedDate}</span>
+        </div>
+        {event.location && (
+          <div className="flex items-center gap-2 text-slate-600">
+            <MapPin className="h-4 w-4 shrink-0 text-emerald-600" />
+            <span className="text-sm">{event.location}</span>
+          </div>
+        )}
+      </div>
+    </div>
+  )
+
   return (
     <div className="min-h-screen bg-slate-50">
       <Script
@@ -205,7 +231,7 @@ export default function EventStorefrontPage() {
         strategy="afterInteractive"
       />
 
-      {/* HERO SECTION */}
+      {/* HERO SECTION — full width, above the 2-column grid */}
       <div className="relative">
         <div className="h-56 w-full overflow-hidden sm:h-64">
           {event.bannerUrl ? (
@@ -232,51 +258,35 @@ export default function EventStorefrontPage() {
         </div>
       </div>
 
-      {/* MAIN CONTENT */}
-      <div className="mx-auto max-w-lg px-4">
-        {/* Event Title & Info */}
-        <div className="border-b border-slate-200 pb-6 pt-12">
-          <h1 className="mb-3 text-2xl font-black text-slate-900">{event.title}</h1>
-          <div className="space-y-2">
-            <div className="flex items-center gap-2 text-slate-600">
-              <Calendar className="h-4 w-4 shrink-0 text-emerald-600" />
-              <span className="text-sm">
-                {new Date(event.event_date).toLocaleDateString("id-ID", {
-                  weekday: "long",
-                  day: "numeric",
-                  month: "long",
-                  year: "numeric",
-                })}
-              </span>
+      {/* Non-active states: single column */}
+      {status !== "active" ? (
+        <div className="mx-auto max-w-lg px-4 pb-8 pt-12">
+          {eventHeader}
+
+          {status === "not_started" && (
+            <div className="mt-6 rounded-xl border border-amber-200 bg-amber-50 p-4 text-center text-sm text-amber-800">
+              {message || "Penjualan tiket belum dimulai."}
+              {event.saleStartAt && (
+                <p className="mt-1 font-semibold">
+                  Mulai {new Date(event.saleStartAt).toLocaleString("id-ID", { dateStyle: "long", timeStyle: "short" })}
+                </p>
+              )}
             </div>
-            {event.location && (
-              <div className="flex items-center gap-2 text-slate-600">
-                <MapPin className="h-4 w-4 shrink-0 text-emerald-600" />
-                <span className="text-sm">{event.location}</span>
-              </div>
-            )}
-          </div>
+          )}
+
+          {status === "ended" && (
+            <div className="mt-6 rounded-xl border border-slate-200 bg-slate-50 p-4 text-center text-sm text-slate-600">
+              {message || "Penjualan tiket telah berakhir."}
+            </div>
+          )}
         </div>
+      ) : (
+        /* Active state: 2 columns on desktop (lg+), single column on mobile */
+        <div className="mx-auto max-w-5xl px-4 pb-8 pt-12 lg:grid lg:grid-cols-[1fr_380px] lg:items-start lg:gap-8">
+          {/* LEFT COLUMN — event info + ticket selection */}
+          <div>
+            {eventHeader}
 
-        {status === "not_started" && (
-          <div className="mt-6 rounded-xl border border-amber-200 bg-amber-50 p-4 text-center text-sm text-amber-800">
-            {message || "Penjualan tiket belum dimulai."}
-            {event.saleStartAt && (
-              <p className="mt-1 font-semibold">
-                Mulai {new Date(event.saleStartAt).toLocaleString("id-ID", { dateStyle: "long", timeStyle: "short" })}
-              </p>
-            )}
-          </div>
-        )}
-
-        {status === "ended" && (
-          <div className="mt-6 rounded-xl border border-slate-200 bg-slate-50 p-4 text-center text-sm text-slate-600">
-            {message || "Penjualan tiket telah berakhir."}
-          </div>
-        )}
-
-        {status === "active" && (
-          <>
             {/* ABOUT THIS EVENT */}
             {event.description && (
               <div className="border-b border-slate-200 py-6">
@@ -302,6 +312,7 @@ export default function EventStorefrontPage() {
               </div>
             )}
 
+            {/* TICKET SELECTION */}
             {event.ticketTypes.length === 0 ? (
               <div className="my-6 rounded-xl border border-slate-200 bg-white p-4 text-center text-sm text-slate-500">
                 Belum ada jenis tiket tersedia.
@@ -311,167 +322,69 @@ export default function EventStorefrontPage() {
                 Semua tiket telah habis terjual.
               </div>
             ) : (
-              <>
-                {/* TICKET SELECTION */}
-                <div className="border-b border-slate-200 py-6">
-                  <h2 className="mb-4 text-base font-bold text-slate-900">Pilih Tiket</h2>
-                  <div className="space-y-3">
-                    {event.ticketTypes.map((ticket) => {
-                      const isSoldOut = ticket.isSoldOut
-                      const qty = quantities[ticket.id] || 0
+              <div className="border-b border-slate-200 py-6">
+                <h2 className="mb-4 text-base font-bold text-slate-900">Pilih Tiket</h2>
+                <div className="space-y-3">
+                  {event.ticketTypes.map((ticket) => {
+                    const isSoldOut = ticket.isSoldOut
+                    const qty = quantities[ticket.id] || 0
 
-                      return (
-                        <div
-                          key={ticket.id}
-                          className={`rounded-2xl border p-4 transition-all ${
-                            isSoldOut
-                              ? "border-slate-200 bg-slate-50 opacity-60"
-                              : qty > 0
-                                ? "border-emerald-500 bg-emerald-50/50 shadow-sm"
-                                : "border-slate-200 bg-white hover:border-emerald-300"
-                          }`}
-                        >
-                          <div className="mb-2 flex items-start justify-between">
-                            <div className="min-w-0">
-                              <p className="text-sm font-bold text-slate-900">{ticket.name}</p>
-                              {ticket.description && (
-                                <p className="mt-0.5 text-xs text-slate-400">{ticket.description}</p>
-                              )}
-                            </div>
-                            <p className="shrink-0 text-base font-black text-emerald-700">{IDR.format(ticket.price)}</p>
+                    return (
+                      <div
+                        key={ticket.id}
+                        className={`rounded-2xl border p-4 transition-all ${
+                          isSoldOut
+                            ? "border-slate-200 bg-slate-50 opacity-60"
+                            : qty > 0
+                              ? "border-emerald-500 bg-emerald-50/50 shadow-sm"
+                              : "border-slate-200 bg-white hover:border-emerald-300"
+                        }`}
+                      >
+                        <div className="mb-2 flex items-start justify-between">
+                          <div className="min-w-0">
+                            <p className="text-sm font-bold text-slate-900">{ticket.name}</p>
+                            {ticket.description && (
+                              <p className="mt-0.5 text-xs text-slate-400">{ticket.description}</p>
+                            )}
                           </div>
-
-                          {isSoldOut ? (
-                            <span className="inline-block rounded-full bg-red-100 px-3 py-1 text-xs font-bold text-red-600">
-                              Habis Terjual
-                            </span>
-                          ) : (
-                            <div className="flex items-center justify-end gap-3">
-                              <button
-                                type="button"
-                                onClick={() => updateQty(ticket.id, -1)}
-                                disabled={qty === 0}
-                                className="flex size-8 items-center justify-center rounded-full border border-slate-300 text-slate-600 transition-colors hover:border-emerald-500 hover:text-emerald-600 disabled:opacity-30"
-                              >
-                                <Minus className="h-3 w-3" />
-                              </button>
-                              <span className="w-6 text-center font-bold text-slate-900">{qty}</span>
-                              <button
-                                type="button"
-                                onClick={() => updateQty(ticket.id, 1)}
-                                disabled={qty >= Math.min(MAX_QTY_PER_TYPE, ticket.available)}
-                                className="flex size-8 items-center justify-center rounded-full bg-emerald-800 text-white transition-colors hover:bg-emerald-700 disabled:opacity-30"
-                              >
-                                <Plus className="h-3 w-3" />
-                              </button>
-                            </div>
-                          )}
+                          <p className="shrink-0 text-base font-black text-emerald-700">{IDR.format(ticket.price)}</p>
                         </div>
-                      )
-                    })}
-                  </div>
+
+                        {isSoldOut ? (
+                          <span className="inline-block rounded-full bg-red-100 px-3 py-1 text-xs font-bold text-red-600">
+                            Habis Terjual
+                          </span>
+                        ) : (
+                          <div className="flex items-center justify-end gap-3">
+                            <button
+                              type="button"
+                              onClick={() => updateQty(ticket.id, -1)}
+                              disabled={qty === 0}
+                              className="flex size-8 items-center justify-center rounded-full border border-slate-300 text-slate-600 transition-colors hover:border-emerald-500 hover:text-emerald-600 disabled:opacity-30"
+                            >
+                              <Minus className="h-3 w-3" />
+                            </button>
+                            <span className="w-6 text-center font-bold text-slate-900">{qty}</span>
+                            <button
+                              type="button"
+                              onClick={() => updateQty(ticket.id, 1)}
+                              disabled={qty >= Math.min(MAX_QTY_PER_TYPE, ticket.available)}
+                              className="flex size-8 items-center justify-center rounded-full bg-emerald-800 text-white transition-colors hover:bg-emerald-700 disabled:opacity-30"
+                            >
+                              <Plus className="h-3 w-3" />
+                            </button>
+                          </div>
+                        )}
+                      </div>
+                    )
+                  })}
                 </div>
-
-                {/* ORDER SUMMARY */}
-                {totalQty > 0 && (
-                  <div className="border-b border-slate-200 py-6">
-                    <h2 className="mb-3 text-base font-bold text-slate-900">Ringkasan Pesanan</h2>
-                    <div className="space-y-2 rounded-2xl bg-slate-900 p-4">
-                      {selectedItems.map((item) => {
-                        const tt = event.ticketTypes.find((t) => t.id === item.ticketTypeId)!
-                        return (
-                          <div key={item.ticketTypeId} className="flex justify-between text-sm">
-                            <span className="text-slate-400">
-                              {item.quantity}× {tt.name}
-                            </span>
-                            <span className="font-bold text-white">{IDR.format(tt.price * item.quantity)}</span>
-                          </div>
-                        )
-                      })}
-
-                      {feeBearer === "audience" && feeAmount > 0 && (
-                        <div className="mt-2 flex justify-between border-t border-slate-700 pt-2 text-sm">
-                          <span className="text-slate-400">Biaya layanan ({event.feePercent}%)</span>
-                          <span className="text-white">{IDR.format(feeAmount)}</span>
-                        </div>
-                      )}
-
-                      {taxAmount > 0 && (
-                        <div className="flex justify-between text-sm">
-                          <span className="text-slate-400">Pajak (10%)</span>
-                          <span className="text-white">{IDR.format(taxAmount)}</span>
-                        </div>
-                      )}
-
-                      <div className="mt-2 flex justify-between border-t border-slate-600 pt-2">
-                        <span className="font-bold text-white">Total</span>
-                        <span className="text-lg font-black text-emerald-400">{IDR.format(totalAmount)}</span>
-                      </div>
-                    </div>
-                  </div>
-                )}
-
-                {/* BUYER FORM */}
-                {totalQty > 0 && (
-                  <div className="border-b border-slate-200 py-6">
-                    <h2 className="mb-4 text-base font-bold text-slate-900">Data Pembeli</h2>
-                    <div className="space-y-3">
-                      <div>
-                        <label className="text-xs font-bold uppercase tracking-wide text-slate-500">Nama Lengkap *</label>
-                        <input
-                          type="text"
-                          value={buyerName}
-                          onChange={(e) => setBuyerName(e.target.value)}
-                          placeholder="Sesuai KTP"
-                          className="mt-1 w-full rounded-xl border border-slate-200 px-4 py-3 text-sm outline-none focus:ring-2 focus:ring-emerald-500"
-                        />
-                      </div>
-                      <div>
-                        <label className="text-xs font-bold uppercase tracking-wide text-slate-500">Email *</label>
-                        <input
-                          type="email"
-                          value={buyerEmail}
-                          onChange={(e) => setBuyerEmail(e.target.value)}
-                          placeholder="E-ticket dikirim ke email ini"
-                          className="mt-1 w-full rounded-xl border border-slate-200 px-4 py-3 text-sm outline-none focus:ring-2 focus:ring-emerald-500"
-                        />
-                      </div>
-                      <div>
-                        <label className="text-xs font-bold uppercase tracking-wide text-slate-500">Nomor HP *</label>
-                        <input
-                          type="tel"
-                          value={buyerPhone}
-                          onChange={(e) => setBuyerPhone(e.target.value)}
-                          placeholder="08xx atau +628xx"
-                          className="mt-1 w-full rounded-xl border border-slate-200 px-4 py-3 text-sm outline-none focus:ring-2 focus:ring-emerald-500"
-                        />
-                      </div>
-                      <div>
-                        <label className="text-xs font-bold uppercase tracking-wide text-slate-500">
-                          NIK KTP * <span className="ml-1 font-normal normal-case text-slate-400">(16 digit)</span>
-                        </label>
-                        <input
-                          type="text"
-                          value={buyerNik}
-                          onChange={(e) => setBuyerNik(e.target.value.replace(/\D/g, "").slice(0, 16))}
-                          inputMode="numeric"
-                          placeholder="Nomor induk kependudukan"
-                          maxLength={16}
-                          className="mt-1 w-full rounded-xl border border-slate-200 px-4 py-3 text-sm outline-none focus:ring-2 focus:ring-emerald-500"
-                        />
-                        <p className="mt-1 text-xs text-slate-400">
-                          Maks. 4 tiket per NIK per event. Data hanya digunakan untuk verifikasi.
-                        </p>
-                      </div>
-                    </div>
-                  </div>
-                )}
-              </>
+              </div>
             )}
 
             {/* TERMS & CONDITIONS */}
             {event.termsConditions && (
-              <div className="border-b border-slate-200 py-6">
+              <div className="py-6">
                 <button
                   type="button"
                   onClick={() => setShowTerms(!showTerms)}
@@ -487,47 +400,170 @@ export default function EventStorefrontPage() {
                 )}
               </div>
             )}
+          </div>
+          {/* END LEFT COLUMN */}
 
-            {formError && (
-              <div className="mt-4 rounded-lg bg-red-50 px-3 py-2 text-sm text-red-600">{formError}</div>
-            )}
-
-            {/* BUY BUTTON */}
-            <div className="py-6 pb-8">
-              <button
-                type="button"
-                onClick={handleBuy}
-                disabled={totalQty === 0 || submitting}
-                className="flex w-full items-center justify-center gap-2 rounded-2xl bg-emerald-800 py-4 text-base font-black text-white shadow-lg shadow-emerald-800/20 transition-colors hover:bg-emerald-700 disabled:cursor-not-allowed disabled:opacity-40"
-              >
-                {submitting ? (
-                  <span>Memproses...</span>
-                ) : totalQty > 0 ? (
-                  <>
-                    <Ticket className="h-5 w-5" />
-                    Beli Tiket — {IDR.format(totalAmount)}
-                  </>
-                ) : (
-                  "Pilih Tiket untuk Melanjutkan"
-                )}
-              </button>
-
-              {/* Trust badges */}
-              <div className="mt-4 flex items-center justify-center gap-4">
-                <div className="flex items-center gap-1 text-xs text-slate-400">
-                  <Shield className="h-3 w-3" />
-                  Pembayaran aman
+          {/* RIGHT COLUMN — sticky order summary + buyer form + buy button */}
+          <div className="mt-8 space-y-4 lg:sticky lg:top-4 lg:mt-0">
+            {/* Event quick info card — desktop only (duplicates the header on mobile) */}
+            <div className="hidden rounded-2xl border border-slate-200 bg-white p-4 lg:block">
+              <p className="text-sm font-bold text-slate-900">{event.title}</p>
+              <div className="mt-1 flex items-center gap-1.5 text-xs text-slate-500">
+                <Calendar className="h-3 w-3 shrink-0" />
+                {formattedDate}
+              </div>
+              {event.location && (
+                <div className="mt-0.5 flex items-center gap-1.5 text-xs text-slate-500">
+                  <MapPin className="h-3 w-3 shrink-0" />
+                  {event.location}
                 </div>
-                <div className="flex items-center gap-1 text-xs text-slate-400">
-                  <Mail className="h-3 w-3" />
-                  E-ticket via email
+              )}
+            </div>
+
+            {/* ORDER SUMMARY — shown when totalQty > 0 */}
+            {totalQty > 0 && (
+              <div>
+                <h2 className="mb-2 text-sm font-bold text-slate-900">Ringkasan Pesanan</h2>
+                <div className="space-y-2 rounded-2xl bg-slate-900 p-4">
+                  {selectedItems.map((item) => {
+                    const tt = event.ticketTypes.find((t) => t.id === item.ticketTypeId)!
+                    return (
+                      <div key={item.ticketTypeId} className="flex justify-between text-sm">
+                        <span className="text-slate-400">
+                          {item.quantity}× {tt.name}
+                        </span>
+                        <span className="font-bold text-white">{IDR.format(tt.price * item.quantity)}</span>
+                      </div>
+                    )
+                  })}
+
+                  {feeBearer === "audience" && feeAmount > 0 && (
+                    <div className="mt-2 flex justify-between border-t border-slate-700 pt-2 text-sm">
+                      <span className="text-slate-400">Biaya layanan ({event.feePercent}%)</span>
+                      <span className="text-white">{IDR.format(feeAmount)}</span>
+                    </div>
+                  )}
+
+                  {taxAmount > 0 && (
+                    <div className="flex justify-between text-sm">
+                      <span className="text-slate-400">Pajak (10%)</span>
+                      <span className="text-white">{IDR.format(taxAmount)}</span>
+                    </div>
+                  )}
+
+                  <div className="mt-2 flex justify-between border-t border-slate-600 pt-2">
+                    <span className="font-bold text-white">Total</span>
+                    <span className="text-lg font-black text-emerald-400">{IDR.format(totalAmount)}</span>
+                  </div>
                 </div>
               </div>
-            </div>
-          </>
-        )}
+            )}
 
-        {/* FOOTER */}
+            {/* BUYER FORM — shown when totalQty > 0 */}
+            {totalQty > 0 && (
+              <div className="rounded-2xl border border-slate-200 bg-white p-4">
+                <h2 className="mb-3 text-sm font-bold text-slate-900">Data Pembeli</h2>
+                <div className="space-y-3">
+                  <div>
+                    <label className="text-xs font-bold uppercase tracking-wide text-slate-500">Nama Lengkap *</label>
+                    <input
+                      type="text"
+                      value={buyerName}
+                      onChange={(e) => setBuyerName(e.target.value)}
+                      placeholder="Sesuai KTP"
+                      className="mt-1 w-full rounded-xl border border-slate-200 px-4 py-3 text-sm outline-none focus:ring-2 focus:ring-emerald-500"
+                    />
+                  </div>
+                  <div>
+                    <label className="text-xs font-bold uppercase tracking-wide text-slate-500">Email *</label>
+                    <input
+                      type="email"
+                      value={buyerEmail}
+                      onChange={(e) => setBuyerEmail(e.target.value)}
+                      placeholder="E-ticket dikirim ke email ini"
+                      className="mt-1 w-full rounded-xl border border-slate-200 px-4 py-3 text-sm outline-none focus:ring-2 focus:ring-emerald-500"
+                    />
+                  </div>
+                  <div>
+                    <label className="text-xs font-bold uppercase tracking-wide text-slate-500">Nomor HP *</label>
+                    <input
+                      type="tel"
+                      value={buyerPhone}
+                      onChange={(e) => setBuyerPhone(e.target.value)}
+                      placeholder="08xx atau +628xx"
+                      className="mt-1 w-full rounded-xl border border-slate-200 px-4 py-3 text-sm outline-none focus:ring-2 focus:ring-emerald-500"
+                    />
+                  </div>
+                  <div>
+                    <label className="text-xs font-bold uppercase tracking-wide text-slate-500">
+                      NIK KTP * <span className="ml-1 font-normal normal-case text-slate-400">(16 digit)</span>
+                    </label>
+                    <input
+                      type="text"
+                      value={buyerNik}
+                      onChange={(e) => setBuyerNik(e.target.value.replace(/\D/g, "").slice(0, 16))}
+                      inputMode="numeric"
+                      placeholder="Nomor induk kependudukan"
+                      maxLength={16}
+                      className="mt-1 w-full rounded-xl border border-slate-200 px-4 py-3 text-sm outline-none focus:ring-2 focus:ring-emerald-500"
+                    />
+                    <p className="mt-1 text-xs text-slate-400">
+                      Maks. 4 tiket per NIK per event. Data hanya digunakan untuk verifikasi.
+                    </p>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* EMPTY STATE — desktop only, when no tickets selected */}
+            {totalQty === 0 && (
+              <div className="hidden rounded-2xl border border-slate-200 bg-white p-6 text-center lg:block">
+                <Ticket className="mx-auto mb-2 h-8 w-8 text-slate-300" />
+                <p className="text-sm text-slate-400">Pilih tiket di sebelah kiri untuk melanjutkan</p>
+              </div>
+            )}
+
+            {formError && (
+              <div className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-600">{formError}</div>
+            )}
+
+            {/* BUY BUTTON — always visible in right column */}
+            <button
+              type="button"
+              onClick={handleBuy}
+              disabled={totalQty === 0 || submitting}
+              className="flex w-full items-center justify-center gap-2 rounded-2xl bg-emerald-800 py-4 text-base font-black text-white shadow-lg shadow-emerald-800/20 transition-colors hover:bg-emerald-700 disabled:cursor-not-allowed disabled:opacity-40"
+            >
+              {submitting ? (
+                <span>Memproses...</span>
+              ) : totalQty > 0 ? (
+                <>
+                  <Ticket className="h-5 w-5" />
+                  Beli Tiket — {IDR.format(totalAmount)}
+                </>
+              ) : (
+                "Pilih Tiket untuk Melanjutkan"
+              )}
+            </button>
+
+            {/* Trust badges */}
+            <div className="flex items-center justify-center gap-4">
+              <div className="flex items-center gap-1 text-xs text-slate-400">
+                <Shield className="h-3 w-3" />
+                Pembayaran aman
+              </div>
+              <div className="flex items-center gap-1 text-xs text-slate-400">
+                <Mail className="h-3 w-3" />
+                E-ticket via email
+              </div>
+            </div>
+          </div>
+          {/* END RIGHT COLUMN */}
+        </div>
+      )}
+
+      {/* FOOTER — full width */}
+      <div className="mx-auto max-w-5xl px-4">
         <div className="border-t border-slate-200 py-4 text-center">
           <p className="text-xs text-slate-400">
             Powered by <span className="font-bold text-emerald-600">nexEvent</span> — Platform Manajemen Event Indonesia
