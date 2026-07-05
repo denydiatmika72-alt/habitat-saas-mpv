@@ -275,11 +275,25 @@ const getStorefrontRequests = async (req, res) => {
 const approveStorefront = async (req, res) => {
   try {
     const { eventId } = req.params;
-    const { platformFeePercent } = req.body;
+    const { ticketFeePercent, merchFeePercent, bundlingFeePercent, platformFeePercent } = req.body;
 
-    const feePercent = Number(platformFeePercent);
-    if (!Number.isFinite(feePercent) || feePercent < 1.5 || feePercent > 5.0) {
-      return res.status(400).json({ success: false, message: 'platformFeePercent wajib diisi, antara 1.5 dan 5.0.' });
+    // Setiap fee opsional (null → fallback chain: fee spesifik → platformFeePercent → 3.5).
+    // Kalau diisi, wajib 1.0–5.0.
+    const parseFee = (val, label) => {
+      if (val === undefined || val === null || val === '') return { ok: true, value: null };
+      const n = Number(val);
+      if (!Number.isFinite(n) || n < 1.0 || n > 5.0) {
+        return { ok: false, message: `${label} harus antara 1.0 dan 5.0 (atau kosong untuk pakai default).` };
+      }
+      return { ok: true, value: n };
+    };
+
+    const ticketFee = parseFee(ticketFeePercent, 'Fee tiket');
+    const merchFee = parseFee(merchFeePercent, 'Fee merchandise');
+    const bundlingFee = parseFee(bundlingFeePercent, 'Fee bundling');
+    const legacyFee = parseFee(platformFeePercent, 'platformFeePercent');
+    for (const f of [ticketFee, merchFee, bundlingFee, legacyFee]) {
+      if (!f.ok) return res.status(400).json({ success: false, message: f.message });
     }
 
     const event = await prisma.event.findUnique({ where: { id: eventId } });
@@ -294,7 +308,16 @@ const approveStorefront = async (req, res) => {
 
     const updated = await prisma.event.update({
       where: { id: eventId },
-      data: { storefrontStatus: 'approved', storefrontNote: null, slug, platformFeePercent: feePercent },
+      data: {
+        storefrontStatus: 'approved',
+        storefrontNote: null,
+        slug,
+        ticketFeePercent: ticketFee.value,
+        merchFeePercent: merchFee.value,
+        bundlingFeePercent: bundlingFee.value,
+        // platformFeePercent dipertahankan sebagai fallback legacy — hanya diupdate kalau dikirim.
+        ...(legacyFee.value !== null && { platformFeePercent: legacyFee.value }),
+      },
     });
 
     return res.json({ success: true, data: updated });

@@ -64,6 +64,10 @@ type EventData = {
   feePercent: number
   feeBearer: "audience" | "promotor" | null
   taxEnabled: boolean
+  platformFeePercent: number | null
+  ticketFeePercent: number | null
+  merchFeePercent: number | null
+  bundlingFeePercent: number | null
   description: string | null
   facilities: Facility[] | null
   termsConditions: string | null
@@ -154,8 +158,17 @@ export default function EventStorefrontPage() {
   const subtotal = ticketSubtotal + merchSubtotal
 
   const feeBearer = event?.feeBearer === "audience" ? "audience" : "promotor"
-  const taxAmount = event?.taxEnabled ? Math.round(subtotal * 0.1) : 0
-  const feeAmount = event ? Math.round(subtotal * (event.feePercent / 100)) : 0
+  // Fee per tipe order — fallback chain: fee spesifik → platformFeePercent → 3.5 (harus sama dengan backend).
+  const activeFeePercent = event
+    ? totalTicketQty > 0 && totalMerchQty > 0
+      ? (event.bundlingFeePercent ?? event.platformFeePercent ?? 3.5)
+      : totalMerchQty > 0
+        ? (event.merchFeePercent ?? event.platformFeePercent ?? 3.5)
+        : (event.ticketFeePercent ?? event.platformFeePercent ?? 3.5)
+    : 3.5
+  // Pajak 10% HANYA dari subtotal tiket — merch tidak pernah kena pajak.
+  const taxAmount = event?.taxEnabled && totalTicketQty > 0 ? Math.round(ticketSubtotal * 0.1) : 0
+  const feeAmount = event ? Math.round(subtotal * (activeFeePercent / 100)) : 0
   const totalAmount = feeBearer === "audience" ? subtotal + taxAmount + feeAmount : subtotal + taxAmount
 
   const updateQty = (ticketTypeId: string, delta: number) => {
@@ -585,14 +598,14 @@ export default function EventStorefrontPage() {
 
                   {feeBearer === "audience" && feeAmount > 0 && (
                     <div className="mt-2 flex justify-between border-t border-slate-700 pt-2 text-sm">
-                      <span className="text-slate-400">Biaya layanan ({event.feePercent}%)</span>
+                      <span className="text-slate-400">Biaya layanan ({activeFeePercent}%)</span>
                       <span className="text-white">{IDR.format(feeAmount)}</span>
                     </div>
                   )}
 
                   {taxAmount > 0 && (
                     <div className="flex justify-between text-sm">
-                      <span className="text-slate-400">Pajak (10%)</span>
+                      <span className="text-slate-400">Pajak Tiket (10%)</span>
                       <span className="text-white">{IDR.format(taxAmount)}</span>
                     </div>
                   )}

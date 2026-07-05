@@ -30,6 +30,18 @@ interface StorefrontRequest {
   promotor: { name: string; email: string }
 }
 
+interface MerchRequest {
+  id: string
+  name: string
+  description: string | null
+  price: number
+  imageUrl: string | null
+  variants: { id: string; size: string; stock: number }[]
+  event: { title: string; promotor: { name: string; email: string } }
+}
+
+const IDR = new Intl.NumberFormat("id-ID", { style: "currency", currency: "IDR", maximumFractionDigits: 0 })
+
 export default function AdminUsersPage() {
   const router = useRouter()
   const { user, loading: userLoading } = useUser()
@@ -44,7 +56,15 @@ export default function AdminUsersPage() {
   const [rejectNoteFor, setRejectNoteFor] = useState<string | null>(null)
   const [rejectNote, setRejectNote] = useState("")
   const [approvalEventId, setApprovalEventId] = useState<string | null>(null)
-  const [approvalFeePercent, setApprovalFeePercent] = useState(3.5)
+  const [ticketFee, setTicketFee] = useState(3.5)
+  const [merchFee, setMerchFee] = useState(3.5)
+  const [bundlingFee, setBundlingFee] = useState(3.5)
+
+  const [merchRequests, setMerchRequests] = useState<MerchRequest[]>([])
+  const [loadingMerch, setLoadingMerch] = useState(true)
+  const [processingMerchId, setProcessingMerchId] = useState<string | null>(null)
+  const [merchRejectFor, setMerchRejectFor] = useState<string | null>(null)
+  const [merchRejectNote, setMerchRejectNote] = useState("")
 
   useEffect(() => {
     if (!userLoading && user && !user.isAdmin) {
@@ -60,6 +80,7 @@ export default function AdminUsersPage() {
     }
     fetchPendingUsers()
     fetchStorefrontRequests()
+    fetchMerchRequests()
   }, [])
 
   if (userLoading) return <div className="py-16 text-center text-sm text-slate-400">Memuat...</div>
@@ -111,13 +132,17 @@ export default function AdminUsersPage() {
     finally { setLoadingStorefront(false) }
   }
 
-  async function handleApproveStorefront(eventId: string, feePercent: number) {
+  async function handleApproveStorefront(eventId: string) {
     setProcessingEventId(eventId)
     try {
       const res = await fetch(`${API_BASE}/admin/storefront-requests/${eventId}/approve`, {
         method: "PATCH",
         headers: authHeaders(),
-        body: JSON.stringify({ platformFeePercent: feePercent }),
+        body: JSON.stringify({
+          ticketFeePercent: ticketFee,
+          merchFeePercent: merchFee,
+          bundlingFeePercent: bundlingFee,
+        }),
       })
       const json = await res.json()
       if (json.success) {
@@ -153,6 +178,56 @@ export default function AdminUsersPage() {
       alert("Tidak dapat menghubungi server.")
     } finally {
       setProcessingEventId(null)
+    }
+  }
+
+  async function fetchMerchRequests() {
+    setLoadingMerch(true)
+    try {
+      const res = await fetch(`${API_BASE}/admin/merch-requests`, { headers: authHeaders() })
+      const json = await res.json()
+      if (json.success) setMerchRequests(json.data)
+    } catch {}
+    finally { setLoadingMerch(false) }
+  }
+
+  async function handleApproveMerch(id: string) {
+    setProcessingMerchId(id)
+    try {
+      const res = await fetch(`${API_BASE}/admin/merch-requests/${id}/approve`, {
+        method: "PATCH",
+        headers: authHeaders(),
+      })
+      const json = await res.json()
+      if (json.success) setMerchRequests((prev) => prev.filter((m) => m.id !== id))
+      else alert(json.message || "Gagal menyetujui merchandise")
+    } catch {
+      alert("Tidak dapat menghubungi server.")
+    } finally {
+      setProcessingMerchId(null)
+    }
+  }
+
+  async function handleRejectMerch(id: string) {
+    setProcessingMerchId(id)
+    try {
+      const res = await fetch(`${API_BASE}/admin/merch-requests/${id}/reject`, {
+        method: "PATCH",
+        headers: authHeaders(),
+        body: JSON.stringify({ note: merchRejectNote }),
+      })
+      const json = await res.json()
+      if (json.success) {
+        setMerchRequests((prev) => prev.filter((m) => m.id !== id))
+        setMerchRejectFor(null)
+        setMerchRejectNote("")
+      } else {
+        alert(json.message || "Gagal menolak merchandise")
+      }
+    } catch {
+      alert("Tidak dapat menghubungi server.")
+    } finally {
+      setProcessingMerchId(null)
     }
   }
 
@@ -314,7 +389,7 @@ export default function AdminUsersPage() {
                 </div>
                 <div className="flex shrink-0 items-center gap-2">
                   <button
-                    onClick={() => { setApprovalEventId(approvalEventId === ev.id ? null : ev.id); setApprovalFeePercent(3.5) }}
+                    onClick={() => { setApprovalEventId(approvalEventId === ev.id ? null : ev.id); setTicketFee(3.5); setMerchFee(3.5); setBundlingFee(3.5) }}
                     disabled={processingEventId === ev.id}
                     className="inline-flex items-center gap-1.5 rounded-md bg-emerald-800 px-3 py-1.5 text-xs font-medium text-white transition-colors hover:bg-emerald-900 disabled:opacity-50"
                   >
@@ -333,29 +408,43 @@ export default function AdminUsersPage() {
               </div>
               {approvalEventId === ev.id && (
                 <div className="space-y-3 rounded-lg border border-emerald-200 bg-emerald-50 p-3">
-                  <p className="text-sm font-medium text-slate-800">Set biaya layanan platform untuk event ini:</p>
-                  <div className="flex items-center gap-2">
-                    <input
-                      type="number"
-                      min="1.5"
-                      max="5"
-                      step="0.5"
-                      value={approvalFeePercent}
-                      onChange={(e) => setApprovalFeePercent(Number(e.target.value))}
-                      className="w-24 rounded-lg border border-slate-200 px-3 py-2 text-sm"
-                    />
-                    <span className="text-sm text-slate-500">% per transaksi</span>
+                  <p className="text-sm font-medium text-slate-800">Set biaya layanan per tipe transaksi:</p>
+                  <div className="space-y-2">
+                    {([
+                      ["Fee Tiket", ticketFee, setTicketFee],
+                      ["Fee Merchandise", merchFee, setMerchFee],
+                      ["Fee Bundling", bundlingFee, setBundlingFee],
+                    ] as [string, number, (v: number) => void][]).map(([label, value, setter]) => (
+                      <div key={label} className="flex items-center justify-between">
+                        <span className="text-sm text-slate-600">{label}</span>
+                        <div className="flex items-center gap-1">
+                          <input
+                            type="number"
+                            min="1"
+                            max="5"
+                            step="0.5"
+                            value={value}
+                            onChange={(e) => setter(Number(e.target.value))}
+                            className="w-20 rounded-lg border border-slate-200 bg-white px-2 py-1.5 text-sm"
+                          />
+                          <span className="text-sm text-slate-400">%</span>
+                        </div>
+                      </div>
+                    ))}
                   </div>
-                  <p className="text-xs text-slate-400">Standar: 3.5% | Minimum: 1.5% | Maksimum: 5%</p>
+                  <p className="text-xs text-slate-400">Standar: 3.5% | Min: 1% | Maks: 5%</p>
                   <p className="text-xs text-amber-600">
                     Fee bearer dipilih promotor: {ev.feeBearer === "audience" ? "Penonton" : ev.feeBearer === "promotor" ? "Promotor" : "Belum dipilih"}
                   </p>
                   <button
-                    onClick={() => handleApproveStorefront(ev.id, approvalFeePercent)}
-                    disabled={processingEventId === ev.id || approvalFeePercent < 1.5 || approvalFeePercent > 5}
+                    onClick={() => handleApproveStorefront(ev.id)}
+                    disabled={
+                      processingEventId === ev.id ||
+                      [ticketFee, merchFee, bundlingFee].some((f) => !Number.isFinite(f) || f < 1 || f > 5)
+                    }
                     className="w-full rounded-xl bg-emerald-800 py-2 text-sm font-bold text-white hover:bg-emerald-900 disabled:opacity-50"
                   >
-                    {processingEventId === ev.id ? "Memproses..." : `Setujui dengan Fee ${approvalFeePercent}%`}
+                    {processingEventId === ev.id ? "Memproses..." : "Setujui Storefront"}
                   </button>
                 </div>
               )}
@@ -373,6 +462,87 @@ export default function AdminUsersPage() {
                     className="rounded-lg bg-red-600 px-4 py-2 text-xs font-semibold text-white hover:bg-red-700 disabled:opacity-50"
                   >
                     {processingEventId === ev.id ? "Memproses..." : "Konfirmasi Tolak"}
+                  </button>
+                </div>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* Persetujuan Merchandise */}
+      <div>
+        <h2 className="text-xl font-semibold text-slate-900">Persetujuan Merchandise</h2>
+        <p className="mt-1 text-sm text-slate-500">
+          Produk merchandise yang menunggu review sebelum tampil di storefront publik.
+        </p>
+      </div>
+
+      {loadingMerch ? (
+        <div className="py-16 text-center text-sm text-slate-400">Memuat data...</div>
+      ) : merchRequests.length === 0 ? (
+        <div className="rounded-xl border border-slate-200 bg-white py-16 text-center">
+          <CheckCircle className="mx-auto mb-3 size-10 text-emerald-500" />
+          <p className="text-sm font-medium text-slate-700">Tidak ada merchandise pending</p>
+          <p className="mt-1 text-xs text-slate-400">Semua produk sudah diproses.</p>
+        </div>
+      ) : (
+        <div className="divide-y divide-slate-100 rounded-xl border border-slate-200 bg-white">
+          {merchRequests.map((m) => (
+            <div key={m.id} className="space-y-3 p-4">
+              <div className="flex items-start justify-between gap-3">
+                <div className="flex min-w-0 items-start gap-3">
+                  {m.imageUrl ? (
+                    <img src={m.imageUrl} alt={m.name} className="size-14 shrink-0 rounded-lg border border-slate-200 object-cover" />
+                  ) : (
+                    <div className="flex size-14 shrink-0 items-center justify-center rounded-lg border border-slate-200 bg-slate-50 text-[10px] text-slate-300">
+                      No foto
+                    </div>
+                  )}
+                  <div className="min-w-0">
+                    <p className="truncate font-medium text-slate-900">{m.name}</p>
+                    <p className="text-sm font-semibold text-emerald-700">{IDR.format(m.price)}</p>
+                    <p className="mt-0.5 text-xs text-slate-400">
+                      Size: {m.variants.map((v) => `${v.size} (${v.stock})`).join(", ")}
+                    </p>
+                    <p className="mt-0.5 text-xs text-slate-500">
+                      {m.event.title} · {m.event.promotor.name}
+                    </p>
+                  </div>
+                </div>
+                <div className="flex shrink-0 items-center gap-2">
+                  <button
+                    onClick={() => handleApproveMerch(m.id)}
+                    disabled={processingMerchId === m.id}
+                    className="inline-flex items-center gap-1.5 rounded-md bg-emerald-800 px-3 py-1.5 text-xs font-medium text-white transition-colors hover:bg-emerald-900 disabled:opacity-50"
+                  >
+                    <CheckCircle className="size-3.5" />
+                    {processingMerchId === m.id ? "Memproses..." : "Setujui"}
+                  </button>
+                  <button
+                    onClick={() => setMerchRejectFor(merchRejectFor === m.id ? null : m.id)}
+                    disabled={processingMerchId === m.id}
+                    className="inline-flex items-center gap-1.5 rounded-md bg-red-50 px-3 py-1.5 text-xs font-medium text-red-600 transition-colors hover:bg-red-100 disabled:opacity-50"
+                  >
+                    <XCircle className="size-3.5" />
+                    Tolak
+                  </button>
+                </div>
+              </div>
+              {merchRejectFor === m.id && (
+                <div className="flex items-center gap-2">
+                  <input
+                    value={merchRejectNote}
+                    onChange={(e) => setMerchRejectNote(e.target.value)}
+                    placeholder="Alasan penolakan (opsional)"
+                    className="flex-1 rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-red-400 focus:ring-1 focus:ring-red-200"
+                  />
+                  <button
+                    onClick={() => handleRejectMerch(m.id)}
+                    disabled={processingMerchId === m.id}
+                    className="rounded-lg bg-red-600 px-4 py-2 text-xs font-semibold text-white hover:bg-red-700 disabled:opacity-50"
+                  >
+                    {processingMerchId === m.id ? "Memproses..." : "Konfirmasi Tolak"}
                   </button>
                 </div>
               )}

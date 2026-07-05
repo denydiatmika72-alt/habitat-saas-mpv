@@ -224,6 +224,63 @@ const uploadMerchImage = [
   },
 ];
 
+// ===== ADMIN ONLY =====
+
+// GET /api/admin/merch-requests — semua item yang menunggu persetujuan
+const getMerchApprovalRequests = async (req, res) => {
+  try {
+    const items = await prisma.merchItem.findMany({
+      where: { approvalStatus: 'pending' },
+      include: {
+        variants: { orderBy: { size: 'asc' } },
+        event: { select: { title: true, promotor: { select: { name: true, email: true } } } },
+      },
+      orderBy: { createdAt: 'asc' },
+    });
+    return res.json({ success: true, data: items });
+  } catch (err) {
+    console.error('[GET MERCH REQUESTS ERROR]', err);
+    return res.status(500).json({ success: false, message: 'Server error.' });
+  }
+};
+
+// PATCH /api/admin/merch-requests/:id/approve
+const approveMerchItem = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const item = await prisma.merchItem.findUnique({ where: { id } });
+    if (!item) return res.status(404).json({ success: false, message: 'Produk tidak ditemukan.' });
+
+    const updated = await prisma.merchItem.update({
+      where: { id },
+      data: { approvalStatus: 'approved', approvalNote: null },
+    });
+    return res.json({ success: true, data: updated });
+  } catch (err) {
+    console.error('[APPROVE MERCH ERROR]', err);
+    return res.status(500).json({ success: false, message: 'Server error.' });
+  }
+};
+
+// PATCH /api/admin/merch-requests/:id/reject — body: { note }
+const rejectMerchItem = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { note } = req.body;
+    const item = await prisma.merchItem.findUnique({ where: { id } });
+    if (!item) return res.status(404).json({ success: false, message: 'Produk tidak ditemukan.' });
+
+    const updated = await prisma.merchItem.update({
+      where: { id },
+      data: { approvalStatus: 'rejected', approvalNote: note || 'Ditolak oleh admin.' },
+    });
+    return res.json({ success: true, data: updated });
+  } catch (err) {
+    console.error('[REJECT MERCH ERROR]', err);
+    return res.status(500).json({ success: false, message: 'Server error.' });
+  }
+};
+
 module.exports = {
   createMerchItem,
   updateMerchItem,
@@ -231,4 +288,7 @@ module.exports = {
   deleteMerchItem,
   getMerchItems,
   uploadMerchImage,
+  getMerchApprovalRequests,
+  approveMerchItem,
+  rejectMerchItem,
 };

@@ -77,7 +77,10 @@ model Event {
   logoUrl            String?  @map("logo_url")
   taxEnabled         Boolean  @default(false) @map("tax_enabled")
   feeBearer          String?  @map("fee_bearer")
-  platformFeePercent Float?   @map("platform_fee_percent")
+  platformFeePercent Float?   @map("platform_fee_percent") // legacy/fallback — dipertahankan untuk event lama
+  ticketFeePercent   Float?   @map("ticket_fee_percent")   // fee % order tiket only
+  merchFeePercent    Float?   @map("merch_fee_percent")    // fee % order merch only
+  bundlingFeePercent Float?   @map("bundling_fee_percent") // fee % order bundling tiket+merch
 
   description        String?
   facilities         Json?
@@ -152,6 +155,8 @@ model MerchItem {
   price       Int
   imageUrl    String?          @map("image_url")
   isActive    Boolean          @default(true) @map("is_active")
+  approvalStatus String        @default("pending") @map("approval_status") // "pending" | "approved" | "rejected"
+  approvalNote   String?       @map("approval_note")
   createdAt   DateTime         @default(now()) @map("created_at")
   updatedAt   DateTime         @updatedAt      @map("updated_at")
 

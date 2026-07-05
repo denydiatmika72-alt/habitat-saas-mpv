@@ -18,7 +18,7 @@ const getEventStorefront = async (req, res) => {
           orderBy: { price: 'asc' },
         },
         merchItems: {
-          where: { isActive: true },
+          where: { isActive: true, approvalStatus: 'approved' },
           include: { variants: { orderBy: { size: 'asc' } } },
           orderBy: { createdAt: 'asc' },
         },
@@ -58,6 +58,9 @@ const getEventStorefront = async (req, res) => {
         ...event,
         ticketTypes: ticketTypesWithAvailability,
         merchItems: merchWithAvailability,
+        // feePercent legacy (fallback umum); fee per tipe order di-resolve frontend/backend
+        // via chain: fee spesifik → platformFeePercent → 3.5. Field ticketFeePercent /
+        // merchFeePercent / bundlingFeePercent sudah ikut ter-spread dari ...event.
         feePercent: event.platformFeePercent || DEFAULT_FEE_PERCENT,
         feeBearer: event.feeBearer,
         taxEnabled: event.taxEnabled,
@@ -150,7 +153,9 @@ const createOrder = async (req, res) => {
     try {
       order = await prisma.$transaction(async (tx) => {
         const itemDetails = [];
-        let subtotal = 0;
+        // Subtotal dipisah: pajak 10% HANYA kena subtotal tiket, merch TIDAK pernah kena pajak.
+        let ticketSubtotal = 0;
+        let merchSubtotal = 0;
 
         // ===== Tiket =====
         for (const item of ticketItems) {
@@ -165,7 +170,7 @@ const createOrder = async (req, res) => {
             where: { id: item.ticketTypeId },
             data: { sold: { increment: Number(item.quantity) } },
           });
-          subtotal += ticketType.price * Number(item.quantity);
+          ticketSubtotal += ticketType.price * Number(item.quantity);
           itemDetails.push({
             id: item.ticketTypeId,
             price: ticketType.price,
@@ -178,7 +183,7 @@ const createOrder = async (req, res) => {
         const merchCreate = [];
         for (const m of merchItems) {
           const variant = await tx.merchVariant.findUnique({ where: { id: m.variantId }, include: { item: true } });
-          if (!variant || variant.item.eventId !== event.id || !variant.item.isActive) {
+          if (!variant || variant.item.eventId !== event.id || !variant.item.isActive || variant.item.approvalStatus !== 'approved') {
             throw new Error('Varian merchandise tidak tersedia.');
           }
           if (variant.sold + Number(m.quantity) > variant.stock) {
@@ -188,7 +193,7 @@ const createOrder = async (req, res) => {
             where: { id: variant.id },
             data: { sold: { increment: Number(m.quantity) } },
           });
-          subtotal += variant.item.price * Number(m.quantity);
+          merchSubtotal += variant.item.price * Number(m.quantity);
           merchCreate.push({
             merchItemId: variant.item.id,
             variantId: variant.id,
@@ -203,9 +208,21 @@ const createOrder = async (req, res) => {
           });
         }
 
-        const feePercent = event.platformFeePercent || DEFAULT_FEE_PERCENT;
+        const subtotal = ticketSubtotal + merchSubtotal;
+
+        // Fee per tipe order — fallback chain: fee spesifik → platformFeePercent (legacy) → 3.5.
+        let feePercent;
+        if (orderType === 'bundling') {
+          feePercent = event.bundlingFeePercent ?? event.platformFeePercent ?? DEFAULT_FEE_PERCENT;
+        } else if (orderType === 'merch') {
+          feePercent = event.merchFeePercent ?? event.platformFeePercent ?? DEFAULT_FEE_PERCENT;
+        } else {
+          feePercent = event.ticketFeePercent ?? event.platformFeePercent ?? DEFAULT_FEE_PERCENT;
+        }
+
         const feeBearer = event.feeBearer === 'audience' ? 'audience' : 'promotor';
-        const taxAmount = event.taxEnabled ? Math.round(subtotal * 0.1) : 0;
+        // Pajak 10% HANYA dari subtotal tiket — merch tidak pernah kena pajak.
+        const taxAmount = event.taxEnabled ? Math.round(ticketSubtotal * 0.1) : 0;
         const feeAmount = Math.round(subtotal * (feePercent / 100));
 
         // Kalau fee ditanggung penonton, fee ditambahkan ke total tagihan. Kalau ditanggung promotor,
@@ -248,7 +265,7 @@ const createOrder = async (req, res) => {
           itemDetails.push({ id: 'platform-fee', price: feeAmount, quantity: 1, name: `Biaya Layanan nexEvent (${feePercent}%)` });
         }
         if (taxAmount > 0) {
-          itemDetails.push({ id: 'tax', price: taxAmount, quantity: 1, name: 'Pajak (10%)' });
+          itemDetails.push({ id: 'tax', price: taxAmount, quantity: 1, name: 'Pajak Tiket (10%)' });
         }
 
         const parameter = {

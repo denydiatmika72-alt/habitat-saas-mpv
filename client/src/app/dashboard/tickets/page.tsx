@@ -107,6 +107,8 @@ type MerchItem = {
   price: number
   imageUrl: string | null
   isActive: boolean
+  approvalStatus: "pending" | "approved" | "rejected"
+  approvalNote: string | null
   variants: MerchVariant[]
 }
 
@@ -780,6 +782,28 @@ export default function TicketsPage() {
                             </div>
                           </div>
                           <p className="text-sm font-bold text-emerald-700">{IDR.format(item.price)}</p>
+                          <div className="mt-1">
+                            {item.approvalStatus === "pending" && (
+                              <span className="rounded-full bg-amber-100 px-2 py-0.5 text-xs font-bold text-amber-700">
+                                Menunggu Persetujuan
+                              </span>
+                            )}
+                            {item.approvalStatus === "approved" && (
+                              <span className="rounded-full bg-emerald-100 px-2 py-0.5 text-xs font-bold text-emerald-700">
+                                Disetujui
+                              </span>
+                            )}
+                            {item.approvalStatus === "rejected" && (
+                              <div>
+                                <span className="rounded-full bg-red-100 px-2 py-0.5 text-xs font-bold text-red-600">
+                                  Ditolak
+                                </span>
+                                {item.approvalNote && (
+                                  <p className="mt-1 text-xs text-red-500">Catatan: {item.approvalNote}</p>
+                                )}
+                              </div>
+                            )}
+                          </div>
                           {item.imageUrl && (
                             <label className="mt-0.5 inline-block cursor-pointer text-[11px] text-emerald-600 hover:underline">
                               {uploadingMerchId === item.id ? "Mengupload..." : "Ganti foto"}
@@ -865,6 +889,9 @@ export default function TicketsPage() {
                   >
                     <Plus className="size-4" /> {addingMerch ? "Menambahkan..." : "Tambah Merchandise"}
                   </button>
+                  <p className="text-xs text-slate-400">
+                    Merchandise baru akan direview admin sebelum tampil di storefront.
+                  </p>
                 </div>
               </div>
             </div>
