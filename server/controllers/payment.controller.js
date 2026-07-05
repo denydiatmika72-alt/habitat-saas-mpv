@@ -1,7 +1,7 @@
 const crypto = require('crypto');
 const prisma = require('../src/lib/prisma');
 const { snap } = require('../services/midtrans.service');
-const { sendTicketEmail } = require('../services/email.service');
+const { sendOrderEmail } = require('../services/email.service');
 
 const PRICE = { activation: 499000, extension: 99000 };
 const ACTIVATION_DAYS = 90;
@@ -83,7 +83,8 @@ const handleWebhook = async (req, res) => {
       return res.status(200).json({ success: false, message: 'Invalid signature.' });
     }
 
-    if (order_id.startsWith('nexevent-ticket-')) {
+    // Semua order storefront (tiket, merch, bundling) di-route ke handler yang sama.
+    if (/^nexevent-(ticket|merch|bundling)-/.test(order_id)) {
       return handleTicketOrderWebhook(order_id, transaction_status, res);
     }
 
@@ -137,7 +138,7 @@ const handleTicketOrderWebhook = async (orderId, transactionStatus, res) => {
   try {
     const order = await prisma.ticketOrder.findUnique({
       where: { orderId },
-      include: { items: true, event: true },
+      include: { items: true, merchItems: true, event: true },
     });
 
     if (!order) {
@@ -147,12 +148,11 @@ const handleTicketOrderWebhook = async (orderId, transactionStatus, res) => {
 
     if (transactionStatus === 'settlement' || transactionStatus === 'capture') {
       if (order.status === 'pending') {
-        const createdTickets = [];
+        // Generate 1 e-ticket per item tiket (merch tidak menghasilkan tiket, cukup barcode pickup di email).
         for (const item of order.items) {
           for (let i = 0; i < item.quantity; i++) {
             const ticketCode = `NE-${Date.now()}-${Math.random().toString(36).slice(2, 8).toUpperCase()}`;
-            const ticket = await prisma.ticket.create({ data: { orderItemId: item.id, ticketCode } });
-            createdTickets.push({ ticketCode: ticket.ticketCode, ticketTypeId: item.ticketTypeId });
+            await prisma.ticket.create({ data: { orderItemId: item.id, ticketCode } });
           }
         }
 
@@ -161,25 +161,25 @@ const handleTicketOrderWebhook = async (orderId, transactionStatus, res) => {
           data: { status: 'paid', paidAt: new Date() },
         });
 
-        const ticketTypeNames = {};
-        for (const item of order.items) {
-          const tt = await prisma.ticketType.findUnique({ where: { id: item.ticketTypeId }, select: { name: true } });
-          ticketTypeNames[item.ticketTypeId] = tt?.name || 'Tiket';
-        }
-
-        await sendTicketEmail({
-          buyerName: order.buyerName,
-          buyerEmail: order.buyerEmail,
-          orderId: order.orderId,
-          eventTitle: order.event.title,
-          tickets: createdTickets.map((t) => ({ ticketCode: t.ticketCode, ticketTypeName: ticketTypeNames[t.ticketTypeId] })),
+        // Re-fetch dengan relasi lengkap supaya email bisa render tiket + merch.
+        const fullOrder = await prisma.ticketOrder.findUnique({
+          where: { orderId },
+          include: {
+            event: true,
+            items: { include: { ticketType: true } },
+            merchItems: { include: { item: true, variant: true } },
+          },
         });
+        await sendOrderEmail(fullOrder);
       }
     } else if (['expire', 'cancel', 'deny'].includes(transactionStatus)) {
       if (order.status === 'pending') {
         await prisma.$transaction([
           ...order.items.map((item) =>
             prisma.ticketType.update({ where: { id: item.ticketTypeId }, data: { sold: { decrement: item.quantity } } })
+          ),
+          ...order.merchItems.map((m) =>
+            prisma.merchVariant.update({ where: { id: m.variantId }, data: { sold: { decrement: m.quantity } } })
           ),
           prisma.ticketOrder.update({ where: { orderId }, data: { status: transactionStatus === 'expire' ? 'expired' : 'cancelled' } }),
         ]);

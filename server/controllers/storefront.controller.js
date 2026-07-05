@@ -17,6 +17,11 @@ const getEventStorefront = async (req, res) => {
           where: { isActive: true },
           orderBy: { price: 'asc' },
         },
+        merchItems: {
+          where: { isActive: true },
+          include: { variants: { orderBy: { size: 'asc' } } },
+          orderBy: { createdAt: 'asc' },
+        },
       },
     });
 
@@ -38,11 +43,21 @@ const getEventStorefront = async (req, res) => {
       isSoldOut: tt.sold >= tt.quota,
     }));
 
+    const merchWithAvailability = event.merchItems.map((item) => ({
+      ...item,
+      variants: item.variants.map((v) => ({
+        ...v,
+        available: v.stock - v.sold,
+        isSoldOut: v.sold >= v.stock,
+      })),
+    }));
+
     return res.json({
       success: true,
       event: {
         ...event,
         ticketTypes: ticketTypesWithAvailability,
+        merchItems: merchWithAvailability,
         feePercent: event.platformFeePercent || DEFAULT_FEE_PERCENT,
         feeBearer: event.feeBearer,
         taxEnabled: event.taxEnabled,
@@ -55,17 +70,25 @@ const getEventStorefront = async (req, res) => {
   }
 };
 
-// POST /api/storefront/:slug/order — PUBLIC
+// POST /api/storefront/:slug/order — PUBLIC (tiket, merch, atau bundling)
 const createOrder = async (req, res) => {
   try {
     const { slug } = req.params;
     const { buyerName, buyerEmail, buyerPhone, buyerNik, items } = req.body;
 
-    if (!buyerName || !buyerEmail || !buyerPhone || !buyerNik || !Array.isArray(items) || items.length === 0) {
-      return res.status(400).json({ success: false, message: 'Semua field pembeli dan minimal 1 tiket wajib diisi.' });
+    // ticketItems (nama baru) fallback ke items (nama lama) supaya backward-compatible.
+    const ticketItems = Array.isArray(req.body.ticketItems)
+      ? req.body.ticketItems
+      : Array.isArray(items)
+        ? items
+        : [];
+    const merchItems = Array.isArray(req.body.merchItems) ? req.body.merchItems : [];
+
+    if (!buyerName || !buyerEmail || !buyerPhone) {
+      return res.status(400).json({ success: false, message: 'Data pembeli (nama, email, HP) wajib diisi.' });
     }
-    if (!/^\d{16}$/.test(buyerNik)) {
-      return res.status(400).json({ success: false, message: 'NIK harus 16 digit angka.' });
+    if (ticketItems.length === 0 && merchItems.length === 0) {
+      return res.status(400).json({ success: false, message: 'Pilih minimal 1 tiket atau merchandise.' });
     }
     if (!/^(\+62|62|0)8[0-9]{7,12}$/.test(buyerPhone.replace(/[\s-]/g, ''))) {
       return res.status(400).json({ success: false, message: 'Nomor HP tidak valid.' });
@@ -74,6 +97,17 @@ const createOrder = async (req, res) => {
       return res.status(400).json({ success: false, message: 'Email tidak valid.' });
     }
 
+    const hasTickets = ticketItems.length > 0;
+    // NIK wajib & harus valid kalau ada pembelian tiket (anti-calo). Untuk merch-only, NIK opsional.
+    if (hasTickets) {
+      if (!/^\d{16}$/.test(buyerNik || '')) {
+        return res.status(400).json({ success: false, message: 'NIK harus 16 digit angka.' });
+      }
+    } else if (buyerNik && !/^\d{16}$/.test(buyerNik)) {
+      return res.status(400).json({ success: false, message: 'NIK harus 16 digit angka.' });
+    }
+    const safeNik = buyerNik || '';
+
     const event = await prisma.event.findUnique({ where: { slug } });
     if (!event || event.storefrontStatus !== 'approved') {
       return res.status(404).json({ success: false, message: 'Event tidak ditemukan.' });
@@ -81,36 +115,45 @@ const createOrder = async (req, res) => {
 
     const now = new Date();
     if (event.saleStartAt && now < event.saleStartAt) {
-      return res.status(400).json({ success: false, message: 'Penjualan tiket belum dimulai.' });
+      return res.status(400).json({ success: false, message: 'Penjualan belum dimulai.' });
     }
     if (event.saleEndAt && now > event.saleEndAt) {
-      return res.status(400).json({ success: false, message: 'Penjualan tiket telah berakhir.' });
+      return res.status(400).json({ success: false, message: 'Penjualan telah berakhir.' });
     }
 
-    const existingOrders = await prisma.ticketOrder.findMany({
-      where: { eventId: event.id, buyerNik, status: { in: ['pending', 'paid'] } },
-      include: { items: true },
-    });
-    const existingCount = existingOrders.flatMap((o) => o.items).reduce((sum, item) => sum + item.quantity, 0);
-    const newCount = items.reduce((sum, item) => sum + Number(item.quantity || 0), 0);
-    if (newCount <= 0) {
-      return res.status(400).json({ success: false, message: 'Jumlah tiket tidak valid.' });
-    }
-    if (existingCount + newCount > MAX_TICKETS_PER_NIK) {
-      return res.status(400).json({
-        success: false,
-        message: `NIK ini sudah memiliki ${existingCount} tiket. Maksimal ${MAX_TICKETS_PER_NIK} tiket per NIK per event.`,
+    // Anti-calo: limit NIK hanya berlaku untuk pembelian tiket.
+    if (hasTickets) {
+      const existingOrders = await prisma.ticketOrder.findMany({
+        where: { eventId: event.id, buyerNik: safeNik, status: { in: ['pending', 'paid'] } },
+        include: { items: true },
       });
+      const existingCount = existingOrders.flatMap((o) => o.items).reduce((sum, item) => sum + item.quantity, 0);
+      const newCount = ticketItems.reduce((sum, item) => sum + Number(item.quantity || 0), 0);
+      if (newCount <= 0) {
+        return res.status(400).json({ success: false, message: 'Jumlah tiket tidak valid.' });
+      }
+      if (existingCount + newCount > MAX_TICKETS_PER_NIK) {
+        return res.status(400).json({
+          success: false,
+          message: `NIK ini sudah memiliki ${existingCount} tiket. Maksimal ${MAX_TICKETS_PER_NIK} tiket per NIK per event.`,
+        });
+      }
     }
 
-    const ticketTypes = await prisma.ticketType.findMany({
-      where: { eventId: event.id, id: { in: items.map((i) => i.ticketTypeId) } },
-    });
+    const ticketTypes = hasTickets
+      ? await prisma.ticketType.findMany({ where: { eventId: event.id, id: { in: ticketItems.map((i) => i.ticketTypeId) } } })
+      : [];
+
+    const orderType = hasTickets && merchItems.length > 0 ? 'bundling' : hasTickets ? 'ticket' : 'merch';
 
     let order;
     try {
       order = await prisma.$transaction(async (tx) => {
-        for (const item of items) {
+        const itemDetails = [];
+        let subtotal = 0;
+
+        // ===== Tiket =====
+        for (const item of ticketItems) {
           const ticketType = await tx.ticketType.findUnique({ where: { id: item.ticketTypeId } });
           if (!ticketType || ticketType.eventId !== event.id || !ticketType.isActive) {
             throw new Error('Jenis tiket tidak tersedia.');
@@ -122,14 +165,43 @@ const createOrder = async (req, res) => {
             where: { id: item.ticketTypeId },
             data: { sold: { increment: Number(item.quantity) } },
           });
+          subtotal += ticketType.price * Number(item.quantity);
+          itemDetails.push({
+            id: item.ticketTypeId,
+            price: ticketType.price,
+            quantity: Number(item.quantity),
+            name: `Tiket ${ticketType.name} — ${event.title}`.slice(0, 50),
+          });
         }
 
-        const orderId = `nexevent-ticket-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
-        const expiredAt = new Date(Date.now() + BOOKING_MINUTES * 60 * 1000);
-        const subtotal = items.reduce((sum, item) => {
-          const tt = ticketTypes.find((t) => t.id === item.ticketTypeId);
-          return sum + tt.price * Number(item.quantity);
-        }, 0);
+        // ===== Merchandise =====
+        const merchCreate = [];
+        for (const m of merchItems) {
+          const variant = await tx.merchVariant.findUnique({ where: { id: m.variantId }, include: { item: true } });
+          if (!variant || variant.item.eventId !== event.id || !variant.item.isActive) {
+            throw new Error('Varian merchandise tidak tersedia.');
+          }
+          if (variant.sold + Number(m.quantity) > variant.stock) {
+            throw new Error(`Stok ${variant.item.name} (${variant.size}) tidak cukup.`);
+          }
+          await tx.merchVariant.update({
+            where: { id: variant.id },
+            data: { sold: { increment: Number(m.quantity) } },
+          });
+          subtotal += variant.item.price * Number(m.quantity);
+          merchCreate.push({
+            merchItemId: variant.item.id,
+            variantId: variant.id,
+            quantity: Number(m.quantity),
+            price: variant.item.price,
+          });
+          itemDetails.push({
+            id: variant.id,
+            price: variant.item.price,
+            quantity: Number(m.quantity),
+            name: `${variant.item.name} (${variant.size})`.slice(0, 50),
+          });
+        }
 
         const feePercent = event.platformFeePercent || DEFAULT_FEE_PERCENT;
         const feeBearer = event.feeBearer === 'audience' ? 'audience' : 'promotor';
@@ -140,55 +212,43 @@ const createOrder = async (req, res) => {
         // penonton hanya bayar subtotal + pajak — fee dipotong dari hasil penjualan promotor (tidak ditagih ke penonton).
         const totalAmount = feeBearer === 'audience' ? subtotal + taxAmount + feeAmount : subtotal + taxAmount;
 
+        const orderId = `nexevent-${orderType}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+        const expiredAt = new Date(Date.now() + BOOKING_MINUTES * 60 * 1000);
+
         const created = await tx.ticketOrder.create({
           data: {
             eventId: event.id,
             orderId,
+            orderType,
             buyerName,
             buyerEmail,
             buyerPhone,
-            buyerNik,
+            buyerNik: safeNik,
             totalAmount,
             feeAmount,
             feeBearer,
             taxAmount,
             expiredAt,
             status: 'pending',
-            items: {
-              create: items.map((item) => ({
-                ticketTypeId: item.ticketTypeId,
-                quantity: Number(item.quantity),
-                price: ticketTypes.find((t) => t.id === item.ticketTypeId).price,
-              })),
-            },
+            items: hasTickets
+              ? {
+                  create: ticketItems.map((item) => ({
+                    ticketTypeId: item.ticketTypeId,
+                    quantity: Number(item.quantity),
+                    price: ticketTypes.find((t) => t.id === item.ticketTypeId).price,
+                  })),
+                }
+              : undefined,
+            merchItems: merchCreate.length > 0 ? { create: merchCreate } : undefined,
           },
-          include: { items: true },
+          include: { items: true, merchItems: true },
         });
 
-        const itemDetails = items.map((item) => {
-          const tt = ticketTypes.find((t) => t.id === item.ticketTypeId);
-          return {
-            id: item.ticketTypeId,
-            price: tt.price,
-            quantity: Number(item.quantity),
-            name: `Tiket ${tt.name} — ${event.title}`.slice(0, 50),
-          };
-        });
         if (feeBearer === 'audience' && feeAmount > 0) {
-          itemDetails.push({
-            id: 'platform-fee',
-            price: feeAmount,
-            quantity: 1,
-            name: `Biaya Layanan nexEvent (${feePercent}%)`,
-          });
+          itemDetails.push({ id: 'platform-fee', price: feeAmount, quantity: 1, name: `Biaya Layanan nexEvent (${feePercent}%)` });
         }
         if (taxAmount > 0) {
-          itemDetails.push({
-            id: 'tax',
-            price: taxAmount,
-            quantity: 1,
-            name: 'Pajak (10%)',
-          });
+          itemDetails.push({ id: 'tax', price: taxAmount, quantity: 1, name: 'Pajak (10%)' });
         }
 
         const parameter = {
@@ -231,6 +291,12 @@ const getOrderStatus = async (req, res) => {
           include: {
             ticketType: { select: { name: true, price: true } },
             tickets: { select: { id: true, ticketCode: true, attendeeName: true, isUsed: true } },
+          },
+        },
+        merchItems: {
+          include: {
+            item: { select: { name: true, imageUrl: true } },
+            variant: { select: { size: true } },
           },
         },
       },

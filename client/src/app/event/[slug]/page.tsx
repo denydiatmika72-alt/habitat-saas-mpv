@@ -34,6 +34,24 @@ type TicketType = {
 
 type Facility = { id: string; name: string; isCustom?: boolean }
 
+type MerchVariant = {
+  id: string
+  size: string
+  stock: number
+  sold: number
+  available: number
+  isSoldOut: boolean
+}
+
+type MerchItem = {
+  id: string
+  name: string
+  description: string | null
+  price: number
+  imageUrl: string | null
+  variants: MerchVariant[]
+}
+
 type EventData = {
   id: string
   title: string
@@ -50,6 +68,7 @@ type EventData = {
   facilities: Facility[] | null
   termsConditions: string | null
   ticketTypes: TicketType[]
+  merchItems: MerchItem[]
 }
 
 type StorefrontStatus = "loading" | "not_found" | "not_started" | "ended" | "active" | "error"
@@ -79,6 +98,7 @@ export default function EventStorefrontPage() {
   const [message, setMessage] = useState("")
 
   const [quantities, setQuantities] = useState<Record<string, number>>({})
+  const [merchQuantities, setMerchQuantities] = useState<Record<string, number>>({})
   const [buyerName, setBuyerName] = useState("")
   const [buyerEmail, setBuyerEmail] = useState("")
   const [buyerPhone, setBuyerPhone] = useState("")
@@ -107,11 +127,31 @@ export default function EventStorefrontPage() {
     () => Object.entries(quantities).filter(([, qty]) => qty > 0).map(([ticketTypeId, quantity]) => ({ ticketTypeId, quantity })),
     [quantities]
   )
-  const totalQty = selectedItems.reduce((s, i) => s + i.quantity, 0)
-  const subtotal = selectedItems.reduce((sum, item) => {
+  // Kunci merchQuantities: `${itemId}::${variantId}` — pemisah "::" karena UUID mengandung "-".
+  const selectedMerch = useMemo(
+    () =>
+      Object.entries(merchQuantities)
+        .filter(([, qty]) => qty > 0)
+        .map(([key, quantity]) => {
+          const [itemId, variantId] = key.split("::")
+          return { key, itemId, variantId, quantity }
+        }),
+    [merchQuantities]
+  )
+
+  const totalTicketQty = selectedItems.reduce((s, i) => s + i.quantity, 0)
+  const totalMerchQty = selectedMerch.reduce((s, i) => s + i.quantity, 0)
+  const totalQty = totalTicketQty + totalMerchQty // total gabungan (tiket + merch)
+
+  const ticketSubtotal = selectedItems.reduce((sum, item) => {
     const tt = event?.ticketTypes.find((t) => t.id === item.ticketTypeId)
     return sum + (tt ? tt.price * item.quantity : 0)
   }, 0)
+  const merchSubtotal = selectedMerch.reduce((sum, item) => {
+    const mi = event?.merchItems.find((m) => m.id === item.itemId)
+    return sum + (mi ? mi.price * item.quantity : 0)
+  }, 0)
+  const subtotal = ticketSubtotal + merchSubtotal
 
   const feeBearer = event?.feeBearer === "audience" ? "audience" : "promotor"
   const taxAmount = event?.taxEnabled ? Math.round(subtotal * 0.1) : 0
@@ -128,20 +168,40 @@ export default function EventStorefrontPage() {
     })
   }
 
+  const updateMerchQty = (itemId: string, variantId: string, delta: number) => {
+    const key = `${itemId}::${variantId}`
+    const item = event?.merchItems.find((m) => m.id === itemId)
+    const variant = item?.variants.find((v) => v.id === variantId)
+    const maxAvailable = variant?.available ?? 0
+    setMerchQuantities((prev) => {
+      const current = prev[key] || 0
+      const next = Math.max(0, Math.min(current + delta, maxAvailable))
+      return { ...prev, [key]: next }
+    })
+  }
+
   const handleBuy = async () => {
     setFormError("")
-    if (totalQty === 0) return
+    if (totalTicketQty === 0 && totalMerchQty === 0) return
     if (!buyerName.trim()) return setFormError("Nama lengkap wajib diisi.")
     if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(buyerEmail)) return setFormError("Email tidak valid.")
     if (!/^(\+62|62|0)8[0-9]{7,12}$/.test(buyerPhone.replace(/[\s-]/g, ""))) return setFormError("Nomor HP tidak valid (format 08xx atau +62).")
-    if (!/^\d{16}$/.test(buyerNik)) return setFormError("NIK harus 16 digit angka.")
+    // NIK wajib hanya kalau ada pembelian tiket (anti-calo). Merch-only tidak butuh NIK.
+    if (totalTicketQty > 0 && !/^\d{16}$/.test(buyerNik)) return setFormError("NIK harus 16 digit angka.")
 
     setSubmitting(true)
     try {
       const res = await fetch(`/api/storefront/${slug}/order`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ buyerName, buyerEmail, buyerPhone, buyerNik, items: selectedItems }),
+        body: JSON.stringify({
+          buyerName,
+          buyerEmail,
+          buyerPhone,
+          buyerNik,
+          ticketItems: selectedItems,
+          merchItems: selectedMerch.map((m) => ({ variantId: m.variantId, quantity: m.quantity })),
+        }),
       })
       const data = await res.json()
       if (!data.success) {
@@ -381,6 +441,82 @@ export default function EventStorefrontPage() {
               </div>
             )}
 
+            {/* MERCHANDISE */}
+            {event.merchItems && event.merchItems.length > 0 && (
+              <div className="border-b border-slate-200 py-6">
+                <h2 className="mb-4 text-base font-bold text-slate-900">Merchandise</h2>
+                <div className="space-y-4">
+                  {event.merchItems.map((item) => (
+                    <div key={item.id} className="rounded-2xl border border-slate-200 bg-white p-4">
+                      <div className="mb-3 flex gap-4">
+                        {item.imageUrl && (
+                          <img
+                            src={item.imageUrl}
+                            alt={item.name}
+                            className="size-20 shrink-0 rounded-xl border border-slate-100 object-cover"
+                          />
+                        )}
+                        <div className="min-w-0 flex-1">
+                          <p className="font-bold text-slate-900">{item.name}</p>
+                          {item.description && <p className="mt-0.5 text-xs text-slate-400">{item.description}</p>}
+                          <p className="mt-1 font-black text-emerald-700">{IDR.format(item.price)}</p>
+                        </div>
+                      </div>
+
+                      <div>
+                        <p className="mb-2 text-xs font-bold text-slate-500">Pilih Size &amp; Jumlah</p>
+                        <div className="space-y-2">
+                          {item.variants.map((variant) => {
+                            const key = `${item.id}::${variant.id}`
+                            const qty = merchQuantities[key] || 0
+                            return (
+                              <div
+                                key={variant.id}
+                                className={`flex items-center justify-between rounded-xl border px-3 py-2 ${
+                                  variant.isSoldOut
+                                    ? "border-slate-100 bg-slate-50 opacity-50"
+                                    : qty > 0
+                                      ? "border-emerald-400 bg-emerald-50/50"
+                                      : "border-slate-200"
+                                }`}
+                              >
+                                <span className={`text-sm font-bold ${variant.isSoldOut ? "text-slate-400" : "text-slate-700"}`}>
+                                  {variant.size}
+                                  {variant.isSoldOut && <span className="ml-2 text-xs font-normal text-red-400">Habis</span>}
+                                </span>
+
+                                {!variant.isSoldOut && (
+                                  <div className="flex items-center gap-3">
+                                    <button
+                                      type="button"
+                                      onClick={() => updateMerchQty(item.id, variant.id, -1)}
+                                      disabled={qty === 0}
+                                      className="flex size-7 items-center justify-center rounded-full border border-slate-300 text-slate-600 transition-colors hover:border-emerald-500 hover:text-emerald-600 disabled:opacity-30"
+                                    >
+                                      <Minus className="h-3 w-3" />
+                                    </button>
+                                    <span className="w-5 text-center text-sm font-bold text-slate-900">{qty}</span>
+                                    <button
+                                      type="button"
+                                      onClick={() => updateMerchQty(item.id, variant.id, 1)}
+                                      disabled={qty >= variant.available}
+                                      className="flex size-7 items-center justify-center rounded-full bg-emerald-800 text-white transition-colors hover:bg-emerald-700 disabled:opacity-30"
+                                    >
+                                      <Plus className="h-3 w-3" />
+                                    </button>
+                                  </div>
+                                )}
+                              </div>
+                            )
+                          })}
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
             {/* TERMS & CONDITIONS — selalu tampil supaya bisa dibaca audience */}
             {event.termsConditions && (
               <div className="py-6">
@@ -415,6 +551,9 @@ export default function EventStorefrontPage() {
               <div>
                 <h2 className="mb-2 text-sm font-bold text-slate-900">Ringkasan Pesanan</h2>
                 <div className="space-y-2 rounded-2xl bg-slate-900 p-4">
+                  {totalTicketQty > 0 && (
+                    <p className="text-xs font-bold uppercase tracking-wide text-slate-400">Tiket</p>
+                  )}
                   {selectedItems.map((item) => {
                     const tt = event.ticketTypes.find((t) => t.id === item.ticketTypeId)!
                     return (
@@ -423,6 +562,23 @@ export default function EventStorefrontPage() {
                           {item.quantity}× {tt.name}
                         </span>
                         <span className="font-bold text-white">{IDR.format(tt.price * item.quantity)}</span>
+                      </div>
+                    )
+                  })}
+
+                  {totalMerchQty > 0 && (
+                    <p className="pt-2 text-xs font-bold uppercase tracking-wide text-slate-400">Merchandise</p>
+                  )}
+                  {selectedMerch.map((item) => {
+                    const mi = event.merchItems.find((m) => m.id === item.itemId)
+                    const variant = mi?.variants.find((v) => v.id === item.variantId)
+                    if (!mi) return null
+                    return (
+                      <div key={item.key} className="flex justify-between text-sm">
+                        <span className="text-slate-400">
+                          {item.quantity}× {mi.name} ({variant?.size})
+                        </span>
+                        <span className="font-bold text-white">{IDR.format(mi.price * item.quantity)}</span>
                       </div>
                     )
                   })}
@@ -484,23 +640,25 @@ export default function EventStorefrontPage() {
                       className="mt-1 w-full rounded-xl border border-slate-200 px-4 py-3 text-sm outline-none focus:ring-2 focus:ring-emerald-500"
                     />
                   </div>
-                  <div>
-                    <label className="text-xs font-bold uppercase tracking-wide text-slate-500">
-                      NIK KTP * <span className="ml-1 font-normal normal-case text-slate-400">(16 digit)</span>
-                    </label>
-                    <input
-                      type="text"
-                      value={buyerNik}
-                      onChange={(e) => setBuyerNik(e.target.value.replace(/\D/g, "").slice(0, 16))}
-                      inputMode="numeric"
-                      placeholder="Nomor induk kependudukan"
-                      maxLength={16}
-                      className="mt-1 w-full rounded-xl border border-slate-200 px-4 py-3 text-sm outline-none focus:ring-2 focus:ring-emerald-500"
-                    />
-                    <p className="mt-1 text-xs text-slate-400">
-                      Maks. 4 tiket per NIK per event. Data hanya digunakan untuk verifikasi.
-                    </p>
-                  </div>
+                  {totalTicketQty > 0 && (
+                    <div>
+                      <label className="text-xs font-bold uppercase tracking-wide text-slate-500">
+                        NIK KTP * <span className="ml-1 font-normal normal-case text-slate-400">(16 digit)</span>
+                      </label>
+                      <input
+                        type="text"
+                        value={buyerNik}
+                        onChange={(e) => setBuyerNik(e.target.value.replace(/\D/g, "").slice(0, 16))}
+                        inputMode="numeric"
+                        placeholder="Nomor induk kependudukan"
+                        maxLength={16}
+                        className="mt-1 w-full rounded-xl border border-slate-200 px-4 py-3 text-sm outline-none focus:ring-2 focus:ring-emerald-500"
+                      />
+                      <p className="mt-1 text-xs text-slate-400">
+                        Maks. 4 tiket per NIK per event. Data hanya digunakan untuk verifikasi.
+                      </p>
+                    </div>
+                  )}
                 </div>
               </div>
             )}
@@ -509,7 +667,7 @@ export default function EventStorefrontPage() {
             {totalQty === 0 && (
               <div className="hidden rounded-2xl border border-slate-200 bg-white p-6 text-center lg:block">
                 <Ticket className="mx-auto mb-2 h-8 w-8 text-slate-300" />
-                <p className="text-sm text-slate-400">Pilih tiket di sebelah kiri untuk melanjutkan</p>
+                <p className="text-sm text-slate-400">Pilih tiket atau merchandise di sebelah kiri untuk melanjutkan</p>
               </div>
             )}
 
@@ -529,10 +687,10 @@ export default function EventStorefrontPage() {
               ) : totalQty > 0 ? (
                 <>
                   <Ticket className="h-5 w-5" />
-                  Beli Tiket — {IDR.format(totalAmount)}
+                  Beli Sekarang — {IDR.format(totalAmount)}
                 </>
               ) : (
-                "Pilih Tiket untuk Melanjutkan"
+                "Pilih Tiket atau Merchandise"
               )}
             </button>
 

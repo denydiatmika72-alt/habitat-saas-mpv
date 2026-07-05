@@ -87,9 +87,30 @@ type Order = {
   buyerEmail: string
   totalAmount: number
   status: string
+  orderType?: string
   createdAt: string
   items: { quantity: number; ticketType: { name: string } }[]
+  merchItems?: { quantity: number; item: { name: string }; variant: { size: string } }[]
 }
+
+type MerchVariant = {
+  id: string
+  size: string
+  stock: number
+  sold: number
+}
+
+type MerchItem = {
+  id: string
+  name: string
+  description: string | null
+  price: number
+  imageUrl: string | null
+  isActive: boolean
+  variants: MerchVariant[]
+}
+
+const MERCH_SIZES = ["S", "M", "L", "XL", "XXL", "FREE SIZE"]
 
 const IDR = new Intl.NumberFormat("id-ID", { style: "currency", currency: "IDR", maximumFractionDigits: 0 })
 
@@ -127,6 +148,15 @@ export default function TicketsPage() {
   const [orders, setOrders] = useState<Order[]>([])
   const [loadingDetail, setLoadingDetail] = useState(false)
 
+  const [merchItems, setMerchItems] = useState<MerchItem[]>([])
+  const [newMerchName, setNewMerchName] = useState("")
+  const [newMerchDescription, setNewMerchDescription] = useState("")
+  const [newMerchPrice, setNewMerchPrice] = useState("")
+  const [newMerchVariants, setNewMerchVariants] = useState<Record<string, number>>({})
+  const [addingMerch, setAddingMerch] = useState(false)
+  const [merchError, setMerchError] = useState("")
+  const [uploadingMerchId, setUploadingMerchId] = useState<string | null>(null)
+
   const [newType, setNewType] = useState({ name: "", description: "", price: "", quota: "" })
   const [addingType, setAddingType] = useState(false)
   const [typeError, setTypeError] = useState("")
@@ -163,12 +193,13 @@ export default function TicketsPage() {
     if (!selectedEventId) return
     setLoadingDetail(true)
     try {
-      const [evRes, ttRes, ordRes] = await Promise.all([
+      const [evRes, ttRes, ordRes, merchRes] = await Promise.all([
         fetch(`/api/events/${selectedEventId}`, { headers: authHeaders() }),
         fetch(`/api/tickets/types?eventId=${selectedEventId}`, { headers: authHeaders() }),
         fetch(`/api/tickets/orders?eventId=${selectedEventId}`, { headers: authHeaders() }),
+        fetch(`/api/merch/items?eventId=${selectedEventId}`, { headers: authHeaders() }),
       ])
-      const [evData, ttData, ordData] = await Promise.all([evRes.json(), ttRes.json(), ordRes.json()])
+      const [evData, ttData, ordData, merchData] = await Promise.all([evRes.json(), ttRes.json(), ordRes.json(), merchRes.json()])
       if (evData.success) {
         setEvent(evData.data)
         setSaleStart(toLocalInputValue(evData.data.saleStartAt))
@@ -179,6 +210,7 @@ export default function TicketsPage() {
       }
       if (ttData.success) setTicketTypes(ttData.data)
       if (ordData.success) setOrders(ordData.data)
+      if (merchData.success) setMerchItems(merchData.data)
     } catch {}
     finally { setLoadingDetail(false) }
   }, [selectedEventId])
@@ -188,6 +220,7 @@ export default function TicketsPage() {
     setEvent(null)
     setTicketTypes([])
     setOrders([])
+    setMerchItems([])
     setDescription("")
     setSelectedFacilities([])
     setTermsConditions("")
@@ -265,6 +298,88 @@ export default function TicketsPage() {
     const data = await res.json()
     if (data.success) setTicketTypes((prev) => prev.filter((t) => t.id !== id))
     else alert(data.message || "Gagal menghapus jenis tiket.")
+  }
+
+  const handleAddMerch = async () => {
+    setMerchError("")
+    if (!newMerchName.trim() || !newMerchPrice) {
+      setMerchError("Nama produk dan harga wajib diisi.")
+      return
+    }
+    const variants = MERCH_SIZES
+      .filter((size) => (newMerchVariants[size] || 0) > 0)
+      .map((size) => ({ size, stock: newMerchVariants[size] }))
+    if (variants.length === 0) {
+      setMerchError("Isi stok minimal 1 size.")
+      return
+    }
+    setAddingMerch(true)
+    try {
+      const res = await fetch("/api/merch/items", {
+        method: "POST",
+        headers: authHeaders(),
+        body: JSON.stringify({
+          eventId: selectedEventId,
+          name: newMerchName.trim(),
+          description: newMerchDescription.trim() || undefined,
+          price: Number(newMerchPrice),
+          variants,
+        }),
+      })
+      const data = await res.json()
+      if (data.success) {
+        setMerchItems((prev) => [...prev, data.data])
+        setNewMerchName("")
+        setNewMerchDescription("")
+        setNewMerchPrice("")
+        setNewMerchVariants({})
+      } else {
+        setMerchError(data.message || "Gagal menambah produk.")
+      }
+    } catch {
+      setMerchError("Gagal menghubungi server.")
+    } finally {
+      setAddingMerch(false)
+    }
+  }
+
+  const handleToggleMerchActive = async (id: string, isActive: boolean) => {
+    const res = await fetch(`/api/merch/items/${id}`, {
+      method: "PATCH",
+      headers: authHeaders(),
+      body: JSON.stringify({ isActive }),
+    })
+    const data = await res.json()
+    if (data.success) setMerchItems((prev) => prev.map((m) => (m.id === id ? data.data : m)))
+  }
+
+  const handleDeleteMerch = async (id: string) => {
+    if (!confirm("Hapus produk merchandise ini?")) return
+    const res = await fetch(`/api/merch/items/${id}`, { method: "DELETE", headers: authHeaders() })
+    const data = await res.json()
+    if (data.success) setMerchItems((prev) => prev.filter((m) => m.id !== id))
+    else alert(data.message || "Gagal menghapus produk.")
+  }
+
+  const handleUploadMerchImage = async (id: string, file: File | null | undefined) => {
+    if (!file) return
+    setUploadingMerchId(id)
+    try {
+      const form = new FormData()
+      form.append("file", file)
+      const res = await fetch(`/api/merch/items/${id}/image`, {
+        method: "POST",
+        headers: { Authorization: `Bearer ${getToken()}` },
+        body: form,
+      })
+      const data = await res.json()
+      if (data.success) setMerchItems((prev) => prev.map((m) => (m.id === id ? { ...m, imageUrl: data.url } : m)))
+      else alert(data.message || "Gagal upload foto produk.")
+    } catch {
+      alert("Gagal menghubungi server.")
+    } finally {
+      setUploadingMerchId(null)
+    }
   }
 
   const requestApproval = async () => {
@@ -623,6 +738,137 @@ export default function TicketsPage() {
               </form>
             </div>
 
+            {/* Merchandise */}
+            <div className="rounded-xl border border-slate-200 bg-white p-5">
+              <div className="mb-4">
+                <p className="text-sm font-semibold text-slate-900">Merchandise</p>
+                <p className="mt-0.5 text-xs text-slate-400">Tambah produk yang dijual di storefront (opsional).</p>
+              </div>
+
+              {merchItems.length > 0 && (
+                <ul className="mb-4 flex flex-col gap-3">
+                  {merchItems.map((item) => (
+                    <li key={item.id} className="rounded-lg border border-slate-100 bg-slate-50 p-3">
+                      <div className="flex items-start gap-3">
+                        {/* Product image */}
+                        <div className="size-16 shrink-0 overflow-hidden rounded-xl border border-slate-200">
+                          {item.imageUrl ? (
+                            <img src={item.imageUrl} alt={item.name} className="size-full object-cover" />
+                          ) : (
+                            <label className="flex size-full cursor-pointer flex-col items-center justify-center bg-white hover:bg-slate-50">
+                              <Upload className="size-4 text-slate-300" />
+                              <span className="mt-1 text-[9px] text-slate-300">{uploadingMerchId === item.id ? "..." : "Foto"}</span>
+                              <input
+                                type="file"
+                                accept="image/jpeg,image/png,image/webp"
+                                className="hidden"
+                                disabled={uploadingMerchId === item.id}
+                                onChange={(e) => handleUploadMerchImage(item.id, e.target.files?.[0])}
+                              />
+                            </label>
+                          )}
+                        </div>
+
+                        <div className="min-w-0 flex-1">
+                          <div className="flex items-center justify-between gap-2">
+                            <p className="truncate text-sm font-bold text-slate-900">{item.name}</p>
+                            <div className="flex shrink-0 items-center gap-2">
+                              <ToggleSwitch checked={item.isActive} onChange={() => handleToggleMerchActive(item.id, !item.isActive)} />
+                              <button onClick={() => handleDeleteMerch(item.id)} className="flex size-7 items-center justify-center rounded-md text-slate-400 hover:bg-red-50 hover:text-red-500">
+                                <Trash2 className="size-3.5" />
+                              </button>
+                            </div>
+                          </div>
+                          <p className="text-sm font-bold text-emerald-700">{IDR.format(item.price)}</p>
+                          {item.imageUrl && (
+                            <label className="mt-0.5 inline-block cursor-pointer text-[11px] text-emerald-600 hover:underline">
+                              {uploadingMerchId === item.id ? "Mengupload..." : "Ganti foto"}
+                              <input
+                                type="file"
+                                accept="image/jpeg,image/png,image/webp"
+                                className="hidden"
+                                disabled={uploadingMerchId === item.id}
+                                onChange={(e) => handleUploadMerchImage(item.id, e.target.files?.[0])}
+                              />
+                            </label>
+                          )}
+                          <div className="mt-2 flex flex-wrap gap-1.5">
+                            {item.variants.map((v) => (
+                              <span
+                                key={v.id}
+                                className={`rounded-lg border px-2 py-1 text-[11px] ${
+                                  v.sold >= v.stock
+                                    ? "border-red-200 bg-red-50 text-red-500"
+                                    : "border-slate-200 bg-white text-slate-600"
+                                }`}
+                              >
+                                {v.size} <span className="text-slate-400">({v.stock - v.sold} sisa)</span>
+                              </span>
+                            ))}
+                          </div>
+                        </div>
+                      </div>
+                    </li>
+                  ))}
+                </ul>
+              )}
+
+              {/* Add new merch */}
+              <div className="rounded-lg border-2 border-dashed border-slate-200 p-4">
+                <p className="mb-3 text-xs font-medium text-slate-500">Tambah Produk Merchandise</p>
+                <div className="flex flex-col gap-2">
+                  <input
+                    value={newMerchName}
+                    onChange={(e) => setNewMerchName(e.target.value)}
+                    placeholder="Nama produk (contoh: Kaos Malekolo Fest)"
+                    className="rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500/30"
+                  />
+                  <input
+                    value={newMerchDescription}
+                    onChange={(e) => setNewMerchDescription(e.target.value)}
+                    placeholder="Deskripsi (opsional)"
+                    className="rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500/30"
+                  />
+                  <input
+                    type="number"
+                    min={0}
+                    value={newMerchPrice}
+                    onChange={(e) => setNewMerchPrice(e.target.value)}
+                    placeholder="Harga (Rp) — sama untuk semua size"
+                    className="rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500/30"
+                  />
+                  <div>
+                    <p className="mb-2 text-xs font-medium text-slate-500">Size &amp; Stok</p>
+                    <div className="grid grid-cols-2 gap-2">
+                      {MERCH_SIZES.map((size) => (
+                        <div key={size} className="flex items-center gap-2 rounded-lg border border-slate-200 px-3 py-2">
+                          <span className="w-14 shrink-0 text-xs font-bold text-slate-600">{size}</span>
+                          <input
+                            type="number"
+                            min={0}
+                            value={newMerchVariants[size] ?? ""}
+                            onChange={(e) => setNewMerchVariants((prev) => ({ ...prev, [size]: parseInt(e.target.value) || 0 }))}
+                            placeholder="0"
+                            className="w-full min-w-0 border-0 bg-transparent text-center text-sm outline-none"
+                          />
+                          <span className="shrink-0 text-xs text-slate-400">pcs</span>
+                        </div>
+                      ))}
+                    </div>
+                    <p className="mt-2 text-xs text-slate-400">Kosongkan atau isi 0 jika size tidak tersedia.</p>
+                  </div>
+                  {merchError && <p className="rounded-lg bg-red-50 px-3 py-2 text-xs text-red-600">{merchError}</p>}
+                  <button
+                    onClick={handleAddMerch}
+                    disabled={addingMerch}
+                    className="flex items-center justify-center gap-1.5 rounded-lg bg-emerald-800 py-2 text-sm font-semibold text-white transition-colors hover:bg-emerald-900 disabled:opacity-50"
+                  >
+                    <Plus className="size-4" /> {addingMerch ? "Menambahkan..." : "Tambah Merchandise"}
+                  </button>
+                </div>
+              </div>
+            </div>
+
             {/* Banner + Logo upload */}
             <div className="rounded-xl border border-slate-200 bg-white p-5">
               <p className="mb-4 text-sm font-semibold text-slate-900">Tampilan Storefront</p>
@@ -936,9 +1182,16 @@ export default function TicketsPage() {
                         <div className="min-w-0">
                           <p className="truncate text-sm font-semibold text-slate-900">{o.buyerName}</p>
                           <p className="truncate text-xs text-slate-500">{o.buyerEmail}</p>
-                          <p className="mt-1 text-xs text-slate-400">
-                            {o.items.map((i) => `${i.ticketType.name}×${i.quantity}`).join(", ")}
-                          </p>
+                          {o.items.length > 0 && (
+                            <p className="mt-1 text-xs text-slate-400">
+                              {o.items.map((i) => `${i.ticketType.name}×${i.quantity}`).join(", ")}
+                            </p>
+                          )}
+                          {o.merchItems && o.merchItems.length > 0 && (
+                            <p className="mt-0.5 text-xs text-slate-400">
+                              🛍 {o.merchItems.map((m) => `${m.item.name} (${m.variant.size})×${m.quantity}`).join(", ")}
+                            </p>
+                          )}
                         </div>
                         <div className="shrink-0 text-right">
                           <p className="text-sm font-semibold text-slate-900">{IDR.format(o.totalAmount)}</p>

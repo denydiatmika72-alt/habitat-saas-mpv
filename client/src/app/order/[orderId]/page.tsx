@@ -24,6 +24,7 @@ declare global {
 
 type Ticket = { id: string; ticketCode: string; attendeeName: string | null; isUsed: boolean }
 type OrderItem = { id: string; quantity: number; price: number; ticketType: { name: string; price: number }; tickets: Ticket[] }
+type MerchOrderItem = { id: string; quantity: number; price: number; item: { name: string; imageUrl: string | null }; variant: { size: string } }
 type Order = {
   orderId: string
   status: "pending" | "paid" | "expired" | "cancelled"
@@ -34,6 +35,7 @@ type Order = {
   midtransToken: string | null
   event: { title: string; location: string; event_date: string; slug: string | null }
   items: OrderItem[]
+  merchItems?: MerchOrderItem[]
 }
 
 const IDR = new Intl.NumberFormat("id-ID", { style: "currency", currency: "IDR", maximumFractionDigits: 0 })
@@ -182,18 +184,37 @@ export default function OrderStatusPage() {
               <div className="mt-6 flex flex-col items-center gap-2 rounded-xl border border-emerald-200 bg-emerald-50 p-6 text-center">
                 <CheckCircle2 className="size-8 text-emerald-700" />
                 <p className="text-sm font-semibold text-emerald-800">Pembayaran Berhasil</p>
-                <p className="text-xs text-emerald-700">Tiket Anda sudah dikirim ke {order.buyerEmail}</p>
+                <p className="text-xs text-emerald-700">Detail pesanan sudah dikirim ke {order.buyerEmail}</p>
               </div>
 
-              <div className="mt-6 flex flex-col gap-3">
-                <p className="text-sm font-semibold text-slate-900">Tiket Anda ({allTickets.length})</p>
-                {allTickets.map((t) => (
-                  <div key={t.id} className="rounded-xl border border-slate-200 p-4">
-                    <p className="text-xs font-medium text-slate-500">{t.typeName}</p>
-                    <p className="mt-1 font-mono text-sm font-semibold text-slate-900">{t.ticketCode}</p>
+              {allTickets.length > 0 && (
+                <div className="mt-6 flex flex-col gap-3">
+                  <p className="text-sm font-semibold text-slate-900">Tiket Anda ({allTickets.length})</p>
+                  {allTickets.map((t) => (
+                    <div key={t.id} className="rounded-xl border border-slate-200 p-4">
+                      <p className="text-xs font-medium text-slate-500">{t.typeName}</p>
+                      <p className="mt-1 font-mono text-sm font-semibold text-slate-900">{t.ticketCode}</p>
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              {(order.merchItems?.length ?? 0) > 0 && (
+                <div className="mt-6 flex flex-col gap-3">
+                  <p className="text-sm font-semibold text-slate-900">Merchandise Anda</p>
+                  <div className="rounded-xl border border-slate-200 p-4">
+                    {order.merchItems!.map((m) => (
+                      <p key={m.id} className="text-sm text-slate-600">
+                        • {m.item.name} ({m.variant.size}) × {m.quantity}
+                      </p>
+                    ))}
+                    <p className="mt-3 border-t border-slate-100 pt-3 text-xs text-slate-500">
+                      Tunjukkan barcode pickup di email konfirmasi (Order ID:{" "}
+                      <span className="font-mono font-semibold text-slate-700">{order.orderId}</span>) saat pengambilan merchandise di venue.
+                    </p>
                   </div>
-                ))}
-              </div>
+                </div>
+              )}
 
               <a
                 href={`https://wa.me/?text=${waText}`}
@@ -212,6 +233,12 @@ export default function OrderStatusPage() {
               <div key={item.id} className="flex items-center justify-between text-sm text-slate-600">
                 <span>{item.ticketType.name} × {item.quantity}</span>
                 <span>{IDR.format(item.price * item.quantity)}</span>
+              </div>
+            ))}
+            {order.merchItems?.map((m) => (
+              <div key={m.id} className="flex items-center justify-between text-sm text-slate-600">
+                <span>{m.item.name} ({m.variant.size}) × {m.quantity}</span>
+                <span>{IDR.format(m.price * m.quantity)}</span>
               </div>
             ))}
             <div className="mt-3 flex items-center justify-between border-t border-slate-200 pt-3">

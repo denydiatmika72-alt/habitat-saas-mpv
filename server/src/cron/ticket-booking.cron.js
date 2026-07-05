@@ -6,13 +6,16 @@ cron.schedule('* * * * *', async () => {
   try {
     const expiredOrders = await prisma.ticketOrder.findMany({
       where: { status: 'pending', expiredAt: { lt: new Date() } },
-      include: { items: true },
+      include: { items: true, merchItems: true },
     });
 
     for (const order of expiredOrders) {
       await prisma.$transaction([
         ...order.items.map((item) =>
           prisma.ticketType.update({ where: { id: item.ticketTypeId }, data: { sold: { decrement: item.quantity } } })
+        ),
+        ...order.merchItems.map((m) =>
+          prisma.merchVariant.update({ where: { id: m.variantId }, data: { sold: { decrement: m.quantity } } })
         ),
         prisma.ticketOrder.update({ where: { id: order.id }, data: { status: 'expired' } }),
       ]);

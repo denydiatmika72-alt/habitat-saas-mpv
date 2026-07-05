@@ -222,7 +222,10 @@ const getOrdersByEvent = async (req, res) => {
     const orders = await prisma.ticketOrder.findMany({
       where: { eventId },
       orderBy: { createdAt: 'desc' },
-      include: { items: { include: { ticketType: { select: { name: true } } } } },
+      include: {
+        items: { include: { ticketType: { select: { name: true } } } },
+        merchItems: { include: { item: { select: { name: true } }, variant: { select: { size: true } } } },
+      },
     });
 
     return res.json({ success: true, data: orders });

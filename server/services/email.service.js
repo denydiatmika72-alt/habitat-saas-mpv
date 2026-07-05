@@ -1,6 +1,9 @@
 const { Resend } = require('resend');
 const QRCode = require('qrcode');
+const prisma = require('../src/lib/prisma');
 const resend = new Resend(process.env.RESEND_API_KEY);
+
+const IDR = (n) => `Rp ${Number(n || 0).toLocaleString('id-ID')}`;
 
 const sendNewUserNotification = async (user) => {
   try {
@@ -102,52 +105,91 @@ const sendProExpiryReminder = async (user, daysLeft) => {
   }
 };
 
-// tickets: [{ ticketCode, ticketTypeName }]
-const sendTicketEmail = async ({ buyerName, buyerEmail, orderId, eventTitle, tickets }) => {
+// Email konfirmasi pesanan storefront — handle 3 tipe: tiket, merch, bundling.
+// order: TicketOrder lengkap dengan { event, items(+ticketType), merchItems(+item,+variant) }.
+const sendOrderEmail = async (order) => {
   try {
-    const ticketHTML = await Promise.all(
-      tickets.map(async (ticket) => {
-        const qrDataUrl = await QRCode.toDataURL(ticket.ticketCode, { width: 200 });
-        return `
-          <div style="border:1px solid #e2e8f0; padding:16px; margin:16px 0; border-radius:8px;">
-            <h3 style="margin:0 0 8px;color:#065f46">${ticket.ticketTypeName}</h3>
-            <p style="margin:0 0 8px">Kode: <strong style="font-family:monospace">${ticket.ticketCode}</strong></p>
-            <img src="${qrDataUrl}" alt="QR Code" width="200" height="200" />
-            <p style="font-size:12px;color:#64748b;margin-top:8px">Tunjukkan QR code ini saat masuk venue.</p>
-          </div>
-        `;
-      })
-    );
+    const eventTitle = order.event?.title || 'Event';
+    let bodyHTML = '';
 
-    const orderUrl = `https://nexeventapp.tech/order/${orderId}`;
+    // ===== Bagian E-Ticket (kalau ada) =====
+    if (order.items && order.items.length > 0) {
+      const tickets = await prisma.ticket.findMany({
+        where: { orderItem: { orderId: order.id } },
+        include: { orderItem: { include: { ticketType: true } } },
+      });
+
+      if (tickets.length > 0) {
+        const ticketHTML = await Promise.all(
+          tickets.map(async (ticket) => {
+            const qrDataUrl = await QRCode.toDataURL(ticket.ticketCode, { width: 200 });
+            const typeName = ticket.orderItem?.ticketType?.name || 'Tiket';
+            return `
+              <div style="border:1px solid #e2e8f0; padding:16px; margin:16px 0; border-radius:8px;">
+                <h3 style="margin:0 0 8px;color:#065f46">${typeName}</h3>
+                <p style="margin:0 0 8px">Kode: <strong style="font-family:monospace">${ticket.ticketCode}</strong></p>
+                <img src="${qrDataUrl}" alt="QR Code" width="200" height="200" />
+                <p style="font-size:12px;color:#64748b;margin-top:8px">Tunjukkan QR code ini saat masuk venue.</p>
+              </div>
+            `;
+          })
+        );
+        bodyHTML += `<h2 style="color:#065f46;font-size:18px;margin-top:24px">E-Ticket Anda</h2>${ticketHTML.join('')}`;
+      }
+    }
+
+    // ===== Bagian Merchandise (kalau ada) =====
+    if (order.merchItems && order.merchItems.length > 0) {
+      const pickupBarcode = await QRCode.toDataURL(`MERCH-${order.orderId}`, { width: 200 });
+      const merchLines = order.merchItems
+        .map(
+          (m) =>
+            `<p style="margin:4px 0">• ${m.item?.name || 'Produk'} (${m.variant?.size || '-'}) × ${m.quantity} — ${IDR(m.price * m.quantity)}</p>`
+        )
+        .join('');
+
+      bodyHTML += `
+        <h2 style="color:#065f46;font-size:18px;margin-top:24px">Merchandise Anda</h2>
+        <div style="border:1px solid #e2e8f0; padding:16px; margin:16px 0; border-radius:8px;">
+          <h3 style="margin:0 0 8px;color:#0f172a">Invoice Pickup Merchandise</h3>
+          <p style="margin:0 0 8px">Order ID: <strong style="font-family:monospace">${order.orderId}</strong></p>
+          ${merchLines}
+          <p style="margin:8px 0"><strong>Total pesanan: ${IDR(order.totalAmount)}</strong></p>
+          <img src="${pickupBarcode}" alt="Barcode Pickup" width="200" height="200" />
+          <p style="font-size:12px;color:#64748b;margin-top:8px">Tunjukkan barcode ini saat pengambilan merchandise di venue.</p>
+        </div>
+      `;
+    }
+
+    const orderUrl = `https://nexeventapp.tech/order/${order.orderId}`;
     const waText = encodeURIComponent(
-      `Tiket nexEvent saya untuk ${eventTitle}:\n${tickets.map((t) => t.ticketCode).join(', ')}\n\nCek detail tiket di: ${orderUrl}`
+      `Pesanan saya untuk ${eventTitle} — Order ID: ${order.orderId}\n\nCek detail di: ${orderUrl}`
     );
 
     await resend.emails.send({
       from: 'nexEvent <noreply@nexeventapp.tech>',
-      to: [buyerEmail],
-      subject: `Tiket Anda untuk ${eventTitle} — nexEvent`,
+      to: [order.buyerEmail],
+      subject: `Konfirmasi Pesanan — ${eventTitle} | nexEvent`,
       html: `
         <div style="font-family:sans-serif;max-width:520px;margin:0 auto;color:#0f172a">
-          <h1 style="color:#065f46;font-size:20px">Terima kasih, ${buyerName}!</h1>
-          <p>Pembayaran Anda telah dikonfirmasi. Berikut tiket Anda untuk <strong>${eventTitle}</strong>:</p>
-          ${ticketHTML.join('')}
+          <h1 style="color:#065f46;font-size:20px">Terima kasih, ${order.buyerName}!</h1>
+          <p>Pembayaran Anda telah dikonfirmasi. Berikut detail pesanan untuk <strong>${eventTitle}</strong>:</p>
+          ${bodyHTML}
           <p style="margin-top:16px">
             <a href="https://wa.me/?text=${waText}" style="background:#25D366;color:white;padding:12px 24px;border-radius:8px;text-decoration:none;display:inline-block;font-weight:600">
               Bagikan ke WhatsApp
             </a>
           </p>
           <p style="font-size:12px;color:#64748b;margin-top:24px">
-            Simpan email ini. Tiket ini adalah bukti pembelian Anda yang sah. Lihat detail pesanan di: <a href="${orderUrl}" style="color:#065f46">${orderUrl}</a>
+            Simpan email ini sebagai bukti pembelian Anda yang sah. Lihat detail pesanan di: <a href="${orderUrl}" style="color:#065f46">${orderUrl}</a>
           </p>
         </div>
       `,
     });
-    console.log(`[EMAIL] E-ticket terkirim ke ${buyerEmail} (order ${orderId})`);
+    console.log(`[EMAIL] Konfirmasi pesanan terkirim ke ${order.buyerEmail} (order ${order.orderId}, tipe ${order.orderType})`);
   } catch (error) {
-    console.error('[EMAIL] Gagal kirim e-ticket:', error.message);
+    console.error('[EMAIL] Gagal kirim konfirmasi pesanan:', error.message);
   }
 };
 
-module.exports = { sendNewUserNotification, sendSponsorCredential, sendProExpiryReminder, sendTicketEmail };
+module.exports = { sendNewUserNotification, sendSponsorCredential, sendProExpiryReminder, sendOrderEmail };
