@@ -806,3 +806,39 @@ File ini adalah log permanen bug yang sudah pernah terjadi di project ini besert
   - **Mobile**: environment browser (Claude in Chrome) MENGUNCI layout viewport di 1278px — `resize_window` mengubah `outerWidth` (mis. 516) tapi `innerWidth`/`matchMedia('(min-width:1024px)')` tetap desktop, jadi screenshot mobile asli TIDAK bisa diambil di sesi ini. Sebagai gantinya, layout `<1024px` direproduksi setia via override DOM sementara di tab lokal (grid → `display:block`, kartu `hidden lg:block` → `display:none`, container di-narrow ke 430px) — screenshot konfirmasi urutan 1 kolom benar (banner → judul → about → fasilitas → tiket → T&C → ringkasan → form → tombol beli → trust → footer), kartu info-ringkas & empty-state tersembunyi. Override hanya inline style di tab agent, TIDAK persist ke server/user lain.
 - Pelajaran tooling: `resize_window` di Claude-in-Chrome TIDAK menurunkan CSS layout viewport (terpaku ~1278px) — media query responsif tidak bisa dites dengan mengecilkan window di environment ini. Untuk verifikasi breakpoint, andalkan (a) computed style + `window.innerWidth`/`matchMedia` di viewport desktop, dan (b) reproduksi manual layout mobile via override DOM sementara (drop class `lg:` ke fallback base-nya) lalu screenshot.
 - Tag: #storefront #ui #layout #responsive #2-column #sticky #tailwind #e2e-verified #tooling-lesson
+
+---
+
+## [2026-07-05] Merchandise Storefront — implementasi baru (tiket + merch + bundling dalam satu checkout)
+
+- Gejala: (Bukan bug — catatan implementasi fitur baru) Storefront publik sekarang bisa jual merchandise (kaos dll) berdampingan dengan tiket dalam satu order Midtrans, sesuai keputusan final spec Merchandise + Bundling.
+- Root cause: N/A — fitur roadmap #14 (Merchandise + Bundling).
+- File terkait:
+  - `server/prisma/schema.prisma` — model baru `MerchItem` (produk, harga sama semua size), `MerchVariant` (size + stock + sold, `@@unique([merchItemId, size])`), `MerchOrderItem` (FK ke `TicketOrder` — reuse sistem order tiket); `TicketOrder.orderType` (`"ticket" | "merch" | "bundling"`)
+  - `server/controllers/merch.controller.js` (baru) — CRUD item/varian + upload foto ke Supabase Storage bucket `event-assets` path `merch/{eventId}/{itemId}/{timestamp}.{ext}`; delete ditolak 400 kalau item sudah pernah diorder (nonaktifkan saja); ownership check via `event.promotor_id`
+  - `server/routes/merch.routes.js` (baru) + registrasi `/api/merch` di `server/src/index.js`
+  - `server/controllers/storefront.controller.js` — `getEventStorefront` include `merchItems` aktif + `available`/`isSoldOut` per varian; `createOrder` terima `ticketItems` + `merchItems` (fallback ke `items` lama supaya backward-compatible), reservasi stok tiket+merch dalam SATU `$transaction`, `orderType` otomatis, order ID `nexevent-{orderType}-...`
+  - `server/controllers/payment.controller.js` — webhook route semua prefix `nexevent-(ticket|merch|bundling)-` ke handler yang sama; saat expire/cancel stok merch ikut di-release (`merchVariant.sold` decrement); email pakai `sendOrderEmail`
+  - `server/src/cron/ticket-booking.cron.js` — release stok merch untuk order pending yang timeout 15 menit
+  - `server/services/email.service.js` — `sendTicketEmail` diganti `sendOrderEmail(order)`: section e-ticket QR (kalau ada tiket) + section "Invoice Pickup Merchandise" dengan barcode QR `MERCH-{orderId}` (kalau ada merch)
+  - `client/src/app/dashboard/tickets/page.tsx` — section "Merchandise": list produk (foto, toggle aktif, hapus, chip size dengan sisa stok, badge merah kalau habis) + form tambah produk (nama/deskripsi/harga + grid size S–FREE SIZE dengan stok per size)
+  - `client/src/app/event/[slug]/page.tsx` — section "Merchandise" di kolom kiri (card produk + selektor size & jumlah per varian), ringkasan pesanan gabungan Tiket/Merchandise di kolom kanan, tombol "Beli Sekarang"
+  - `client/src/app/order/[orderId]/page.tsx` — render item merch di ringkasan + info pickup (Order ID) untuk order paid
+- Fix/Implementasi (aturan bisnis kunci):
+  - NIK 16 digit HANYA wajib kalau order mengandung tiket (anti-calo) — order merch-only tidak butuh NIK, field NIK di form storefront disembunyikan kalau tidak ada tiket dipilih. `buyerNik` disimpan `""` untuk merch-only (kolom non-nullable).
+  - Limit 4 tiket per NIK hanya menghitung item tiket, merch tidak dihitung.
+  - Fee platform + pajak 10% dihitung dari subtotal gabungan (tiket + merch), logika fee bearer tidak berubah.
+  - Merch TIDAK menghasilkan record `Ticket`/QR per pcs — bukti pengambilan adalah barcode pickup `MERCH-{orderId}` di email, satu barcode per order.
+- Verifikasi: `npx prisma db push` sukses ke Supabase + `npx prisma generate`; `node --check` lolos semua file server; `npm run build` client sukses tanpa error TypeScript. Deploy backend ke VPS TIDAK bisa dilakukan dari PC ini (SSH key hanya ada di PC rumah — lihat catatan sesi) sehingga verifikasi E2E pembelian (email barcode, sold counter) masih pending setelah `deploy.sh` dijalankan.
+- Tag: #merchandise #storefront #bundling #prisma #schema #midtrans #email #supabase-storage
+
+---
+
+## [2026-07-05] Kunci merchQuantities pakai pemisah "-" korup karena UUID mengandung "-"
+
+- Gejala: (Ditemukan saat review sebelum deploy, belum sempat terjadi di production) Di storefront publik, subtotal merchandise akan selalu Rp 0, item merch tidak muncul di ringkasan pesanan, dan `variantId` yang dikirim ke backend salah → order merch pasti gagal ("Varian merchandise tidak ditemukan").
+- Root cause: State `merchQuantities` di `event/[slug]/page.tsx` memakai kunci `` `${itemId}-${variantId}` `` lalu di-parse balik dengan `key.split("-")`. Kedua ID adalah UUID (format 8-4-4-4-12) yang mengandung banyak karakter `-`, sehingga `split("-")` menghasilkan `itemId` = segmen 8-hex pertama saja dan `variantId` = segmen kedua UUID pertama — dua-duanya bukan ID valid. (Spec task aslinya memang menulis pola ini — spec bug.)
+- File terkait: `client/src/app/event/[slug]/page.tsx`
+- Fix: Ganti pemisah kunci dari `-` ke `::` (tidak mungkin muncul di UUID) di 3 tempat: konstruksi key di render varian, konstruksi key di `updateMerchQty`, dan parsing di `selectedMerch` (`key.split("::")`).
+- Pelajaran: Jangan pernah gabungkan dua UUID dengan pemisah `-` untuk kunci komposit — pakai pemisah yang tidak ada di charset UUID (`::`, `|`) atau simpan sebagai object/nested map.
+- Tag: #storefront #merchandise #uuid #composite-key #frontend #state
