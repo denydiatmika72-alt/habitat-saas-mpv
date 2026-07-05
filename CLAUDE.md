@@ -358,6 +358,80 @@ Data platform disimpan di DB untuk analytics internal.
 - logoUrl: String? — logo event di storefront
 - platformFeePercent: Float? — fee platform khusus untuk event ini (override default)
 
+## Storefront Feature Roadmap (Urutan Pengerjaan)
+
+Fitur-fitur berikut wajib diselesaikan untuk kesiapan penuh nexEvent.
+Dikerjakan SATU PER SATU sesuai urutan (ada ketergantungan teknis antar fitur).
+Prinsip: selesai tuntas per fitur, bukan banyak yang setengah jadi.
+
+### 1. Bundling Paket Kurasi (SEDANG BERJALAN)
+Promotor buat paket khusus, contoh: "Tiket VIP + Kaos = Rp 200.000".
+
+Keputusan final:
+- Harga: promotor input harga TOTAL paket langsung (bukan sistem hitung diskon)
+- Isi paket: fleksibel — kombinasi bebas (1 tiket + 1 baju, 2 baju + 1 tiket, dll)
+- Stok paket: MENGAMBIL dari stok tiket & merch yang sudah ada (bukan kuota terpisah)
+  → saat paket terjual, stok tiket DAN stok merch yang jadi isinya ikut berkurang
+  → sistem harus cek ketersediaan SEMUA item dalam paket sebelum izinkan beli
+- NIK limit: paket yang mengandung tiket TETAP kena aturan max 4 tiket per NIK
+- Fee: pakai bundlingFeePercent (sudah diimplementasi)
+
+PENTING — Ubah perilaku checkout saat ini:
+- SEKARANG: beli tiket + merch bersamaan otomatis dianggap "bundling"
+- HARUS DIUBAH: beli tiket + merch biasa TETAP TERPISAH (fee tiket untuk tiket, 
+  fee merch untuk merch) — BUKAN otomatis bundling
+- "Bundling" HANYA berlaku untuk paket kurasi yang sengaja dibuat promotor
+
+### 2. Edit Stok + Pindah Stok Antar Jenis Tiket
+Fitur operasional untuk promotor mengelola stok setelah storefront live.
+
+Keputusan final:
+- Syarat bisa edit stok: storefront sudah approved DAN fee sudah diset admin
+- Edit stok merch: sudah ada (updateVariantStock) — verifikasi UI-nya
+- Edit stok tiket: cek apakah UI sudah ada, kalau belum → bangun
+- Pindah stok antar jenis tiket: contoh geser sisa Early Bird → Presale 1
+  → TIDAK ada pembatasan jumlah pindah — hak & tanggung jawab promotor
+- Format number di SEMUA input harga: auto pemisah ribuan (ketik 200000 → 200.000)
+  → berlaku untuk harga tiket, merch, bundling, top-up petty cash, dll
+- SATU-SATUNYA batas teknis: stok tidak boleh diset di bawah jumlah yang SUDAH TERJUAL
+  (bukan aturan kebijakan, tapi perlindungan agar tiket terjual tidak hilang)
+
+### 3. Box Office Offline (Ticket Box)
+UI khusus penjualan tiket offline di lokasi fisik.
+
+Konteks pasar: Bali & komunitas belum siap online-only. Cash masih dominan.
+Pendekatan: cash TETAP masuk sistem (bukan cashless-only).
+
+Keputusan final:
+- Promotor generate QR/barcode unik per event untuk box office
+- Panitia di lokasi scan QR → pembeli isi data via HP sendiri
+- Penanda metode bayar: CASH atau TRANSFER (wajib dicatat)
+- Metode bayar ini jadi DASAR perhitungan hutang fee promotor ke nexEvent
+- Butuh UI baru khusus transaksi offline + ticket box
+
+### 4. Sistem Hutang Fee (Rekonsiliasi)
+Bergantung pada Box Office Offline (#3) — kerjakan setelah #3 selesai.
+
+Konteks: transaksi cash tidak lewat Midtrans, jadi fee tidak terpotong otomatis.
+Solusi: fee dari transaksi cash dicatat sebagai PIUTANG nexEvent ke promotor.
+
+Keputusan final:
+- Setiap tiket offline bertanda "cash" → fee tercatat sebagai hutang promotor
+- Butuh dashboard rekonsiliasi: total fee terhutang per promotor
+- Mekanisme penekan promotor nakal: BELUM DIPUTUSKAN
+  (opsi: blokir buka event baru sampai lunas, ATAU deposit di muka)
+
+### 5. Scanner Tiket (Validasi di Venue) — DETAIL BELUM DIBAHAS
+Validasi QR tiket saat penukaran/masuk venue.
+
+Status: dicatat sebagai roadmap, detail dibahas nanti saat gilirannya.
+Fondasi SUDAH ADA:
+- Setiap Ticket punya ticketCode unik
+- Setiap Ticket punya field isUsed (Boolean) + usedAt
+Yang BELUM diputuskan:
+- Akses scanner: link bebas (siapapun panitia bisa scan) VS akun petugas khusus
+- Idealnya web-based (buka kamera HP → scan → validasi real-time, tanpa install app)
+
 ## Next Priority (Roadmap)
 
 1. ✅ Expense Tracker
@@ -366,19 +440,15 @@ Data platform disimpan di DB untuk analytics internal.
 4. ✅ Sponsor Auth Redesign
 5. ✅ Midtrans Pro Payment (Rp 499.000/event, 90 hari)
 6. ✅ Security Fix (Admin panel protection + Lock UI consistency)
-7. ✅ Storefront Ticketing B2C (Live — tapi belum ada fee)
-8. 🔴 Fee Platform Implementation (URGENT — keputusan sudah final, siap dikoding)
-   → Default 3.5%, min 1.5%, diatur admin per promotor
-   → Promotor pilih siapa yang menanggung (penonton/promotor)
-   → Wajib pilih sebelum bisa ajukan approval storefront
-   → Fields baru: Event.feeBearer, Event.platformFeePercent, TicketOrder.feeAmount, TicketOrder.feeBearer
-9. UI Storefront Redesign (banner + logo upload + desain lebih menarik)
-10. Pajak 10% opsional per event
-11. Toggle aktif/nonaktif jenis tiket (UX improvement)
+7. ✅ Storefront Ticketing B2C (Live)
+8. ✅ Fee Platform Implementation (fee per tipe order + kelola fee editable di admin)
+9. ✅ Merchandise Storefront + Approval
+10. 🔴 URGENT: Midtrans Production (menunggu approval KYC — sistem masih Sandbox)
+11. Storefront advanced features → lihat section "Storefront Feature Roadmap"
+    (Bundling paket kurasi, edit/pindah stok, box office offline, hutang fee, scanner tiket)
 12. Ticket Sales Manual Input (untuk promotor yang pakai platform lain)
 13. Event Summary Report (kirim via email saat event selesai)
-14. Merchandise + Bundling (sprint terpisah)
-15. CRON Job booking timeout (sudah ada — verifikasi)
+14. CRON Job booking timeout (sudah ada — verifikasi)
 
 _Update bagian ini setiap prioritas berubah, supaya Claude Code dan Claude.ai selalu tahu fokus development saat ini._
 
