@@ -842,3 +842,24 @@ File ini adalah log permanen bug yang sudah pernah terjadi di project ini besert
 - Fix: Ganti pemisah kunci dari `-` ke `::` (tidak mungkin muncul di UUID) di 3 tempat: konstruksi key di render varian, konstruksi key di `updateMerchQty`, dan parsing di `selectedMerch` (`key.split("::")`).
 - Pelajaran: Jangan pernah gabungkan dua UUID dengan pemisah `-` untuk kunci komposit — pakai pemisah yang tidak ada di charset UUID (`::`, `|`) atau simpan sebagai object/nested map.
 - Tag: #storefront #merchandise #uuid #composite-key #frontend #state
+
+---
+
+## [2026-07-05] Fee terpisah per tipe order + pajak hanya tiket + approval merchandise — revisi aturan bisnis
+
+- Gejala: (Bukan bug — revisi keputusan bisnis atas implementasi merchandise sebelumnya) Tiga aturan baru menggantikan single-fee: (1) pajak 10% HANYA dari subtotal tiket, merch TIDAK pernah kena pajak; (2) fee platform dipisah 3 tipe — `ticketFeePercent`, `merchFeePercent`, `bundlingFeePercent` — diset admin per event saat approval storefront; (3) merchandise baru wajib di-approve admin sebelum tampil di storefront publik.
+- Root cause: N/A — revisi spec.
+- File terkait:
+  - `server/prisma/schema.prisma` — Event: +`ticketFeePercent`/`merchFeePercent`/`bundlingFeePercent` (Float?, `platformFeePercent` DIPERTAHANKAN sebagai fallback legacy untuk event lama); MerchItem: +`approvalStatus` (default `"pending"`) + `approvalNote`
+  - `server/controllers/storefront.controller.js` — `createOrder`: subtotal dihitung terpisah (`ticketSubtotal`/`merchSubtotal`), `taxAmount = round(ticketSubtotal * 0.1)` (BUKAN subtotal gabungan), fee dipilih per `orderType` dengan fallback chain **fee spesifik → platformFeePercent → 3.5**, item Midtrans pajak dilabel `"Pajak Tiket (10%)"`; validasi order merch menolak item `approvalStatus !== "approved"`; `getEventStorefront` filter merch `approvalStatus: 'approved'` (field fee baru otomatis ter-expose karena query pakai `include` tanpa `select` — lihat pelajaran entry 2026-07-03)
+  - `server/controllers/merch.controller.js` — 3 handler admin baru: `getMerchApprovalRequests` (include event title + promotor), `approveMerchItem`, `rejectMerchItem` (simpan `approvalNote`)
+  - `server/src/routes/admin.routes.js` — `GET/PATCH /api/admin/merch-requests[...]` dengan `protect + requireAdmin` (pola sama dengan storefront-requests)
+  - `server/controllers/ticket.controller.js` — `approveStorefront` sekarang terima 3 fee, masing-masing opsional (null → fallback), kalau diisi wajib 1.0–5.0 (batas bawah TURUN dari 1.5 ke 1.0 sesuai spec baru); `platformFeePercent` legacy hanya diupdate kalau dikirim eksplisit
+  - `client/src/app/dashboard/admin/page.tsx` — modal approval storefront: 3 input fee (default 3.5, step 0.5, min 1 max 5); section baru "Persetujuan Merchandise" (foto, nama, harga, size+stok, event, promotor, tombol Setujui/Tolak dengan catatan)
+  - `client/src/app/dashboard/tickets/page.tsx` — badge status per produk merch (amber "Menunggu Persetujuan" / emerald "Disetujui" / merah "Ditolak" + catatan admin) + note "Merchandise baru akan direview admin sebelum tampil di storefront."
+  - `client/src/app/event/[slug]/page.tsx` — `activeFeePercent` dihitung sesuai isi keranjang (bundling/merch/tiket) dengan fallback chain yang SAMA dengan backend; baris pajak hanya tampil kalau `totalTicketQty > 0` dan dihitung dari `ticketSubtotal` saja; label "Pajak Tiket (10%)"
+- Catatan penting:
+  - Merch yang SUDAH ada di DB sebelum migrasi otomatis dapat `approvalStatus: "pending"` → HILANG dari storefront publik sampai admin approve. Ini disengaja (aturan baru), tapi kalau ada merch live yang mendadak hilang setelah deploy — cek `/dashboard/admin` section Persetujuan Merchandise, bukan debugging storefront.
+  - Frontend dan backend HARUS pakai fallback chain fee yang identik — kalau nanti default 3.5 diubah, ubah di DUA tempat: `DEFAULT_FEE_PERCENT` (storefront.controller.js) dan literal 3.5 di event/[slug]/page.tsx.
+- Verifikasi: `npx prisma db push` + `prisma generate` sukses; `node --check` lolos semua file server; `npm run build` client sukses. Deploy backend perlu dijalankan Mandor di VPS (SSH key tidak ada di PC ini — lihat entry 2026-07-05 merchandise). Verifikasi E2E (3 skenario pembelian dengan fee berbeda + pajak hanya di porsi tiket) pending setelah deploy.
+- Tag: #fee-platform #pajak #merchandise #approval #admin #prisma #schema #storefront #business-rule
