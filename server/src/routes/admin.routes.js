@@ -6,6 +6,8 @@ const {
   getStorefrontRequests,
   approveStorefront,
   rejectStorefront,
+  getEventsWithFees,
+  updateEventFees,
 } = require('../../controllers/ticket.controller');
 const {
   getMerchApprovalRequests,
@@ -15,6 +17,11 @@ const {
 
 router.get('/users', protect, requireAdmin, getPendingUsers);
 router.patch('/users/:id/approve', protect, requireAdmin, approveUser);
+
+// Kelola fee event kapanpun (independen dari flow approval).
+// '/events-fees' harus di atas '/events/:eventId/fees' — beda path, tidak ketubruk, tapi jaga urutan.
+router.get('/events-fees', protect, requireAdmin, getEventsWithFees);
+router.patch('/events/:eventId/fees', protect, requireAdmin, updateEventFees);
 
 router.get('/storefront-requests', protect, requireAdmin, getStorefrontRequests);
 router.patch('/storefront-requests/:eventId/approve', protect, requireAdmin, approveStorefront);

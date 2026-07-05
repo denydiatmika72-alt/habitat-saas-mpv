@@ -233,7 +233,15 @@ const getMerchApprovalRequests = async (req, res) => {
       where: { approvalStatus: 'pending' },
       include: {
         variants: { orderBy: { size: 'asc' } },
-        event: { select: { title: true, promotor: { select: { name: true, email: true } } } },
+        event: {
+          select: {
+            id: true,
+            title: true,
+            merchFeePercent: true,
+            platformFeePercent: true,
+            promotor: { select: { name: true, email: true } },
+          },
+        },
       },
       orderBy: { createdAt: 'asc' },
     });

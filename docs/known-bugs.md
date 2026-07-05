@@ -863,3 +863,21 @@ File ini adalah log permanen bug yang sudah pernah terjadi di project ini besert
   - Frontend dan backend HARUS pakai fallback chain fee yang identik — kalau nanti default 3.5 diubah, ubah di DUA tempat: `DEFAULT_FEE_PERCENT` (storefront.controller.js) dan literal 3.5 di event/[slug]/page.tsx.
 - Verifikasi: `npx prisma db push` + `prisma generate` sukses; `node --check` lolos semua file server; `npm run build` client sukses. Deploy backend perlu dijalankan Mandor di VPS (SSH key tidak ada di PC ini — lihat entry 2026-07-05 merchandise). Verifikasi E2E (3 skenario pembelian dengan fee berbeda + pajak hanya di porsi tiket) pending setelah deploy.
 - Tag: #fee-platform #pajak #merchandise #approval #admin #prisma #schema #storefront #business-rule
+
+---
+
+## [2026-07-05] Fee event hanya bisa diset saat approval — tidak ada cara edit setelah live
+
+- Gejala: Ke-3 fee (`ticketFeePercent`, `merchFeePercent`, `bundlingFeePercent`) hanya bisa diisi sekali di modal approval storefront. Kalau promotor menambah merchandise SETELAH storefront approved (saat approval hanya fee tiket yang relevan), admin tidak punya cara untuk set/update `merchFeePercent` — transaksi merch jatuh ke fallback `platformFeePercent ?? 3.5` tanpa opsi override.
+- Root cause: Belum ada endpoint/UI untuk edit fee independen dari flow approval. `approveStorefront` adalah satu-satunya jalur tulis ke field fee.
+- File terkait:
+  - `server/controllers/ticket.controller.js` — 2 handler baru: `getEventsWithFees` (GET semua event `storefrontStatus in [approved, pending_approval]` + fee fields + `promotor` + `_count.ticketTypes/merchItems`) dan `updateEventFees` (PATCH 3 fee, tiap fee opsional null→fallback, kalau diisi wajib 1.0–5.0)
+  - `server/src/routes/admin.routes.js` — `GET /api/admin/events-fees` + `PATCH /api/admin/events/:eventId/fees`, keduanya `protect + requireAdmin`
+  - `server/controllers/merch.controller.js` — `getMerchApprovalRequests`: event select ditambah `id`, `merchFeePercent`, `platformFeePercent` agar frontend bisa tampilkan warning fee belum diset
+  - `client/src/app/dashboard/admin/page.tsx` — section baru "Kelola Fee Event" (list semua event storefront, 3 input fee inline per event, tombol "Simpan Fee" muncul hanya saat ada edit, badge Live/Pending); warning amber di section Persetujuan Merchandise saat `event.merchFeePercent === null`
+- Catatan penting:
+  - Fee dibaca LIVE saat `createOrder` (`event.merchFeePercent ?? event.platformFeePercent ?? DEFAULT_FEE_PERCENT` di storefront.controller.js) → edit fee otomatis berlaku untuk transaksi berikutnya; order lama tidak berubah karena `feeAmount` disimpan saat order dibuat.
+  - Relasi Event→promotor bernama `promotor` (BUKAN `user`) — spec awal task pakai `user`, harus diganti ke `promotor` di select. `_count` pakai `ticketTypes` + `merchItems` (sesuai nama relasi di schema).
+  - Input value binding: `edit?.[key] ?? (current ?? "")` — clear input (string kosong) tetap terkirim sebagai "" → backend memperlakukan sebagai null (fallback). Field yang tidak disentuh dikirim nilai existing agar tidak ter-reset.
+- Verifikasi: `node --check` lolos (ticket/merch controller + admin.routes); `npx tsc --noEmit` client EXIT 0. Verifikasi E2E (edit merch fee event approved → beli merch → fee baru terpakai) pending setelah deploy Mandor di VPS (SSH key tidak ada di PC ini). Tidak perlu `prisma db push` — tidak ada perubahan schema.
+- Tag: #fee-platform #admin #merchandise #storefront #business-rule

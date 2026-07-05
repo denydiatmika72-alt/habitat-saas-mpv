@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from "react"
 import { useRouter } from "next/navigation"
-import { CheckCircle, Clock, Phone, Mail, User, Ticket, XCircle } from "lucide-react"
+import { CheckCircle, Clock, Phone, Mail, User, Ticket, XCircle, Wallet } from "lucide-react"
 import { useUser } from "@/hooks/useUser"
 
 const API_BASE = "/api"
@@ -37,8 +37,30 @@ interface MerchRequest {
   price: number
   imageUrl: string | null
   variants: { id: string; size: string; stock: number }[]
-  event: { title: string; promotor: { name: string; email: string } }
+  event: {
+    id: string
+    title: string
+    merchFeePercent: number | null
+    platformFeePercent: number | null
+    promotor: { name: string; email: string }
+  }
 }
+
+interface FeeEvent {
+  id: string
+  title: string
+  slug: string | null
+  storefrontStatus: string
+  ticketFeePercent: number | null
+  merchFeePercent: number | null
+  bundlingFeePercent: number | null
+  platformFeePercent: number | null
+  feeBearer: "audience" | "promotor" | null
+  promotor: { name: string; email: string }
+  _count: { ticketTypes: number; merchItems: number }
+}
+
+type FeeEdit = { ticket?: string; merch?: string; bundling?: string }
 
 const IDR = new Intl.NumberFormat("id-ID", { style: "currency", currency: "IDR", maximumFractionDigits: 0 })
 
@@ -66,6 +88,11 @@ export default function AdminUsersPage() {
   const [merchRejectFor, setMerchRejectFor] = useState<string | null>(null)
   const [merchRejectNote, setMerchRejectNote] = useState("")
 
+  const [feeEvents, setFeeEvents] = useState<FeeEvent[]>([])
+  const [loadingFees, setLoadingFees] = useState(true)
+  const [editedFees, setEditedFees] = useState<Record<string, FeeEdit>>({})
+  const [savingFeeId, setSavingFeeId] = useState<string | null>(null)
+
   useEffect(() => {
     if (!userLoading && user && !user.isAdmin) {
       router.replace("/dashboard")
@@ -81,6 +108,7 @@ export default function AdminUsersPage() {
     fetchPendingUsers()
     fetchStorefrontRequests()
     fetchMerchRequests()
+    fetchFeeEvents()
   }, [])
 
   if (userLoading) return <div className="py-16 text-center text-sm text-slate-400">Memuat...</div>
@@ -228,6 +256,54 @@ export default function AdminUsersPage() {
       alert("Tidak dapat menghubungi server.")
     } finally {
       setProcessingMerchId(null)
+    }
+  }
+
+  async function fetchFeeEvents() {
+    setLoadingFees(true)
+    try {
+      const res = await fetch(`${API_BASE}/admin/events-fees`, { headers: authHeaders() })
+      const json = await res.json()
+      if (json.success) setFeeEvents(json.data)
+    } catch {}
+    finally { setLoadingFees(false) }
+  }
+
+  async function handleSaveFees(eventId: string) {
+    const edits = editedFees[eventId]
+    const ev = feeEvents.find((e) => e.id === eventId)
+    if (!edits || !ev) return
+    // Untuk field yang tidak disentuh, kirim nilai existing agar tidak ter-reset ke null.
+    const pick = (edited: string | undefined, current: number | null) =>
+      edited !== undefined ? edited : current
+    setSavingFeeId(eventId)
+    try {
+      const res = await fetch(`${API_BASE}/admin/events/${eventId}/fees`, {
+        method: "PATCH",
+        headers: authHeaders(),
+        body: JSON.stringify({
+          ticketFeePercent: pick(edits.ticket, ev.ticketFeePercent),
+          merchFeePercent: pick(edits.merch, ev.merchFeePercent),
+          bundlingFeePercent: pick(edits.bundling, ev.bundlingFeePercent),
+        }),
+      })
+      const json = await res.json()
+      if (json.success) {
+        setEditedFees((prev) => {
+          const next = { ...prev }
+          delete next[eventId]
+          return next
+        })
+        await fetchFeeEvents()
+        await fetchMerchRequests()
+        alert("Fee event berhasil disimpan. Berlaku untuk transaksi berikutnya.")
+      } else {
+        alert(json.message || "Gagal menyimpan fee")
+      }
+    } catch {
+      alert("Tidak dapat menghubungi server.")
+    } finally {
+      setSavingFeeId(null)
     }
   }
 
@@ -529,6 +605,12 @@ export default function AdminUsersPage() {
                   </button>
                 </div>
               </div>
+              {m.event.merchFeePercent === null && (
+                <p className="rounded-lg bg-amber-50 p-2 text-xs text-amber-600">
+                  ⚠️ Fee merchandise untuk event ini belum diset — akan pakai fallback{" "}
+                  {m.event.platformFeePercent ?? 3.5}%. Atur di section &quot;Kelola Fee Event&quot; di bawah.
+                </p>
+              )}
               {merchRejectFor === m.id && (
                 <div className="flex items-center gap-2">
                   <input
@@ -548,6 +630,93 @@ export default function AdminUsersPage() {
               )}
             </div>
           ))}
+        </div>
+      )}
+
+      {/* Kelola Fee Event */}
+      <div>
+        <h2 className="text-xl font-semibold text-slate-900">Kelola Fee Event</h2>
+        <p className="mt-1 text-sm text-slate-500">
+          Edit fee kapanpun — berlaku untuk transaksi berikutnya. Kosongkan untuk pakai fallback default.
+        </p>
+      </div>
+
+      {loadingFees ? (
+        <div className="py-16 text-center text-sm text-slate-400">Memuat data...</div>
+      ) : feeEvents.length === 0 ? (
+        <div className="rounded-xl border border-slate-200 bg-white py-16 text-center">
+          <Wallet className="mx-auto mb-3 size-10 text-emerald-500" />
+          <p className="text-sm font-medium text-slate-700">Belum ada event storefront</p>
+          <p className="mt-1 text-xs text-slate-400">Event muncul di sini setelah diajukan untuk approval.</p>
+        </div>
+      ) : (
+        <div className="space-y-3">
+          {feeEvents.map((ev) => {
+            const edit = editedFees[ev.id]
+            const feeInputs: [string, keyof FeeEdit, number | null][] = [
+              ["Fee Tiket", "ticket", ev.ticketFeePercent],
+              ["Fee Merch", "merch", ev.merchFeePercent],
+              ["Fee Bundling", "bundling", ev.bundlingFeePercent],
+            ]
+            return (
+              <div key={ev.id} className="rounded-xl border border-slate-200 bg-white p-4">
+                <div className="mb-3 flex items-start justify-between gap-2">
+                  <div className="min-w-0">
+                    <p className="truncate font-medium text-slate-900">{ev.title}</p>
+                    <p className="text-xs text-slate-400">
+                      {ev.promotor.name} · {ev._count.ticketTypes} tiket · {ev._count.merchItems} merch · Fee bearer:{" "}
+                      {ev.feeBearer === "audience" ? "Penonton" : ev.feeBearer === "promotor" ? "Promotor" : "Belum dipilih"}
+                    </p>
+                  </div>
+                  <span
+                    className={`shrink-0 rounded-full px-2 py-0.5 text-xs font-bold ${
+                      ev.storefrontStatus === "approved"
+                        ? "bg-emerald-100 text-emerald-700"
+                        : "bg-amber-100 text-amber-700"
+                    }`}
+                  >
+                    {ev.storefrontStatus === "approved" ? "Live" : "Pending"}
+                  </span>
+                </div>
+
+                <div className="grid grid-cols-3 gap-2">
+                  {feeInputs.map(([label, key, current]) => (
+                    <div key={key}>
+                      <label className="mb-1 block text-xs text-slate-500">{label}</label>
+                      <div className="flex items-center gap-1">
+                        <input
+                          type="number"
+                          min="1"
+                          max="5"
+                          step="0.5"
+                          value={edit?.[key] ?? (current ?? "")}
+                          onChange={(e) =>
+                            setEditedFees((prev) => ({
+                              ...prev,
+                              [ev.id]: { ...prev[ev.id], [key]: e.target.value },
+                            }))
+                          }
+                          placeholder="3.5"
+                          className="w-full rounded-lg border border-slate-200 px-2 py-1.5 text-sm outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500/30"
+                        />
+                        <span className="text-xs text-slate-400">%</span>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+
+                {edit && (
+                  <button
+                    onClick={() => handleSaveFees(ev.id)}
+                    disabled={savingFeeId === ev.id}
+                    className="mt-3 w-full rounded-xl bg-emerald-800 py-2 text-sm font-bold text-white hover:bg-emerald-900 disabled:opacity-50"
+                  >
+                    {savingFeeId === ev.id ? "Menyimpan..." : "Simpan Fee"}
+                  </button>
+                )}
+              </div>
+            )
+          })}
         </div>
       )}
     </div>

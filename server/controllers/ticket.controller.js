@@ -327,6 +327,78 @@ const approveStorefront = async (req, res) => {
   }
 };
 
+// GET /api/admin/events-fees
+// Semua event yang storefront-nya sudah/sedang diproses — untuk kelola fee kapanpun,
+// independen dari flow approval (fee bisa diedit setelah event live).
+const getEventsWithFees = async (req, res) => {
+  try {
+    const events = await prisma.event.findMany({
+      where: { storefrontStatus: { in: ['approved', 'pending_approval'] } },
+      select: {
+        id: true,
+        title: true,
+        slug: true,
+        storefrontStatus: true,
+        ticketFeePercent: true,
+        merchFeePercent: true,
+        bundlingFeePercent: true,
+        platformFeePercent: true,
+        feeBearer: true,
+        promotor: { select: { name: true, email: true } },
+        _count: { select: { ticketTypes: true, merchItems: true } },
+      },
+      orderBy: { updatedAt: 'desc' },
+    });
+    return res.json({ success: true, data: events });
+  } catch (err) {
+    console.error('[GET EVENTS FEES ERROR]', err);
+    return res.status(500).json({ success: false, message: 'Server error.' });
+  }
+};
+
+// PATCH /api/admin/events/:eventId/fees
+// Edit ke-3 fee kapanpun. Setiap fee opsional (kosong/null → fallback), kalau diisi wajib 1.0–5.0.
+// Perubahan hanya berlaku untuk transaksi berikutnya — order lama tidak berubah.
+const updateEventFees = async (req, res) => {
+  try {
+    const { eventId } = req.params;
+    const { ticketFeePercent, merchFeePercent, bundlingFeePercent } = req.body;
+
+    const parseFee = (val, label) => {
+      if (val === undefined || val === null || val === '') return { ok: true, value: null };
+      const n = Number(val);
+      if (!Number.isFinite(n) || n < 1.0 || n > 5.0) {
+        return { ok: false, message: `${label} harus antara 1.0 dan 5.0 (atau kosong untuk pakai default).` };
+      }
+      return { ok: true, value: n };
+    };
+
+    const ticketFee = parseFee(ticketFeePercent, 'Fee tiket');
+    const merchFee = parseFee(merchFeePercent, 'Fee merchandise');
+    const bundlingFee = parseFee(bundlingFeePercent, 'Fee bundling');
+    for (const f of [ticketFee, merchFee, bundlingFee]) {
+      if (!f.ok) return res.status(400).json({ success: false, message: f.message });
+    }
+
+    const event = await prisma.event.findUnique({ where: { id: eventId } });
+    if (!event) return res.status(404).json({ success: false, message: 'Event tidak ditemukan.' });
+
+    const updated = await prisma.event.update({
+      where: { id: eventId },
+      data: {
+        ticketFeePercent: ticketFee.value,
+        merchFeePercent: merchFee.value,
+        bundlingFeePercent: bundlingFee.value,
+      },
+    });
+
+    return res.json({ success: true, data: updated });
+  } catch (err) {
+    console.error('[UPDATE EVENT FEES ERROR]', err);
+    return res.status(500).json({ success: false, message: 'Server error.' });
+  }
+};
+
 // PATCH /api/admin/storefront-requests/:eventId/reject
 const rejectStorefront = async (req, res) => {
   try {
@@ -361,4 +433,6 @@ module.exports = {
   getStorefrontRequests,
   approveStorefront,
   rejectStorefront,
+  getEventsWithFees,
+  updateEventFees,
 };
