@@ -89,8 +89,12 @@ const createBoxOfficeOrder = async (req, res) => {
     if (!/^\d{16}$/.test(buyerNik || '')) {
       return res.status(400).json({ success: false, message: 'NIK harus 16 digit angka.' });
     }
-    if (buyerEmail && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(buyerEmail)) {
-      return res.status(400).json({ success: false, message: 'Email tidak valid.' });
+    // Email WAJIB (e-ticket & konfirmasi dikirim ke sini). Cek kosong dulu, lalu format — pola sama dgn storefront.
+    if (!buyerEmail || !buyerEmail.trim()) {
+      return res.status(400).json({ success: false, message: 'Email wajib diisi untuk pengiriman e-ticket & konfirmasi.' });
+    }
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(buyerEmail)) {
+      return res.status(400).json({ success: false, message: 'Format email tidak valid.' });
     }
 
     const event = await prisma.event.findUnique({ where: { id: eventId } });
@@ -177,8 +181,9 @@ const createBoxOfficeOrder = async (req, res) => {
     }
 
     // Ambil tiket + QR data URL supaya bisa langsung ditampilkan di layar pembeli (untuk di-screenshot).
+    // NOTE: TicketOrderItem.orderId = FK ke TicketOrder.id (UUID), BUKAN string order_id — pakai created.id.
     const tickets = await prisma.ticket.findMany({
-      where: { orderItem: { orderId: created.orderId } },
+      where: { orderItem: { orderId: created.id } },
       include: { orderItem: { include: { ticketType: { select: { name: true } } } } },
     });
     const ticketsWithQr = await Promise.all(
@@ -190,23 +195,21 @@ const createBoxOfficeOrder = async (req, res) => {
       }))
     );
 
-    // Email opsional — hanya kalau pembeli memberikan email.
-    if (buyerEmail) {
-      try {
-        const fullOrder = await prisma.ticketOrder.findUnique({
-          where: { orderId: created.orderId },
-          include: {
-            event: true,
-            items: { include: { ticketType: true } },
-            merchItems: true,
-            bundleItems: true,
-          },
-        });
-        await sendOrderEmail(fullOrder);
-      } catch (mailErr) {
-        // Email gagal tidak boleh membatalkan order (tiket sudah tampil di layar).
-        console.error('[BOX OFFICE EMAIL ERROR]', mailErr.message);
-      }
+    // Email pembeli WAJIB → selalu kirim e-ticket. QR tetap ditampilkan di layar sebagai fallback.
+    // Kegagalan email tidak membatalkan order (tiket sudah tercatat & tampil di layar).
+    try {
+      const fullOrder = await prisma.ticketOrder.findUnique({
+        where: { orderId: created.orderId },
+        include: {
+          event: true,
+          items: { include: { ticketType: true } },
+          merchItems: true,
+          bundleItems: true,
+        },
+      });
+      await sendOrderEmail(fullOrder);
+    } catch (mailErr) {
+      console.error('[BOX OFFICE EMAIL ERROR]', mailErr.message);
     }
 
     return res.status(201).json({

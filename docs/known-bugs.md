@@ -1005,3 +1005,18 @@ File ini adalah log permanen bug yang sudah pernah terjadi di project ini besert
   - PERTANYAAN TERBUKA (ada TODO di kode): apakah box office boleh menagih fee/pajak ke pembeli (`feeBearer 'audience'`, `totalAmount = subtotal + feeAmount + taxAmount`)? Menunggu keputusan user.
 - Fix diverifikasi: panggil `createBoxOfficeOrder` sungguhan terhadap DB (event "Throne Party", taxEnabled=true, ticketFeePercent=null→platformFeePercent=3.5, tiket 50.000) → record DB: `feeAmount: 1750` (50.000×3.5%), `taxAmount: 5000` (50.000×10%), `totalAmount: 50000`, `feeBearer: 'promotor'` — cocok rumus. Order test lalu dihapus + stok dikembalikan. `node --check` semua file server lolos.
 - Tag: #box-office #fee-platform #pajak #shared-helper #ticket-service #p&l #roadmap-4 #offline
+
+---
+
+## [2026-07-07] Box Office: email pembeli dijadikan wajib + fix QR tiket tidak muncul di layar
+
+- Gejala: (1) Email pembeli di Box Office masih opsional (label "Email (opsional)", tidak ada validasi wajib) — padahal e-ticket & konfirmasi dikirim ke email. (2) DITEMUKAN saat verifikasi: response order Box Office mengembalikan `tickets: []` (kosong) → QR tiket TIDAK tampil di layar HP pembeli, padahal itu fungsi inti Box Office (pembeli screenshot QR sendiri).
+- Root cause:
+  - (1) `createBoxOfficeOrder` dan halaman `/box-office/[eventId]` hanya validasi format email kalau diisi (`if (buyerEmail && !regex)`), tidak mewajibkan.
+  - (2) Query ambil tiket untuk response pakai `where: { orderItem: { orderId: created.orderId } }` di mana `created.orderId` = STRING `order_id` ("nexevent-boxoffice-..."). Tapi `TicketOrderItem.orderId` adalah FK ke `TicketOrder.id` (UUID), BUKAN string order_id. Filter tidak match → 0 tiket → `ticketsWithQr` kosong. Bug lama sejak Box Office dibuat (2026-07-06); email pakai `order.id` (UUID) jadi email tetap berisi tiket, hanya response layar yang kosong.
+- File terkait:
+  - `server/controllers/box-office.controller.js` — `createBoxOfficeOrder`: (a) validasi email: cek kosong ("Email wajib diisi untuk pengiriman e-ticket & konfirmasi") lalu format ("Format email tidak valid"), diposisikan setelah cek NIK (pola sama dgn `storefront.controller.js`); (b) hapus guard `if (buyerEmail)` di pengiriman email → selalu kirim (email kini dijamin ada); (c) FIX query tiket: `orderItem: { orderId: created.id }` (UUID, bukan string).
+  - `client/src/app/box-office/[eventId]/page.tsx` — `handleSubmit`: cek email kosong lalu format sebelum submit; label "Email (opsional)" → "Email *"; tambah atribut `required`; payload kirim `buyerEmail: buyerEmail.trim()` (sebelumnya `|| undefined`).
+- Catatan Task A (fee/tax Box Office): dikonfirmasi `computeFeeAndTax` (di `server/services/ticket.service.js`) SUDAH dipanggil di `createBoxOfficeOrder` dan mem-persist `feeAmount`/`taxAmount` non-zero — tidak ada perubahan (lihat entry 2026-07-07 sebelumnya). Fee 1750 & tax 5000 untuk tiket 50.000 (event taxEnabled, platformFeePercent 3.5) kembali diverifikasi.
+- Verifikasi (panggil controller nyata ke DB, event "Throne Party" tiket 50.000): tanpa email → 400 "Email wajib diisi..."; email format salah → 400 "Format email tidak valid"; email valid → 201 `success:true`, `tickets: 1` (QR muncul), `feeAmount:1750`, `taxAmount:5000`, `buyerEmail` tersimpan. Order test dihapus + stok dikembalikan tiap kali. `node --check` box-office.controller.js OK; `npx tsc --noEmit` client EXIT 0.
+- Tag: #box-office #email #validation #qr #ticket-query #uuid #foreign-key #fee-platform #pajak

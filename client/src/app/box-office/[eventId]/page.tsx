@@ -96,7 +96,9 @@ export default function BoxOfficePage() {
     if (totalQty === 0) return setFormError("Pilih minimal 1 tiket.")
     if (!buyerName.trim()) return setFormError("Nama pembeli wajib diisi.")
     if (!/^\d{16}$/.test(buyerNik)) return setFormError("NIK harus 16 digit angka.")
-    if (buyerEmail && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(buyerEmail)) return setFormError("Email tidak valid.")
+    // Email WAJIB — cek kosong dulu, lalu format (pola sama dgn online storefront).
+    if (!buyerEmail.trim()) return setFormError("Email wajib diisi untuk pengiriman e-ticket & konfirmasi.")
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(buyerEmail)) return setFormError("Format email tidak valid.")
     if (paymentMethod !== "cash" && paymentMethod !== "transfer") return setFormError("Pilih metode pembayaran (cash / transfer).")
 
     setSubmitting(true)
@@ -107,7 +109,7 @@ export default function BoxOfficePage() {
         body: JSON.stringify({
           ticketItems: selectedItems,
           buyerName,
-          buyerEmail: buyerEmail || undefined,
+          buyerEmail: buyerEmail.trim(),
           buyerNik,
           paymentMethod,
         }),
@@ -270,13 +272,14 @@ export default function BoxOfficePage() {
             <p className="mt-1 text-xs text-slate-400">Maks. 4 tiket per NIK per event.</p>
           </div>
           <div>
-            <label className="text-xs font-bold uppercase tracking-wide text-slate-500">Email <span className="font-normal normal-case text-slate-400">(opsional)</span></label>
+            <label className="text-xs font-bold uppercase tracking-wide text-slate-500">Email *</label>
             <input
               value={buyerEmail}
               onChange={(e) => setBuyerEmail(e.target.value)}
               type="email"
+              required
               className="mt-1 w-full rounded-xl border border-slate-200 px-4 py-3 text-base outline-none focus:ring-2 focus:ring-emerald-500"
-              placeholder="Untuk kirim e-ticket (boleh dikosongkan)"
+              placeholder="E-ticket & konfirmasi dikirim ke email ini"
             />
           </div>
 
