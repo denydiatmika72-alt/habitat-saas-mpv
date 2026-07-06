@@ -470,7 +470,51 @@ const getOrderStatus = async (req, res) => {
 
     if (!order) return res.status(404).json({ success: false, message: 'Pesanan tidak ditemukan.' });
 
-    return res.json({ success: true, order });
+    // Resolve isi tiap paket + size merch yang dipilih pembeli (dari merchSelections) untuk ditampilkan.
+    const bundleDetails = await Promise.all(
+      (order.bundleItems || []).map(async (bo) => {
+        const bundle = await prisma.bundlePackage.findUnique({
+          where: { id: bo.bundleId },
+          include: { items: true },
+        });
+        const selections = Array.isArray(bo.merchSelections) ? bo.merchSelections : [];
+        const items = await Promise.all(
+          (bundle?.items || []).map(async (item) => {
+            if (item.itemType === 'ticket') {
+              const tt = await prisma.ticketType.findUnique({
+                where: { id: item.ticketTypeId },
+                select: { name: true },
+              });
+              return { type: 'ticket', name: tt?.name || 'Tiket', size: null, quantity: item.quantity };
+            }
+            const merch = await prisma.merchItem.findUnique({
+              where: { id: item.merchItemId },
+              select: { name: true },
+            });
+            const selection = selections.find((s) => s.merchItemId === item.merchItemId);
+            let size = null;
+            if (selection?.variantId) {
+              const variant = await prisma.merchVariant.findUnique({
+                where: { id: selection.variantId },
+                select: { size: true },
+              });
+              size = variant?.size || null;
+            }
+            return { type: 'merch', name: merch?.name || 'Merchandise', size, quantity: item.quantity };
+          })
+        );
+        return {
+          id: bo.id,
+          bundleName: bo.bundle.name,
+          quantity: bo.quantity,
+          price: bo.price,
+          hasMerch: items.some((i) => i.type === 'merch'),
+          items,
+        };
+      })
+    );
+
+    return res.json({ success: true, order, bundleDetails });
   } catch (err) {
     console.error('[GET ORDER STATUS ERROR]', err);
     return res.status(500).json({ success: false, message: 'Server error.' });

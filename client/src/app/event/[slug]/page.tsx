@@ -219,6 +219,10 @@ export default function EventStorefrontPage() {
     return sum + perBundle * sb.quantity
   }, 0)
 
+  // Cart butuh NIK kalau mengandung tiket — langsung ATAU lewat paket bundling.
+  // bundleTicketValue > 0 sudah berarti ada paket yang mengandung tiket di keranjang.
+  const requiresNik = totalTicketQty > 0 || bundleTicketValue > 0
+
   const feeBearer = event?.feeBearer === "audience" ? "audience" : "promotor"
   // Fee dihitung TERPISAH per komponen (harus sama dengan backend): tiket→ticketFee, merch→merchFee,
   // paket→bundlingFee. Beli tiket + merch biasa BUKAN bundling (fee sendiri-sendiri).
@@ -307,9 +311,7 @@ export default function EventStorefrontPage() {
     if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(buyerEmail)) return setFormError("Email tidak valid.")
     if (!/^(\+62|62|0)8[0-9]{7,12}$/.test(buyerPhone.replace(/[\s-]/g, ""))) return setFormError("Nomor HP tidak valid (format 08xx atau +62).")
     // NIK wajib kalau ada pembelian tiket langsung ATAU paket yang mengandung tiket (anti-calo).
-    // Paket yang mengandung tiket dideteksi lewat bundleTicketValue (>0 = ada porsi tiket).
-    const bundleHasTicket = bundleTicketValue > 0
-    if ((totalTicketQty > 0 || bundleHasTicket) && !/^\d{16}$/.test(buyerNik)) return setFormError("NIK harus 16 digit angka.")
+    if (requiresNik && !/^\d{16}$/.test(buyerNik)) return setFormError("NIK harus 16 digit angka.")
     // Semua item merch di dalam paket yang dibeli wajib punya size terpilih.
     if (selectedBundles.some((sb) => sb.merchSizeSelections.some((s) => !s.variantId))) {
       return setFormError("Pilih size untuk semua item merch dalam paket.")
@@ -324,7 +326,8 @@ export default function EventStorefrontPage() {
           buyerName,
           buyerEmail,
           buyerPhone,
-          buyerNik,
+          // NIK hanya dikirim kalau memang dibutuhkan (order merch-only tidak perlu NIK).
+          buyerNik: requiresNik ? buyerNik : "",
           ticketItems: selectedItems,
           merchItems: selectedMerch.map((m) => ({ variantId: m.variantId, quantity: m.quantity })),
           bundleItems: selectedBundles,
@@ -921,7 +924,7 @@ export default function EventStorefrontPage() {
                       className="mt-1 w-full rounded-xl border border-slate-200 px-4 py-3 text-sm outline-none focus:ring-2 focus:ring-emerald-500"
                     />
                   </div>
-                  {totalTicketQty > 0 && (
+                  {requiresNik && (
                     <div>
                       <label className="text-xs font-bold uppercase tracking-wide text-slate-500">
                         NIK KTP * <span className="ml-1 font-normal normal-case text-slate-400">(16 digit)</span>

@@ -167,6 +167,54 @@ const sendOrderEmail = async (order) => {
       `;
     }
 
+    // ===== Bagian Paket Spesial / Bundling (kalau ada) =====
+    if (order.bundleItems && order.bundleItems.length > 0) {
+      bodyHTML += `<h2 style="color:#065f46;font-size:18px;margin-top:24px">Paket Spesial Anda</h2>`;
+      for (const bundleOrder of order.bundleItems) {
+        const bundle = bundleOrder.bundle;
+        const selections = Array.isArray(bundleOrder.merchSelections) ? bundleOrder.merchSelections : [];
+
+        // Resolve isi paket + size yang dipilih pembeli (untuk merch).
+        const itemLines = [];
+        let hasMerch = false;
+        for (const item of bundle.items) {
+          if (item.itemType === 'ticket') {
+            const tt = await prisma.ticketType.findUnique({ where: { id: item.ticketTypeId } });
+            itemLines.push(`<li>${item.quantity}× Tiket ${tt?.name || 'Tiket'}</li>`);
+          } else {
+            hasMerch = true;
+            const merchItem = await prisma.merchItem.findUnique({ where: { id: item.merchItemId } });
+            const selection = selections.find((s) => s.merchItemId === item.merchItemId);
+            let sizeLabel = '';
+            if (selection?.variantId) {
+              const variant = await prisma.merchVariant.findUnique({ where: { id: selection.variantId } });
+              sizeLabel = variant ? ` (${variant.size})` : '';
+            }
+            itemLines.push(`<li>${item.quantity}× ${merchItem?.name || 'Merchandise'}${sizeLabel}</li>`);
+          }
+        }
+
+        let bundleBarcodeHTML = '';
+        if (hasMerch) {
+          const barcode = await QRCode.toDataURL(`BUNDLE-${order.orderId}`, { width: 200 });
+          bundleBarcodeHTML = `
+            <img src="${barcode}" alt="Barcode Pickup Paket" width="200" height="200" />
+            <p style="font-size:12px;color:#64748b;margin-top:8px">Tunjukkan barcode ini untuk pengambilan item merchandise dalam paket di venue.</p>
+          `;
+        }
+
+        bodyHTML += `
+          <div style="border:1px solid #e2e8f0; padding:16px; margin:16px 0; border-radius:8px;">
+            <h3 style="margin:0 0 8px;color:#0f172a">${bundle.name} × ${bundleOrder.quantity}</h3>
+            <p style="margin:0 0 8px"><strong>${IDR(bundleOrder.price * bundleOrder.quantity)}</strong></p>
+            <p style="margin:8px 0 4px;font-size:13px;color:#475569">Isi paket:</p>
+            <ul style="margin:0 0 8px;padding-left:20px;color:#334155">${itemLines.join('')}</ul>
+            ${bundleBarcodeHTML}
+          </div>
+        `;
+      }
+    }
+
     const orderUrl = `https://nexeventapp.tech/order/${order.orderId}`;
     const waText = encodeURIComponent(
       `Pesanan saya untuk ${eventTitle} — Order ID: ${order.orderId}\n\nCek detail di: ${orderUrl}`

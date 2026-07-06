@@ -929,3 +929,23 @@ File ini adalah log permanen bug yang sudah pernah terjadi di project ini besert
   - **Keterbatasan (belum dikerjakan, di luar scope task):** email konfirmasi & halaman `/order/[id]` belum menampilkan SIZE merch yang dipilih pembeli untuk paket, dan bundle merch belum punya barcode pickup terpisah (gap ini sudah ada sebelum perubahan ini). Perlu resolve `merchSelections.variantId` → size untuk ditampilkan. Dicatat untuk follow-up.
 - Verifikasi: `npx prisma db push --accept-data-loss` + `generate` sukses; `node --check` semua file server lolos; `npx tsc --noEmit` client EXIT 0; `npm run build` client sukses. Verifikasi E2E (setup paket → dropdown merch produk-only; beli paket → wajib pilih size → stok varian terpilih turun; expire → stok varian terpilih balik) pending setelah deploy Mandor di VPS.
 - Tag: #bundling #merch #storefront #prisma #schema #checkout #stock #variant #size-selection
+
+---
+
+## [2026-07-06] Field NIK tidak muncul saat beli paket berisi tiket + size merch paket tak tampil di konfirmasi
+
+- Gejala 1: Pembeli pilih paket bundling yang mengandung tiket → backend menolak "NIK harus 16 digit angka", tapi input NIK TIDAK muncul di form pembeli. NIK hanya muncul kalau tiket dipilih langsung (`totalTicketQty > 0`), bukan lewat paket.
+- Gejala 2: Size merch yang dipilih pembeli dalam paket tersimpan di `merchSelections` tapi TIDAK ditampilkan di email konfirmasi maupun halaman `/order/[orderId]`.
+- Root cause: (1) Kondisi render field NIK hanya cek `totalTicketQty`, abai paket yang mengandung tiket. (2) Email & order page belum resolve `merchSelections.variantId` → `variant.size`; email belum punya section paket sama sekali; `getOrderStatus` tidak mengembalikan isi paket + size.
+- File terkait:
+  - `client/src/app/event/[slug]/page.tsx` — tambah `requiresNik = totalTicketQty > 0 || bundleTicketValue > 0` (bundleTicketValue > 0 = ada paket berisi tiket di keranjang). Field NIK render pakai `requiresNik` (bukan `totalTicketQty`); validasi `handleBuy` pakai `requiresNik`; payload kirim `buyerNik: requiresNik ? buyerNik : ""` (order merch-only tidak kirim NIK).
+  - `server/controllers/payment.controller.js` — `fullOrder` (untuk email settlement) tambah include `bundleItems: { include: { bundle: { include: { items: true } } } }`.
+  - `server/services/email.service.js` — `sendOrderEmail` tambah section "Paket Spesial Anda": loop `order.bundleItems`, resolve tiap isi paket (tiket via `ticketType`, merch via `merchItem` + size dari `merchSelections` → `merchVariant.size`), barcode pickup `BUNDLE-${orderId}` kalau paket mengandung merch.
+  - `server/controllers/storefront.controller.js` — `getOrderStatus` bangun `bundleDetails` (resolve isi tiap paket + size merch dari `merchSelections`) dan kembalikan di response (`{ success, order, bundleDetails }`).
+  - `client/src/app/order/[orderId]/page.tsx` — state `bundleDetails` dari response; section "Paket Spesial Anda" tampilkan nama paket + qty + harga + rincian isi (size merch "Kaos (L)") + note pickup barcode kalau `hasMerch`.
+- Catatan penting:
+  - `requiresNik` cukup pakai `bundleTicketValue > 0` — nilai itu sudah dihitung dari porsi tiket paket di keranjang, jadi tidak perlu helper `bundleContainsTicket` terpisah (setara secara fungsional untuk isi keranjang saat ini).
+  - Order page IKUT pola merch existing: tidak render QR sendiri, hanya arahkan ke barcode di email konfirmasi (barcode asli digenerate server-side di email). `BUNDLE-${orderId}` = barcode pickup item merch dalam paket.
+  - `merchSelections.quantity` sudah = `item.quantity * bundleQty`; untuk display isi paket dipakai `item.quantity` (per 1 paket) dari definisi bundle, bukan quantity di merchSelections.
+- Verifikasi: `node --check` server lolos; `npx tsc --noEmit` client EXIT 0; `npm run build` client sukses. Tidak ada perubahan schema (tidak perlu `db push`). Verifikasi E2E (paket berisi tiket → NIK muncul & wajib; merch-only → NIK tidak muncul; beli paket merch → email & order page tampilkan size) pending setelah deploy Mandor di VPS.
+- Tag: #bundling #nik #storefront #email #order-page #merch #size-selection #anti-calo

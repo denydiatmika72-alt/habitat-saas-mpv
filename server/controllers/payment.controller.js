@@ -182,13 +182,14 @@ const handleTicketOrderWebhook = async (orderId, transactionStatus, res) => {
           data: { status: 'paid', paidAt: new Date() },
         });
 
-        // Re-fetch dengan relasi lengkap supaya email bisa render tiket + merch.
+        // Re-fetch dengan relasi lengkap supaya email bisa render tiket + merch + paket.
         const fullOrder = await prisma.ticketOrder.findUnique({
           where: { orderId },
           include: {
             event: true,
             items: { include: { ticketType: true } },
             merchItems: { include: { item: true, variant: true } },
+            bundleItems: { include: { bundle: { include: { items: true } } } },
           },
         });
         await sendOrderEmail(fullOrder);

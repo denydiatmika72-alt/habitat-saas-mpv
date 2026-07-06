@@ -26,6 +26,8 @@ type Ticket = { id: string; ticketCode: string; attendeeName: string | null; isU
 type OrderItem = { id: string; quantity: number; price: number; ticketType: { name: string; price: number }; tickets: Ticket[] }
 type MerchOrderItem = { id: string; quantity: number; price: number; item: { name: string; imageUrl: string | null }; variant: { size: string } }
 type BundleOrderItem = { id: string; quantity: number; price: number; bundle: { name: string; imageUrl: string | null }; tickets: Ticket[] }
+type BundleDetailItem = { type: "ticket" | "merch"; name: string; size: string | null; quantity: number }
+type BundleDetail = { id: string; bundleName: string; quantity: number; price: number; hasMerch: boolean; items: BundleDetailItem[] }
 type Order = {
   orderId: string
   status: "pending" | "paid" | "expired" | "cancelled"
@@ -59,6 +61,7 @@ function useCountdown(target: string | null) {
 export default function OrderStatusPage() {
   const { orderId } = useParams<{ orderId: string }>()
   const [order, setOrder] = useState<Order | null>(null)
+  const [bundleDetails, setBundleDetails] = useState<BundleDetail[]>([])
   const [loading, setLoading] = useState(true)
   const [notFound, setNotFound] = useState(false)
 
@@ -71,6 +74,7 @@ export default function OrderStatusPage() {
         return
       }
       setOrder(data.order)
+      setBundleDetails(data.bundleDetails || [])
     } catch {
       setNotFound(true)
     } finally {
@@ -218,6 +222,37 @@ export default function OrderStatusPage() {
                       <span className="font-mono font-semibold text-slate-700">{order.orderId}</span>) saat pengambilan merchandise di venue.
                     </p>
                   </div>
+                </div>
+              )}
+
+              {bundleDetails.length > 0 && (
+                <div className="mt-6 flex flex-col gap-3">
+                  <p className="text-sm font-semibold text-slate-900">Paket Spesial Anda</p>
+                  {bundleDetails.map((b) => (
+                    <div key={b.id} className="rounded-xl border border-slate-200 p-4">
+                      <div className="flex items-center justify-between">
+                        <p className="text-sm font-semibold text-slate-900">
+                          {b.bundleName} × {b.quantity}
+                        </p>
+                        <p className="text-sm font-bold text-emerald-800">{IDR.format(b.price * b.quantity)}</p>
+                      </div>
+                      <ul className="mt-2 flex flex-col gap-0.5">
+                        {b.items.map((it, idx) => (
+                          <li key={idx} className="text-sm text-slate-600">
+                            • {it.quantity}× {it.type === "ticket" ? "Tiket " : ""}
+                            {it.name}
+                            {it.size ? ` (${it.size})` : ""}
+                          </li>
+                        ))}
+                      </ul>
+                      {b.hasMerch && (
+                        <p className="mt-3 border-t border-slate-100 pt-3 text-xs text-slate-500">
+                          Tunjukkan barcode pickup di email konfirmasi (Order ID:{" "}
+                          <span className="font-mono font-semibold text-slate-700">{order.orderId}</span>) saat pengambilan item merchandise dalam paket di venue.
+                        </p>
+                      )}
+                    </div>
+                  ))}
                 </div>
               )}
 
