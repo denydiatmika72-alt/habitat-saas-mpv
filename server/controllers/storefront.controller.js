@@ -434,7 +434,10 @@ const getOrderStatus = async (req, res) => {
           },
         },
         bundleItems: {
-          include: { bundle: { select: { name: true, imageUrl: true } } },
+          include: {
+            bundle: { select: { name: true, imageUrl: true } },
+            tickets: { select: { id: true, ticketCode: true, attendeeName: true, isUsed: true } },
+          },
         },
       },
     });

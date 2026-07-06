@@ -25,6 +25,7 @@ declare global {
 type Ticket = { id: string; ticketCode: string; attendeeName: string | null; isUsed: boolean }
 type OrderItem = { id: string; quantity: number; price: number; ticketType: { name: string; price: number }; tickets: Ticket[] }
 type MerchOrderItem = { id: string; quantity: number; price: number; item: { name: string; imageUrl: string | null }; variant: { size: string } }
+type BundleOrderItem = { id: string; quantity: number; price: number; bundle: { name: string; imageUrl: string | null }; tickets: Ticket[] }
 type Order = {
   orderId: string
   status: "pending" | "paid" | "expired" | "cancelled"
@@ -36,6 +37,7 @@ type Order = {
   event: { title: string; location: string; event_date: string; slug: string | null }
   items: OrderItem[]
   merchItems?: MerchOrderItem[]
+  bundleItems?: BundleOrderItem[]
 }
 
 const IDR = new Intl.NumberFormat("id-ID", { style: "currency", currency: "IDR", maximumFractionDigits: 0 })
@@ -92,7 +94,10 @@ export default function OrderStatusPage() {
     if (order?.status === "pending" && remaining === 0) fetchOrder()
   }, [remaining, order?.status, fetchOrder])
 
-  const allTickets = order?.items.flatMap((item) => item.tickets.map((t) => ({ ...t, typeName: item.ticketType.name }))) ?? []
+  const allTickets = [
+    ...(order?.items.flatMap((item) => item.tickets.map((t) => ({ ...t, typeName: item.ticketType.name }))) ?? []),
+    ...(order?.bundleItems?.flatMap((b) => b.tickets.map((t) => ({ ...t, typeName: b.bundle.name }))) ?? []),
+  ]
   const waText = order
     ? encodeURIComponent(`Tiket nexEvent saya untuk ${order.event.title}:\n${allTickets.map((t) => t.ticketCode).join(", ")}\n\nCek detail: ${typeof window !== "undefined" ? window.location.href : ""}`)
     : ""
@@ -239,6 +244,12 @@ export default function OrderStatusPage() {
               <div key={m.id} className="flex items-center justify-between text-sm text-slate-600">
                 <span>{m.item.name} ({m.variant.size}) × {m.quantity}</span>
                 <span>{IDR.format(m.price * m.quantity)}</span>
+              </div>
+            ))}
+            {order.bundleItems?.map((b) => (
+              <div key={b.id} className="flex items-center justify-between text-sm text-slate-600">
+                <span>Paket {b.bundle.name} × {b.quantity}</span>
+                <span>{IDR.format(b.price * b.quantity)}</span>
               </div>
             ))}
             <div className="mt-3 flex items-center justify-between border-t border-slate-200 pt-3">

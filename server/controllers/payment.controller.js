@@ -157,7 +157,23 @@ const handleTicketOrderWebhook = async (orderId, transactionStatus, res) => {
         for (const item of order.items) {
           for (let i = 0; i < item.quantity; i++) {
             const ticketCode = `NE-${Date.now()}-${Math.random().toString(36).slice(2, 8).toUpperCase()}`;
-            await prisma.ticket.create({ data: { orderItemId: item.id, ticketCode } });
+            await prisma.ticket.create({ data: { orderItemId: item.id, ticketTypeId: item.ticketTypeId, ticketCode } });
+          }
+        }
+
+        // Generate e-ticket untuk tiket yang ada DI DALAM paket bundling (× jumlah paket).
+        // Tiket paket di-link ke bundleOrderItem (bukan orderItem) + simpan ticketTypeId agar tahu jenisnya.
+        for (const boi of order.bundleItems) {
+          for (const bi of boi.bundle.items) {
+            if (bi.itemType === 'ticket' && bi.ticketTypeId) {
+              const count = bi.quantity * boi.quantity;
+              for (let i = 0; i < count; i++) {
+                const ticketCode = `NE-${Date.now()}-${Math.random().toString(36).slice(2, 8).toUpperCase()}`;
+                await prisma.ticket.create({
+                  data: { bundleOrderItemId: boi.id, ticketTypeId: bi.ticketTypeId, ticketCode },
+                });
+              }
+            }
           }
         }
 

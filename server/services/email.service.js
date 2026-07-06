@@ -113,17 +113,23 @@ const sendOrderEmail = async (order) => {
     let bodyHTML = '';
 
     // ===== Bagian E-Ticket (kalau ada) =====
-    if (order.items && order.items.length > 0) {
+    // Tiket bisa dari pembelian langsung (orderItem) ATAU dari tiket di dalam paket (bundleOrderItem).
+    {
       const tickets = await prisma.ticket.findMany({
-        where: { orderItem: { orderId: order.id } },
-        include: { orderItem: { include: { ticketType: true } } },
+        where: {
+          OR: [
+            { orderItem: { orderId: order.id } },
+            { bundleOrderItem: { orderId: order.id } },
+          ],
+        },
+        include: { orderItem: { include: { ticketType: true } }, ticketType: true },
       });
 
       if (tickets.length > 0) {
         const ticketHTML = await Promise.all(
           tickets.map(async (ticket) => {
             const qrDataUrl = await QRCode.toDataURL(ticket.ticketCode, { width: 200 });
-            const typeName = ticket.orderItem?.ticketType?.name || 'Tiket';
+            const typeName = ticket.orderItem?.ticketType?.name || ticket.ticketType?.name || 'Tiket';
             return `
               <div style="border:1px solid #e2e8f0; padding:16px; margin:16px 0; border-radius:8px;">
                 <h3 style="margin:0 0 8px;color:#065f46">${typeName}</h3>

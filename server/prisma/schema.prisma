@@ -118,6 +118,7 @@ model TicketType {
 
   event       Event    @relation(fields: [eventId], references: [id], onDelete: Cascade)
   orderItems  TicketOrderItem[]
+  tickets     Ticket[]
 
   @@map("ticket_types")
 }
@@ -216,15 +217,21 @@ model TicketOrderItem {
 }
 
 model Ticket {
-  id           String          @id @default(uuid())
-  orderItemId  String          @map("order_item_id")
-  ticketCode   String          @unique @map("ticket_code")
-  attendeeName String?         @map("attendee_name")
-  isUsed       Boolean         @default(false) @map("is_used")
-  usedAt       DateTime?       @map("used_at")
-  createdAt    DateTime        @default(now()) @map("created_at")
+  id                String           @id @default(uuid())
+  // orderItemId nullable: tiket bisa berasal dari pembelian tiket langsung (orderItemId terisi)
+  // ATAU dari tiket di dalam paket bundling (bundleOrderItemId terisi). Salah satu wajib ada.
+  orderItemId       String?          @map("order_item_id")
+  bundleOrderItemId String?          @map("bundle_order_item_id")
+  ticketTypeId      String?          @map("ticket_type_id") // diisi untuk tiket paket agar tahu jenisnya
+  ticketCode        String           @unique @map("ticket_code")
+  attendeeName      String?          @map("attendee_name")
+  isUsed            Boolean          @default(false) @map("is_used")
+  usedAt            DateTime?        @map("used_at")
+  createdAt         DateTime         @default(now()) @map("created_at")
 
-  orderItem    TicketOrderItem @relation(fields: [orderItemId], references: [id], onDelete: Cascade)
+  orderItem         TicketOrderItem? @relation(fields: [orderItemId], references: [id], onDelete: Cascade)
+  bundleOrderItem   BundleOrderItem? @relation(fields: [bundleOrderItemId], references: [id], onDelete: Cascade)
+  ticketType        TicketType?      @relation(fields: [ticketTypeId], references: [id])
 
   @@map("tickets")
 }
@@ -272,6 +279,7 @@ model BundleOrderItem {
 
   order      TicketOrder   @relation(fields: [orderId], references: [id], onDelete: Cascade)
   bundle     BundlePackage @relation(fields: [bundleId], references: [id])
+  tickets    Ticket[]
 
   @@map("bundle_order_items")
 }
