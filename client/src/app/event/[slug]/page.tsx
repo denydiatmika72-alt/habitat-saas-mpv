@@ -308,7 +308,9 @@ export default function EventStorefrontPage() {
     setFormError("")
     if (totalTicketQty === 0 && totalMerchQty === 0 && totalBundleQty === 0) return
     if (!buyerName.trim()) return setFormError("Nama lengkap wajib diisi.")
-    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(buyerEmail)) return setFormError("Email tidak valid.")
+    // Email WAJIB untuk semua tipe order (tiket/merch/bundling/mixed).
+    if (!buyerEmail.trim()) return setFormError("Email wajib diisi untuk pengiriman e-ticket.")
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(buyerEmail)) return setFormError("Format email tidak valid.")
     if (!/^(\+62|62|0)8[0-9]{7,12}$/.test(buyerPhone.replace(/[\s-]/g, ""))) return setFormError("Nomor HP tidak valid (format 08xx atau +62).")
     // NIK wajib kalau ada pembelian tiket langsung ATAU paket yang mengandung tiket (anti-calo).
     if (requiresNik && !/^\d{16}$/.test(buyerNik)) return setFormError("NIK harus 16 digit angka.")
@@ -898,6 +900,7 @@ export default function EventStorefrontPage() {
                     <label className="text-xs font-bold uppercase tracking-wide text-slate-500">Nama Lengkap *</label>
                     <input
                       type="text"
+                      required
                       value={buyerName}
                       onChange={(e) => setBuyerName(e.target.value)}
                       placeholder="Sesuai KTP"
@@ -908,6 +911,7 @@ export default function EventStorefrontPage() {
                     <label className="text-xs font-bold uppercase tracking-wide text-slate-500">Email *</label>
                     <input
                       type="email"
+                      required
                       value={buyerEmail}
                       onChange={(e) => setBuyerEmail(e.target.value)}
                       placeholder="E-ticket dikirim ke email ini"
@@ -918,6 +922,7 @@ export default function EventStorefrontPage() {
                     <label className="text-xs font-bold uppercase tracking-wide text-slate-500">Nomor HP *</label>
                     <input
                       type="tel"
+                      required
                       value={buyerPhone}
                       onChange={(e) => setBuyerPhone(e.target.value)}
                       placeholder="08xx atau +628xx"

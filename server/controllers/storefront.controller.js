@@ -137,8 +137,12 @@ const createOrder = async (req, res) => {
     const merchItems = Array.isArray(req.body.merchItems) ? req.body.merchItems : [];
     const bundleItems = Array.isArray(req.body.bundleItems) ? req.body.bundleItems : [];
 
-    if (!buyerName || !buyerEmail || !buyerPhone) {
-      return res.status(400).json({ success: false, message: 'Data pembeli (nama, email, HP) wajib diisi.' });
+    if (!buyerName || !buyerName.trim() || !buyerPhone || !buyerPhone.trim()) {
+      return res.status(400).json({ success: false, message: 'Nama dan nomor HP wajib diisi.' });
+    }
+    // Email WAJIB untuk SEMUA tipe order (tiket/merch/bundling/mixed) — e-ticket & konfirmasi dikirim ke sini.
+    if (!buyerEmail || !buyerEmail.trim()) {
+      return res.status(400).json({ success: false, message: 'Email wajib diisi untuk pengiriman e-ticket & konfirmasi.' });
     }
     if (ticketItems.length === 0 && merchItems.length === 0 && bundleItems.length === 0) {
       return res.status(400).json({ success: false, message: 'Pilih minimal 1 tiket, merchandise, atau paket.' });
@@ -147,7 +151,7 @@ const createOrder = async (req, res) => {
       return res.status(400).json({ success: false, message: 'Nomor HP tidak valid.' });
     }
     if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(buyerEmail)) {
-      return res.status(400).json({ success: false, message: 'Email tidak valid.' });
+      return res.status(400).json({ success: false, message: 'Format email tidak valid.' });
     }
 
     const event = await prisma.event.findUnique({ where: { slug } });
