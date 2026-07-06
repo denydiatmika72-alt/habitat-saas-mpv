@@ -61,9 +61,9 @@ const getEventStorefront = async (req, res) => {
     // Availability dihitung terhadap SEMUA tiket/varian event (bukan cuma yang aktif) supaya
     // paket tetap valid meski salah satu item-nya dinonaktifkan promotor di luar paket.
     const allTicketTypes = await prisma.ticketType.findMany({ where: { eventId: event.id } });
-    const allVariants = await prisma.merchVariant.findMany({
-      where: { item: { eventId: event.id } },
-      include: { item: { select: { name: true, price: true } } },
+    const allMerchItems = await prisma.merchItem.findMany({
+      where: { eventId: event.id },
+      include: { variants: true },
     });
 
     const bundlePackages = event.bundlePackages.map((b) => {
@@ -77,15 +77,25 @@ const getEventStorefront = async (req, res) => {
             unitAvailable: tt ? tt.quota - tt.sold : 0,
           };
         }
-        const v = allVariants.find((x) => x.id === it.merchVariantId);
+        // Merch di paket = PRODUK. Kembalikan varian yang masih ada stok supaya pembeli pilih size saat checkout.
+        const mi = allMerchItems.find((m) => m.id === it.merchItemId);
+        const variants = mi
+          ? mi.variants
+              .map((v) => ({ id: v.id, size: v.size, available: v.stock - v.sold }))
+              .filter((v) => v.available > 0)
+          : [];
+        // unitAvailable = stok size terbanyak (buyer hanya bisa pilih 1 size untuk item merch ini).
+        const unitAvailable = variants.reduce((max, v) => Math.max(max, v.available), 0);
         return {
           ...it,
-          label: v ? `${v.item.name} (${v.size})` : 'Merchandise',
-          unitPrice: v ? v.item.price : 0,
-          unitAvailable: v ? v.stock - v.sold : 0,
+          label: mi ? mi.name : 'Merchandise',
+          unitPrice: mi ? mi.price : 0,
+          variants,
+          unitAvailable,
         };
       });
-      // Paket tersedia hanya kalau SEMUA item punya stok cukup untuk minimal 1 paket.
+      // Paket tersedia hanya kalau SEMUA item punya stok cukup untuk minimal 1 paket
+      // (untuk merch: minimal ada satu size dengan stok >= quantity item tsb).
       const isAvailable = items.every((it) => it.unitAvailable >= it.quantity);
       return { ...b, items, isAvailable };
     });
@@ -300,6 +310,10 @@ const createOrder = async (req, res) => {
             throw new Error('Paket bundling tidak tersedia.');
           }
           const qty = Number(bi.quantity);
+          const sizeSelections = Array.isArray(bi.merchSizeSelections) ? bi.merchSizeSelections : [];
+          // Size merch yang benar-benar dipakai (dari pilihan pembeli) — disimpan agar stok bisa
+          // dikembalikan ke varian yang tepat saat order expired/cancel.
+          const merchSelections = [];
           for (const item of bundle.items) {
             const needed = item.quantity * qty;
             if (item.itemType === 'ticket') {
@@ -309,14 +323,26 @@ const createOrder = async (req, res) => {
               await tx.ticketType.update({ where: { id: tt.id }, data: { sold: { increment: needed } } });
               bundleTicketValue += tt.price * needed;
             } else {
-              const variant = await tx.merchVariant.findUnique({ where: { id: item.merchVariantId }, include: { item: true } });
-              if (!variant || variant.item.eventId !== event.id) throw new Error(`Merch dalam paket ${bundle.name} tidak ditemukan.`);
-              if (variant.sold + needed > variant.stock) throw new Error(`Stok merch dalam paket ${bundle.name} tidak cukup.`);
+              // Merch di paket = PRODUK; pembeli memilih size (varian) saat checkout.
+              const merchItem = await tx.merchItem.findUnique({ where: { id: item.merchItemId } });
+              if (!merchItem || merchItem.eventId !== event.id) throw new Error(`Merch dalam paket ${bundle.name} tidak ditemukan.`);
+              const selection = sizeSelections.find((s) => s.merchItemId === item.merchItemId);
+              if (!selection || !selection.variantId) {
+                throw new Error(`Pilih size untuk ${merchItem.name} dalam paket ${bundle.name}.`);
+              }
+              const variant = await tx.merchVariant.findUnique({ where: { id: selection.variantId } });
+              if (!variant || variant.merchItemId !== item.merchItemId) {
+                throw new Error(`Size tidak valid untuk ${merchItem.name} dalam paket ${bundle.name}.`);
+              }
+              if (variant.sold + needed > variant.stock) {
+                throw new Error(`Stok ${merchItem.name} size ${variant.size} dalam paket ${bundle.name} tidak cukup.`);
+              }
               await tx.merchVariant.update({ where: { id: variant.id }, data: { sold: { increment: needed } } });
+              merchSelections.push({ merchItemId: item.merchItemId, variantId: variant.id, quantity: needed });
             }
           }
           bundleSubtotal += bundle.price * qty;
-          bundleCreate.push({ bundleId: bundle.id, quantity: qty, price: bundle.price });
+          bundleCreate.push({ bundleId: bundle.id, quantity: qty, price: bundle.price, merchSelections });
           itemDetails.push({ id: bundle.id, price: bundle.price, quantity: qty, name: `Paket ${bundle.name}`.slice(0, 50) });
         }
 

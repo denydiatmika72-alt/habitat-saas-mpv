@@ -260,8 +260,8 @@ model BundleItem {
   id             String        @id @default(uuid())
   bundleId       String        @map("bundle_id")
   itemType       String        @map("item_type") // "ticket" | "merch"
-  ticketTypeId   String?       @map("ticket_type_id")   // diisi kalau itemType = ticket
-  merchVariantId String?       @map("merch_variant_id") // diisi kalau itemType = merch
+  ticketTypeId   String?       @map("ticket_type_id") // diisi kalau itemType = ticket
+  merchItemId    String?       @map("merch_item_id")  // diisi kalau itemType = merch (produk; SIZE dipilih pembeli saat checkout)
   quantity       Int           @default(1)
 
   bundle         BundlePackage @relation(fields: [bundleId], references: [id], onDelete: Cascade)
@@ -275,6 +275,10 @@ model BundleOrderItem {
   bundleId   String        @map("bundle_id")
   quantity   Int
   price      Int
+  // Size merch yang dipilih pembeli untuk paket ini: [{ merchItemId, variantId, quantity }].
+  // Disimpan agar stok bisa dikembalikan ke varian yang BENAR saat order expired/cancel
+  // (BundleItem hanya tahu produk, bukan size — size dipilih pembeli saat checkout).
+  merchSelections Json?     @map("merch_selections")
   createdAt  DateTime      @default(now()) @map("created_at")
 
   order      TicketOrder   @relation(fields: [orderId], references: [id], onDelete: Cascade)

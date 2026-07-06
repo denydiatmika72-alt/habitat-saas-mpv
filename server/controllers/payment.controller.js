@@ -203,14 +203,20 @@ const handleTicketOrderWebhook = async (orderId, transactionStatus, res) => {
             prisma.merchVariant.update({ where: { id: m.variantId }, data: { sold: { decrement: m.quantity } } })
           ),
         ];
-        // Bundle: kembalikan stok tiap item paket (tiket & merch) × jumlah paket.
+        // Bundle: kembalikan stok tiap item paket × jumlah paket.
         for (const boi of order.bundleItems) {
+          // Tiket — dari definisi paket (ticketTypeId tetap ada di BundleItem).
           for (const it of boi.bundle.items) {
-            const dec = it.quantity * boi.quantity;
             if (it.itemType === 'ticket' && it.ticketTypeId) {
+              const dec = it.quantity * boi.quantity;
               ops.push(prisma.ticketType.update({ where: { id: it.ticketTypeId }, data: { sold: { decrement: dec } } }));
-            } else if (it.itemType === 'merch' && it.merchVariantId) {
-              ops.push(prisma.merchVariant.update({ where: { id: it.merchVariantId }, data: { sold: { decrement: dec } } }));
+            }
+          }
+          // Merch — restore ke varian yang BENAR dipilih pembeli (disimpan di merchSelections saat order dibuat).
+          const selections = Array.isArray(boi.merchSelections) ? boi.merchSelections : [];
+          for (const sel of selections) {
+            if (sel.variantId && sel.quantity) {
+              ops.push(prisma.merchVariant.update({ where: { id: sel.variantId }, data: { sold: { decrement: sel.quantity } } }));
             }
           }
         }

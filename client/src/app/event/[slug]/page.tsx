@@ -52,15 +52,18 @@ type MerchItem = {
   variants: MerchVariant[]
 }
 
+type BundleMerchVariant = { id: string; size: string; available: number }
+
 type BundlePackageItem = {
   id: string
   itemType: "ticket" | "merch"
   ticketTypeId: string | null
-  merchVariantId: string | null
+  merchItemId: string | null
   quantity: number
   label: string
   unitPrice: number
   unitAvailable: number
+  variants?: BundleMerchVariant[] // hanya untuk item merch: pilihan size untuk pembeli
 }
 
 type BundlePackage = {
@@ -126,6 +129,8 @@ export default function EventStorefrontPage() {
   const [quantities, setQuantities] = useState<Record<string, number>>({})
   const [merchQuantities, setMerchQuantities] = useState<Record<string, number>>({})
   const [bundleQuantities, setBundleQuantities] = useState<Record<string, number>>({})
+  // Pilihan size merch per paket: bundleId -> merchItemId -> variantId
+  const [bundleMerchSizes, setBundleMerchSizes] = useState<Record<string, Record<string, string>>>({})
   const [buyerName, setBuyerName] = useState("")
   const [buyerEmail, setBuyerEmail] = useState("")
   const [buyerPhone, setBuyerPhone] = useState("")
@@ -166,13 +171,23 @@ export default function EventStorefrontPage() {
     [merchQuantities]
   )
 
-  // Paket bundling yang dipilih.
+  // Paket bundling yang dipilih — sertakan pilihan size merch pembeli per paket.
   const selectedBundles = useMemo(
     () =>
       Object.entries(bundleQuantities)
         .filter(([, qty]) => qty > 0)
-        .map(([bundleId, quantity]) => ({ bundleId, quantity })),
-    [bundleQuantities]
+        .map(([bundleId, quantity]) => {
+          const bundle = event?.bundlePackages.find((b) => b.id === bundleId)
+          const merchSizeSelections = (bundle?.items || [])
+            .filter((it) => it.itemType === "merch")
+            .map((it) => ({
+              merchItemId: it.merchItemId as string,
+              variantId: bundleMerchSizes[bundleId]?.[it.merchItemId as string] ?? null,
+              quantity: it.quantity,
+            }))
+          return { bundleId, quantity, merchSizeSelections }
+        }),
+    [bundleQuantities, bundleMerchSizes, event]
   )
 
   const totalTicketQty = selectedItems.reduce((s, i) => s + i.quantity, 0)
@@ -241,16 +256,42 @@ export default function EventStorefrontPage() {
     })
   }
 
+  const selectBundleMerchSize = (bundleId: string, merchItemId: string, variantId: string) => {
+    setBundleMerchSizes((prev) => ({
+      ...prev,
+      [bundleId]: { ...(prev[bundleId] || {}), [merchItemId]: variantId },
+    }))
+  }
+
+  // Semua item merch dalam paket sudah dipilih size-nya?
+  const bundleMerchAllSelected = (bundle: BundlePackage) =>
+    bundle.items
+      .filter((it) => it.itemType === "merch")
+      .every((it) => !!bundleMerchSizes[bundle.id]?.[it.merchItemId as string])
+
   // Max paket yang bisa dibeli = min(floor(stok item / qty item)) untuk semua item dalam paket.
+  // Untuk merch: pakai stok size yang dipilih pembeli (kalau sudah dipilih), else stok size terbanyak.
   const maxBundleQty = (bundle: BundlePackage) => {
     if (!bundle.isAvailable || bundle.items.length === 0) return 0
     return bundle.items.reduce((min, it) => {
-      const canMake = it.quantity > 0 ? Math.floor(it.unitAvailable / it.quantity) : 0
+      let avail = it.unitAvailable
+      if (it.itemType === "merch") {
+        const selVarId = bundleMerchSizes[bundle.id]?.[it.merchItemId as string]
+        const selVar = it.variants?.find((v) => v.id === selVarId)
+        if (selVar) avail = selVar.available
+      }
+      const canMake = it.quantity > 0 ? Math.floor(avail / it.quantity) : 0
       return Math.min(min, canMake)
     }, Infinity)
   }
 
   const updateBundleQty = (bundle: BundlePackage, delta: number) => {
+    // Sebelum menambah, semua item merch dalam paket wajib sudah dipilih size-nya.
+    if (delta > 0 && !bundleMerchAllSelected(bundle)) {
+      setFormError("Pilih size untuk semua item merch dalam paket dulu.")
+      return
+    }
+    setFormError("")
     const cap = maxBundleQty(bundle)
     setBundleQuantities((prev) => {
       const current = prev[bundle.id] || 0
@@ -269,6 +310,10 @@ export default function EventStorefrontPage() {
     // Paket yang mengandung tiket dideteksi lewat bundleTicketValue (>0 = ada porsi tiket).
     const bundleHasTicket = bundleTicketValue > 0
     if ((totalTicketQty > 0 || bundleHasTicket) && !/^\d{16}$/.test(buyerNik)) return setFormError("NIK harus 16 digit angka.")
+    // Semua item merch di dalam paket yang dibeli wajib punya size terpilih.
+    if (selectedBundles.some((sb) => sb.merchSizeSelections.some((s) => !s.variantId))) {
+      return setFormError("Pilih size untuk semua item merch dalam paket.")
+    }
 
     setSubmitting(true)
     try {
@@ -511,6 +556,37 @@ export default function EventStorefrontPage() {
                             ))}
                           </ul>
                         </div>
+
+                        {/* Pilih size untuk tiap item merch dalam paket (wajib sebelum bisa ditambah) */}
+                        {!soldOut &&
+                          bundle.items
+                            .filter((it) => it.itemType === "merch")
+                            .map((it) => {
+                              const selVarId = bundleMerchSizes[bundle.id]?.[it.merchItemId as string]
+                              return (
+                                <div key={it.id} className="mb-3">
+                                  <p className="mb-1.5 text-xs font-semibold text-slate-600">
+                                    Pilih size {it.label}
+                                  </p>
+                                  <div className="flex flex-wrap gap-2">
+                                    {(it.variants ?? []).map((v) => (
+                                      <button
+                                        key={v.id}
+                                        type="button"
+                                        onClick={() => selectBundleMerchSize(bundle.id, it.merchItemId as string, v.id)}
+                                        className={`rounded-lg border px-3 py-1.5 text-sm font-semibold transition-colors ${
+                                          selVarId === v.id
+                                            ? "border-emerald-500 bg-emerald-50 text-emerald-700"
+                                            : "border-slate-200 text-slate-600 hover:border-emerald-300"
+                                        }`}
+                                      >
+                                        {v.size}
+                                      </button>
+                                    ))}
+                                  </div>
+                                </div>
+                              )
+                            })}
 
                         {soldOut ? (
                           <span className="inline-block rounded-full bg-red-100 px-3 py-1 text-xs font-bold text-red-600">

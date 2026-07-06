@@ -116,7 +116,7 @@ type MerchItem = {
 type BundleItemDraft = {
   itemType: "ticket" | "merch"
   ticketTypeId: string | null
-  merchVariantId: string | null
+  merchItemId: string | null
   quantity: number
   label: string
 }
@@ -134,7 +134,7 @@ type Bundle = {
     id: string
     itemType: "ticket" | "merch"
     ticketTypeId: string | null
-    merchVariantId: string | null
+    merchItemId: string | null
     quantity: number
     label: string
   }[]
@@ -194,7 +194,7 @@ export default function TicketsPage() {
   const [bundleDraftItems, setBundleDraftItems] = useState<BundleItemDraft[]>([])
   const [selItemType, setSelItemType] = useState<"ticket" | "merch">("ticket")
   const [selTicketTypeId, setSelTicketTypeId] = useState("")
-  const [selMerchVariantId, setSelMerchVariantId] = useState("")
+  const [selMerchItemId, setSelMerchItemId] = useState("")
   const [selItemQty, setSelItemQty] = useState(1)
   const [addingBundle, setAddingBundle] = useState(false)
   const [bundleError, setBundleError] = useState("")
@@ -436,27 +436,26 @@ export default function TicketsPage() {
       if (!tt) return setBundleError("Pilih jenis tiket dulu.")
       setBundleDraftItems((prev) => [
         ...prev,
-        { itemType: "ticket", ticketTypeId: tt.id, merchVariantId: null, quantity: selItemQty, label: tt.name },
+        { itemType: "ticket", ticketTypeId: tt.id, merchItemId: null, quantity: selItemQty, label: tt.name },
       ])
     } else {
-      const found = merchItems
-        .flatMap((m) => m.variants.map((v) => ({ v, m })))
-        .find(({ v }) => v.id === selMerchVariantId)
-      if (!found) return setBundleError("Pilih produk merch & size dulu.")
+      // Merch di paket = PRODUK (tanpa size). Size dipilih pembeli saat checkout.
+      const mi = merchItems.find((m) => m.id === selMerchItemId)
+      if (!mi) return setBundleError("Pilih produk merch dulu.")
       setBundleDraftItems((prev) => [
         ...prev,
         {
           itemType: "merch",
           ticketTypeId: null,
-          merchVariantId: found.v.id,
+          merchItemId: mi.id,
           quantity: selItemQty,
-          label: `${found.m.name} (${found.v.size})`,
+          label: mi.name,
         },
       ])
     }
     setSelItemQty(1)
     setSelTicketTypeId("")
-    setSelMerchVariantId("")
+    setSelMerchItemId("")
   }
 
   const removeBundleDraftItem = (idx: number) => {
@@ -486,7 +485,7 @@ export default function TicketsPage() {
           items: bundleDraftItems.map((it) => ({
             itemType: it.itemType,
             ticketTypeId: it.ticketTypeId ?? undefined,
-            merchVariantId: it.merchVariantId ?? undefined,
+            merchItemId: it.merchItemId ?? undefined,
             quantity: it.quantity,
           })),
         }),
@@ -1208,16 +1207,14 @@ export default function TicketsPage() {
                         </select>
                       ) : (
                         <select
-                          value={selMerchVariantId}
-                          onChange={(e) => setSelMerchVariantId(e.target.value)}
+                          value={selMerchItemId}
+                          onChange={(e) => setSelMerchItemId(e.target.value)}
                           className="min-w-0 flex-1 rounded-lg border border-slate-200 px-2 py-1.5 text-sm outline-none focus:border-emerald-500"
                         >
-                          <option value="">-- Pilih merch & size --</option>
-                          {merchItems.flatMap((m) =>
-                            m.variants.map((v) => (
-                              <option key={v.id} value={v.id}>{m.name} ({v.size})</option>
-                            ))
-                          )}
+                          <option value="">-- Pilih merch --</option>
+                          {merchItems.map((m) => (
+                            <option key={m.id} value={m.id}>{m.name}</option>
+                          ))}
                         </select>
                       )}
                       <input
@@ -1235,6 +1232,10 @@ export default function TicketsPage() {
                         Tambah
                       </button>
                     </div>
+
+                    {selItemType === "merch" && (
+                      <p className="mt-1 text-xs text-slate-400">Size akan dipilih oleh pembeli saat checkout.</p>
+                    )}
 
                     {bundleDraftItems.length > 0 && (
                       <ul className="mt-2 flex flex-col gap-1">

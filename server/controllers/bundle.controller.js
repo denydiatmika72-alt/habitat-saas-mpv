@@ -40,14 +40,15 @@ async function resolveBundleItems(items, eventId) {
         unitPrice: tt ? tt.price : 0,
       });
     } else {
-      const variant = await prisma.merchVariant.findFirst({
-        where: { id: it.merchVariantId, item: { eventId } },
-        include: { item: { select: { name: true, price: true } } },
+      // Merch di paket = PRODUK (MerchItem), tanpa size. Size dipilih pembeli saat checkout.
+      const merchItem = await prisma.merchItem.findFirst({
+        where: { id: it.merchItemId, eventId },
+        select: { name: true, price: true },
       });
       resolved.push({
         ...it,
-        label: variant ? `${variant.item.name} (${variant.size})` : 'Merch tidak ditemukan',
-        unitPrice: variant ? variant.item.price : 0,
+        label: merchItem ? merchItem.name : 'Merch tidak ditemukan',
+        unitPrice: merchItem ? merchItem.price : 0,
       });
     }
   }
@@ -84,8 +85,8 @@ const createBundle = async (req, res) => {
         const tt = await prisma.ticketType.findFirst({ where: { id: it.ticketTypeId, eventId } });
         if (!tt) return res.status(400).json({ success: false, message: 'Jenis tiket dalam paket tidak valid.' });
       } else {
-        const variant = await prisma.merchVariant.findFirst({ where: { id: it.merchVariantId, item: { eventId } } });
-        if (!variant) return res.status(400).json({ success: false, message: 'Varian merch dalam paket tidak valid.' });
+        const merchItem = await prisma.merchItem.findFirst({ where: { id: it.merchItemId, eventId } });
+        if (!merchItem) return res.status(400).json({ success: false, message: 'Produk merch dalam paket tidak valid.' });
       }
     }
 
@@ -98,7 +99,7 @@ const createBundle = async (req, res) => {
           bundleId: created.id,
           itemType: it.itemType,
           ticketTypeId: it.itemType === 'ticket' ? it.ticketTypeId : null,
-          merchVariantId: it.itemType === 'merch' ? it.merchVariantId : null,
+          merchItemId: it.itemType === 'merch' ? it.merchItemId : null,
           quantity: Number(it.quantity),
         })),
       });
