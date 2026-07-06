@@ -989,3 +989,19 @@ File ini adalah log permanen bug yang sudah pernah terjadi di project ini besert
 - Fix: (lihat File terkait) Email kini wajib eksplisit di dua sisi dengan pesan jelas + atribut `required`. Logika fee/tax TIDAK diubah karena sudah benar (dikonfirmasi via data DB nyata).
 - Verifikasi: query DB order nyata → feeAmount/taxAmount non-zero & sesuai rumus; `node --check` storefront.controller.js OK; `npx tsc --noEmit` client EXIT 0. Submit form tanpa email → ditolak dengan pesan jelas (backend + frontend). Verifikasi E2E production menunggu konfirmasi backend VPS sudah di-deploy versi fee/tax terbaru.
 - Tag: #fee-platform #pajak #storefront #checkout #email #validation #audit #no-code-bug #deploy-check
+
+---
+
+## [2026-07-07] Box Office: fee platform & pajak tidak dihitung/disimpan (hardcode 0)
+
+- Gejala: Tiket yang dijual lewat Box Office Offline (`POST /api/box-office/:eventId/order` → `createBoxOfficeOrder`) tersimpan dengan `feeAmount: 0` dan `taxAmount: 0`, padahal event punya fee (ticketFeePercent/platformFeePercent) dan pajak (`taxEnabled: true`). Akibatnya P&L & rekonsiliasi hutang fee (roadmap #4) tidak punya data fee/pajak untuk transaksi offline.
+- Root cause: `createBoxOfficeOrder` meng-hardcode `feeAmount: 0`, `taxAmount: 0`, `feeBearer: 'promotor'` saat create TicketOrder — tidak ada kalkulasi sama sekali. Audit fee/tax 2026-07-07 hanya mencakup online storefront (`storefront.controller.js`), TIDAK menyentuh box office. Box office hanya menjual TicketType (tanpa merch/bundle) — dikonfirmasi dari kode controller.
+- File terkait:
+  - `server/services/ticket.service.js` — helper baru `computeFeeAndTax(event, { ticketSubtotal, merchSubtotal, bundleSubtotal, bundleTicketValue })` + `resolveFeePercents(event)` + export `DEFAULT_FEE_PERCENT`. Ini SUMBER TUNGGAL rumus fee/pajak (fee terpisah per komponen, fallback chain fee spesifik `??` platformFeePercent `??` 3.5; pajak 10% hanya porsi tiket & hanya kalau `event.taxEnabled`). Semua subtotal default 0 → caller ticket-only cukup kirim `ticketSubtotal`.
+  - `server/controllers/storefront.controller.js` — `createOrder` refactor: hapus rumus inline, panggil `computeFeeAndTax(event, { ticketSubtotal, merchSubtotal, bundleSubtotal, bundleTicketValue })`. `DEFAULT_FEE_PERCENT` sekarang di-import dari service (hapus const lokal). Hasil identik dengan sebelumnya (tidak ada perubahan perilaku online).
+  - `server/controllers/box-office.controller.js` — `createBoxOfficeOrder`: hitung `{ feeAmount, taxAmount } = computeFeeAndTax(event, { ticketSubtotal: subtotal })` lalu persist ke TicketOrder. `totalAmount` tetap = `subtotal` (harga face tiket) dan `feeBearer = 'promotor'`.
+- Keputusan & TODO (di-flag ke user, JANGAN diubah tanpa keputusan eksplisit):
+  - Default box office: **promotor menanggung** fee & pajak → `totalAmount` = harga face tiket = uang cash/transfer yang benar-benar ditagih ke walk-up buyer. `feeAmount` & `taxAmount` DICATAT (untuk P&L + rekonsiliasi hutang fee #4) tapi TIDAK menambah yang ditagih. Alasan: menagih fee/pajak di atas harga cash bulat ke pembeli walk-in itu tidak lazim.
+  - PERTANYAAN TERBUKA (ada TODO di kode): apakah box office boleh menagih fee/pajak ke pembeli (`feeBearer 'audience'`, `totalAmount = subtotal + feeAmount + taxAmount`)? Menunggu keputusan user.
+- Fix diverifikasi: panggil `createBoxOfficeOrder` sungguhan terhadap DB (event "Throne Party", taxEnabled=true, ticketFeePercent=null→platformFeePercent=3.5, tiket 50.000) → record DB: `feeAmount: 1750` (50.000×3.5%), `taxAmount: 5000` (50.000×10%), `totalAmount: 50000`, `feeBearer: 'promotor'` — cocok rumus. Order test lalu dihapus + stok dikembalikan. `node --check` semua file server lolos.
+- Tag: #box-office #fee-platform #pajak #shared-helper #ticket-service #p&l #roadmap-4 #offline

@@ -1,9 +1,8 @@
 const prisma = require('../src/lib/prisma');
 const { snap } = require('../services/midtrans.service');
-const { countTicketsForNik, MAX_TICKETS_PER_NIK } = require('../services/ticket.service');
+const { countTicketsForNik, MAX_TICKETS_PER_NIK, computeFeeAndTax, DEFAULT_FEE_PERCENT } = require('../services/ticket.service');
 
 const BOOKING_MINUTES = 15;
-const DEFAULT_FEE_PERCENT = 3.5;
 
 // GET /api/storefront/:slug — PUBLIC
 const getEventStorefront = async (req, res) => {
@@ -342,21 +341,13 @@ const createOrder = async (req, res) => {
 
         const subtotal = ticketSubtotal + merchSubtotal + bundleSubtotal;
 
-        // Fee dihitung TERPISAH per komponen (bukan satu fee gabungan). Tiket pakai ticketFeePercent,
-        // merch pakai merchFeePercent, paket kurasi pakai bundlingFeePercent. Fallback chain:
-        // fee spesifik → platformFeePercent (legacy) → 3.5.
-        const ticketFeePercent = event.ticketFeePercent ?? event.platformFeePercent ?? DEFAULT_FEE_PERCENT;
-        const merchFeePercent = event.merchFeePercent ?? event.platformFeePercent ?? DEFAULT_FEE_PERCENT;
-        const bundlingFeePercent = event.bundlingFeePercent ?? event.platformFeePercent ?? DEFAULT_FEE_PERCENT;
-        const ticketFee = Math.round(ticketSubtotal * (ticketFeePercent / 100));
-        const merchFee = Math.round(merchSubtotal * (merchFeePercent / 100));
-        const bundleFee = Math.round(bundleSubtotal * (bundlingFeePercent / 100));
-        const feeAmount = ticketFee + merchFee + bundleFee;
+        // Fee (terpisah per komponen) + pajak dihitung lewat helper bersama (services/ticket.service.js)
+        // supaya identik dengan box office. Fallback chain fee spesifik → platformFeePercent → 3.5;
+        // pajak 10% hanya dari porsi tiket & hanya kalau event.taxEnabled.
+        const { ticketFeePercent, merchFeePercent, bundlingFeePercent, ticketFee, merchFee, bundleFee, feeAmount, taxAmount } =
+          computeFeeAndTax(event, { ticketSubtotal, merchSubtotal, bundleSubtotal, bundleTicketValue });
 
         const feeBearer = event.feeBearer === 'audience' ? 'audience' : 'promotor';
-        // Pajak 10% HANYA dari porsi tiket (tiket langsung + porsi tiket di dalam paket) — merch tidak pernah kena pajak.
-        const taxableTicketValue = ticketSubtotal + bundleTicketValue;
-        const taxAmount = event.taxEnabled ? Math.round(taxableTicketValue * 0.1) : 0;
 
         // Kalau fee ditanggung penonton, fee ditambahkan ke total tagihan. Kalau ditanggung promotor,
         // penonton hanya bayar subtotal + pajak — fee dipotong dari hasil penjualan promotor (tidak ditagih ke penonton).

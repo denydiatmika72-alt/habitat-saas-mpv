@@ -1,7 +1,7 @@
 const prisma = require('../src/lib/prisma');
 const QRCode = require('qrcode');
 const { sendOrderEmail } = require('../services/email.service');
-const { generateTicketsForOrderItems, countTicketsForNik, MAX_TICKETS_PER_NIK } = require('../services/ticket.service');
+const { generateTicketsForOrderItems, countTicketsForNik, MAX_TICKETS_PER_NIK, computeFeeAndTax } = require('../services/ticket.service');
 
 const PAYMENT_METHODS = ['cash', 'transfer'];
 
@@ -129,6 +129,20 @@ const createBoxOfficeOrder = async (req, res) => {
           createItems.push({ ticketTypeId: tt.id, quantity: qty, price: tt.price });
         }
 
+        // Fee & pajak dihitung dengan helper bersama yang sama persis dengan online checkout.
+        // Box office HANYA menjual TicketType (tanpa merch/bundle) → cukup kirim ticketSubtotal.
+        const { feeAmount, taxAmount } = computeFeeAndTax(event, { ticketSubtotal: subtotal });
+
+        // TODO(keputusan bisnis — box office feeBearer & pajak ke pembeli):
+        // Saat ini `totalAmount = subtotal` (harga face tiket) = uang cash/transfer yang BENAR-BENAR ditagih
+        // ke walk-up buyer di venue. `feeAmount` & `taxAmount` DICATAT (untuk P&L + rekonsiliasi hutang fee
+        // roadmap #4) tapi TIDAK ditambahkan ke yang ditagih — default box office = promotor menanggung fee
+        // (feeBearer 'promotor'), karena menagih fee/pajak di atas harga cash bulat ke pembeli walk-in itu tak lazim.
+        // PERLU KEPUTUSAN USER: apakah box office boleh menagih fee/pajak ke pembeli (feeBearer 'audience',
+        // totalAmount = subtotal + feeAmount + taxAmount)? Jangan ubah tanpa keputusan eksplisit.
+        const feeBearer = 'promotor';
+        const totalAmount = subtotal;
+
         const orderId = `nexevent-boxoffice-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
         const order = await tx.ticketOrder.create({
           data: {
@@ -141,10 +155,10 @@ const createBoxOfficeOrder = async (req, res) => {
             buyerEmail: buyerEmail || '',
             buyerPhone: '',
             buyerNik,
-            totalAmount: subtotal,
-            feeAmount: 0,
-            feeBearer: 'promotor',
-            taxAmount: 0,
+            totalAmount,
+            feeAmount,
+            feeBearer,
+            taxAmount,
             status: 'paid',
             paidAt: new Date(),
             // expiredAt non-null di schema; order box office langsung paid jadi tidak dipakai untuk release.
