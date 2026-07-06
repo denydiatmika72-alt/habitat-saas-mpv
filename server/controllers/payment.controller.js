@@ -138,7 +138,12 @@ const handleTicketOrderWebhook = async (orderId, transactionStatus, res) => {
   try {
     const order = await prisma.ticketOrder.findUnique({
       where: { orderId },
-      include: { items: true, merchItems: true, event: true },
+      include: {
+        items: true,
+        merchItems: true,
+        event: true,
+        bundleItems: { include: { bundle: { include: { items: true } } } },
+      },
     });
 
     if (!order) {
@@ -174,15 +179,27 @@ const handleTicketOrderWebhook = async (orderId, transactionStatus, res) => {
       }
     } else if (['expire', 'cancel', 'deny'].includes(transactionStatus)) {
       if (order.status === 'pending') {
-        await prisma.$transaction([
+        const ops = [
           ...order.items.map((item) =>
             prisma.ticketType.update({ where: { id: item.ticketTypeId }, data: { sold: { decrement: item.quantity } } })
           ),
           ...order.merchItems.map((m) =>
             prisma.merchVariant.update({ where: { id: m.variantId }, data: { sold: { decrement: m.quantity } } })
           ),
-          prisma.ticketOrder.update({ where: { orderId }, data: { status: transactionStatus === 'expire' ? 'expired' : 'cancelled' } }),
-        ]);
+        ];
+        // Bundle: kembalikan stok tiap item paket (tiket & merch) × jumlah paket.
+        for (const boi of order.bundleItems) {
+          for (const it of boi.bundle.items) {
+            const dec = it.quantity * boi.quantity;
+            if (it.itemType === 'ticket' && it.ticketTypeId) {
+              ops.push(prisma.ticketType.update({ where: { id: it.ticketTypeId }, data: { sold: { decrement: dec } } }));
+            } else if (it.itemType === 'merch' && it.merchVariantId) {
+              ops.push(prisma.merchVariant.update({ where: { id: it.merchVariantId }, data: { sold: { decrement: dec } } }));
+            }
+          }
+        }
+        ops.push(prisma.ticketOrder.update({ where: { orderId }, data: { status: transactionStatus === 'expire' ? 'expired' : 'cancelled' } }));
+        await prisma.$transaction(ops);
       }
     }
 

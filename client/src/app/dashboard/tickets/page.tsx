@@ -2,8 +2,9 @@
 
 import { useEffect, useState, useCallback } from "react"
 import Link from "next/link"
-import { Lock, Ticket as TicketIcon, Plus, Trash2, Pencil, Copy, Check, ExternalLink, Upload } from "lucide-react"
+import { Lock, Ticket as TicketIcon, Plus, Trash2, Pencil, Copy, Check, ExternalLink, Upload, Package } from "lucide-react"
 import { useUser } from "@/hooks/useUser"
+import { formatIDRInput, parseIDRInput } from "@/lib/formatNumber"
 
 type Event = { id: string; title: string }
 
@@ -112,6 +113,33 @@ type MerchItem = {
   variants: MerchVariant[]
 }
 
+type BundleItemDraft = {
+  itemType: "ticket" | "merch"
+  ticketTypeId: string | null
+  merchVariantId: string | null
+  quantity: number
+  label: string
+}
+
+type Bundle = {
+  id: string
+  name: string
+  description: string | null
+  price: number
+  imageUrl: string | null
+  isActive: boolean
+  approvalStatus: "pending" | "approved" | "rejected"
+  approvalNote: string | null
+  items: {
+    id: string
+    itemType: "ticket" | "merch"
+    ticketTypeId: string | null
+    merchVariantId: string | null
+    quantity: number
+    label: string
+  }[]
+}
+
 const MERCH_SIZES = ["S", "M", "L", "XL", "XXL", "FREE SIZE"]
 
 const IDR = new Intl.NumberFormat("id-ID", { style: "currency", currency: "IDR", maximumFractionDigits: 0 })
@@ -159,6 +187,19 @@ export default function TicketsPage() {
   const [merchError, setMerchError] = useState("")
   const [uploadingMerchId, setUploadingMerchId] = useState<string | null>(null)
 
+  const [bundles, setBundles] = useState<Bundle[]>([])
+  const [newBundleName, setNewBundleName] = useState("")
+  const [newBundleDescription, setNewBundleDescription] = useState("")
+  const [newBundlePrice, setNewBundlePrice] = useState("")
+  const [bundleDraftItems, setBundleDraftItems] = useState<BundleItemDraft[]>([])
+  const [selItemType, setSelItemType] = useState<"ticket" | "merch">("ticket")
+  const [selTicketTypeId, setSelTicketTypeId] = useState("")
+  const [selMerchVariantId, setSelMerchVariantId] = useState("")
+  const [selItemQty, setSelItemQty] = useState(1)
+  const [addingBundle, setAddingBundle] = useState(false)
+  const [bundleError, setBundleError] = useState("")
+  const [uploadingBundleId, setUploadingBundleId] = useState<string | null>(null)
+
   const [newType, setNewType] = useState({ name: "", description: "", price: "", quota: "" })
   const [addingType, setAddingType] = useState(false)
   const [typeError, setTypeError] = useState("")
@@ -195,13 +236,14 @@ export default function TicketsPage() {
     if (!selectedEventId) return
     setLoadingDetail(true)
     try {
-      const [evRes, ttRes, ordRes, merchRes] = await Promise.all([
+      const [evRes, ttRes, ordRes, merchRes, bundleRes] = await Promise.all([
         fetch(`/api/events/${selectedEventId}`, { headers: authHeaders() }),
         fetch(`/api/tickets/types?eventId=${selectedEventId}`, { headers: authHeaders() }),
         fetch(`/api/tickets/orders?eventId=${selectedEventId}`, { headers: authHeaders() }),
         fetch(`/api/merch/items?eventId=${selectedEventId}`, { headers: authHeaders() }),
+        fetch(`/api/bundles?eventId=${selectedEventId}`, { headers: authHeaders() }),
       ])
-      const [evData, ttData, ordData, merchData] = await Promise.all([evRes.json(), ttRes.json(), ordRes.json(), merchRes.json()])
+      const [evData, ttData, ordData, merchData, bundleData] = await Promise.all([evRes.json(), ttRes.json(), ordRes.json(), merchRes.json(), bundleRes.json()])
       if (evData.success) {
         setEvent(evData.data)
         setSaleStart(toLocalInputValue(evData.data.saleStartAt))
@@ -213,6 +255,7 @@ export default function TicketsPage() {
       if (ttData.success) setTicketTypes(ttData.data)
       if (ordData.success) setOrders(ordData.data)
       if (merchData.success) setMerchItems(merchData.data)
+      if (bundleData.success) setBundles(bundleData.data)
     } catch {}
     finally { setLoadingDetail(false) }
   }, [selectedEventId])
@@ -223,6 +266,8 @@ export default function TicketsPage() {
     setTicketTypes([])
     setOrders([])
     setMerchItems([])
+    setBundles([])
+    setBundleDraftItems([])
     setDescription("")
     setSelectedFacilities([])
     setTermsConditions("")
@@ -242,7 +287,7 @@ export default function TicketsPage() {
           eventId: selectedEventId,
           name: newType.name,
           description: newType.description || undefined,
-          price: Number(newType.price),
+          price: parseIDRInput(newType.price),
           quota: Number(newType.quota),
         }),
       })
@@ -262,7 +307,7 @@ export default function TicketsPage() {
 
   const startEdit = (tt: TicketType) => {
     setEditingId(tt.id)
-    setEditDraft({ name: tt.name, price: String(tt.price), quota: String(tt.quota) })
+    setEditDraft({ name: tt.name, price: formatIDRInput(String(tt.price)), quota: String(tt.quota) })
   }
 
   const saveEdit = async (id: string) => {
@@ -270,7 +315,7 @@ export default function TicketsPage() {
       const res = await fetch(`/api/tickets/types/${id}`, {
         method: "PATCH",
         headers: authHeaders(),
-        body: JSON.stringify({ name: editDraft.name, price: Number(editDraft.price), quota: Number(editDraft.quota) }),
+        body: JSON.stringify({ name: editDraft.name, price: parseIDRInput(editDraft.price), quota: Number(editDraft.quota) }),
       })
       const data = await res.json()
       if (data.success) {
@@ -324,7 +369,7 @@ export default function TicketsPage() {
           eventId: selectedEventId,
           name: newMerchName.trim(),
           description: newMerchDescription.trim() || undefined,
-          price: Number(newMerchPrice),
+          price: parseIDRInput(newMerchPrice),
           variants,
         }),
       })
@@ -381,6 +426,124 @@ export default function TicketsPage() {
       alert("Gagal menghubungi server.")
     } finally {
       setUploadingMerchId(null)
+    }
+  }
+
+  const addItemToBundleDraft = () => {
+    setBundleError("")
+    if (selItemType === "ticket") {
+      const tt = ticketTypes.find((t) => t.id === selTicketTypeId)
+      if (!tt) return setBundleError("Pilih jenis tiket dulu.")
+      setBundleDraftItems((prev) => [
+        ...prev,
+        { itemType: "ticket", ticketTypeId: tt.id, merchVariantId: null, quantity: selItemQty, label: tt.name },
+      ])
+    } else {
+      const found = merchItems
+        .flatMap((m) => m.variants.map((v) => ({ v, m })))
+        .find(({ v }) => v.id === selMerchVariantId)
+      if (!found) return setBundleError("Pilih produk merch & size dulu.")
+      setBundleDraftItems((prev) => [
+        ...prev,
+        {
+          itemType: "merch",
+          ticketTypeId: null,
+          merchVariantId: found.v.id,
+          quantity: selItemQty,
+          label: `${found.m.name} (${found.v.size})`,
+        },
+      ])
+    }
+    setSelItemQty(1)
+    setSelTicketTypeId("")
+    setSelMerchVariantId("")
+  }
+
+  const removeBundleDraftItem = (idx: number) => {
+    setBundleDraftItems((prev) => prev.filter((_, i) => i !== idx))
+  }
+
+  const handleAddBundle = async () => {
+    setBundleError("")
+    if (!newBundleName.trim() || !newBundlePrice) {
+      setBundleError("Nama paket dan harga total wajib diisi.")
+      return
+    }
+    if (bundleDraftItems.length === 0) {
+      setBundleError("Paket harus berisi minimal 1 item.")
+      return
+    }
+    setAddingBundle(true)
+    try {
+      const res = await fetch("/api/bundles", {
+        method: "POST",
+        headers: authHeaders(),
+        body: JSON.stringify({
+          eventId: selectedEventId,
+          name: newBundleName.trim(),
+          description: newBundleDescription.trim() || undefined,
+          price: parseIDRInput(newBundlePrice),
+          items: bundleDraftItems.map((it) => ({
+            itemType: it.itemType,
+            ticketTypeId: it.ticketTypeId ?? undefined,
+            merchVariantId: it.merchVariantId ?? undefined,
+            quantity: it.quantity,
+          })),
+        }),
+      })
+      const data = await res.json()
+      if (data.success) {
+        setBundles((prev) => [...prev, data.data])
+        setNewBundleName("")
+        setNewBundleDescription("")
+        setNewBundlePrice("")
+        setBundleDraftItems([])
+      } else {
+        setBundleError(data.message || "Gagal membuat paket.")
+      }
+    } catch {
+      setBundleError("Gagal menghubungi server.")
+    } finally {
+      setAddingBundle(false)
+    }
+  }
+
+  const handleToggleBundleActive = async (id: string, isActive: boolean) => {
+    const res = await fetch(`/api/bundles/${id}`, {
+      method: "PATCH",
+      headers: authHeaders(),
+      body: JSON.stringify({ isActive }),
+    })
+    const data = await res.json()
+    if (data.success) setBundles((prev) => prev.map((b) => (b.id === id ? data.data : b)))
+  }
+
+  const handleDeleteBundle = async (id: string) => {
+    if (!confirm("Hapus paket bundling ini?")) return
+    const res = await fetch(`/api/bundles/${id}`, { method: "DELETE", headers: authHeaders() })
+    const data = await res.json()
+    if (data.success) setBundles((prev) => prev.filter((b) => b.id !== id))
+    else alert(data.message || "Gagal menghapus paket.")
+  }
+
+  const handleUploadBundleImage = async (id: string, file: File | null | undefined) => {
+    if (!file) return
+    setUploadingBundleId(id)
+    try {
+      const form = new FormData()
+      form.append("file", file)
+      const res = await fetch(`/api/bundles/${id}/image`, {
+        method: "POST",
+        headers: { Authorization: `Bearer ${getToken()}` },
+        body: form,
+      })
+      const data = await res.json()
+      if (data.success) setBundles((prev) => prev.map((b) => (b.id === id ? { ...b, imageUrl: data.url } : b)))
+      else alert(data.message || "Gagal upload foto paket.")
+    } catch {
+      alert("Gagal menghubungi server.")
+    } finally {
+      setUploadingBundleId(null)
     }
   }
 
@@ -645,9 +808,10 @@ export default function TicketsPage() {
                           />
                           <div className="flex gap-2">
                             <input
-                              type="number"
+                              type="text"
+                              inputMode="numeric"
                               value={editDraft.price}
-                              onChange={(e) => setEditDraft((d) => ({ ...d, price: e.target.value }))}
+                              onChange={(e) => setEditDraft((d) => ({ ...d, price: formatIDRInput(e.target.value) }))}
                               placeholder="Harga"
                               className="w-1/2 rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-sm"
                             />
@@ -710,15 +874,18 @@ export default function TicketsPage() {
                   className="rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500/30"
                 />
                 <div className="flex gap-2">
-                  <input
-                    type="number"
-                    value={newType.price}
-                    onChange={(e) => setNewType((d) => ({ ...d, price: e.target.value }))}
-                    placeholder="Harga (Rp)"
-                    required
-                    min={0}
-                    className="w-1/2 rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500/30"
-                  />
+                  <div className="relative w-1/2">
+                    <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-sm text-slate-400">Rp</span>
+                    <input
+                      type="text"
+                      inputMode="numeric"
+                      value={newType.price}
+                      onChange={(e) => setNewType((d) => ({ ...d, price: formatIDRInput(e.target.value) }))}
+                      placeholder="Harga"
+                      required
+                      className="w-full rounded-lg border border-slate-200 py-2 pl-9 pr-3 text-sm outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500/30"
+                    />
+                  </div>
                   <input
                     type="number"
                     value={newType.quota}
@@ -853,14 +1020,17 @@ export default function TicketsPage() {
                     placeholder="Deskripsi (opsional)"
                     className="rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500/30"
                   />
-                  <input
-                    type="number"
-                    min={0}
-                    value={newMerchPrice}
-                    onChange={(e) => setNewMerchPrice(e.target.value)}
-                    placeholder="Harga (Rp) — sama untuk semua size"
-                    className="rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500/30"
-                  />
+                  <div className="relative">
+                    <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-sm text-slate-400">Rp</span>
+                    <input
+                      type="text"
+                      inputMode="numeric"
+                      value={newMerchPrice}
+                      onChange={(e) => setNewMerchPrice(formatIDRInput(e.target.value))}
+                      placeholder="Harga — sama untuk semua size"
+                      className="w-full rounded-lg border border-slate-200 py-2 pl-9 pr-3 text-sm outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500/30"
+                    />
+                  </div>
                   <div>
                     <p className="mb-2 text-xs font-medium text-slate-500">Size &amp; Stok</p>
                     <div className="grid grid-cols-2 gap-2">
@@ -891,6 +1061,203 @@ export default function TicketsPage() {
                   </button>
                   <p className="text-xs text-slate-400">
                     Merchandise baru akan direview admin sebelum tampil di storefront.
+                  </p>
+                </div>
+              </div>
+            </div>
+
+            {/* Paket Bundling */}
+            <div className="rounded-xl border border-slate-200 bg-white p-5">
+              <div className="mb-4">
+                <p className="flex items-center gap-1.5 text-sm font-semibold text-slate-900">
+                  <Package className="size-4 text-emerald-700" /> Paket Bundling
+                </p>
+                <p className="mt-0.5 text-xs text-slate-400">
+                  Paket kurasi tiket + merch dengan harga khusus (contoh: Tiket VIP + Kaos = Rp 200.000).
+                </p>
+              </div>
+
+              {bundles.length > 0 && (
+                <ul className="mb-4 flex flex-col gap-3">
+                  {bundles.map((b) => (
+                    <li key={b.id} className="rounded-lg border border-slate-100 bg-slate-50 p-3">
+                      <div className="flex items-start gap-3">
+                        <div className="size-16 shrink-0 overflow-hidden rounded-xl border border-slate-200">
+                          {b.imageUrl ? (
+                            <img src={b.imageUrl} alt={b.name} className="size-full object-cover" />
+                          ) : (
+                            <label className="flex size-full cursor-pointer flex-col items-center justify-center bg-white hover:bg-slate-50">
+                              <Upload className="size-4 text-slate-300" />
+                              <span className="mt-1 text-[9px] text-slate-300">{uploadingBundleId === b.id ? "..." : "Foto"}</span>
+                              <input
+                                type="file"
+                                accept="image/jpeg,image/png,image/webp"
+                                className="hidden"
+                                disabled={uploadingBundleId === b.id}
+                                onChange={(e) => handleUploadBundleImage(b.id, e.target.files?.[0])}
+                              />
+                            </label>
+                          )}
+                        </div>
+
+                        <div className="min-w-0 flex-1">
+                          <div className="flex items-center justify-between gap-2">
+                            <p className="truncate text-sm font-bold text-slate-900">{b.name}</p>
+                            <div className="flex shrink-0 items-center gap-2">
+                              <ToggleSwitch checked={b.isActive} onChange={() => handleToggleBundleActive(b.id, !b.isActive)} />
+                              <button onClick={() => handleDeleteBundle(b.id)} className="flex size-7 items-center justify-center rounded-md text-slate-400 hover:bg-red-50 hover:text-red-500">
+                                <Trash2 className="size-3.5" />
+                              </button>
+                            </div>
+                          </div>
+                          <p className="text-sm font-bold text-emerald-700">{IDR.format(b.price)}</p>
+                          <p className="mt-0.5 text-xs text-slate-500">
+                            Isi: {b.items.map((it) => `${it.quantity}× ${it.label}`).join(" + ")}
+                          </p>
+                          <div className="mt-1">
+                            {b.approvalStatus === "pending" && (
+                              <span className="rounded-full bg-amber-100 px-2 py-0.5 text-xs font-bold text-amber-700">Menunggu Persetujuan</span>
+                            )}
+                            {b.approvalStatus === "approved" && (
+                              <span className="rounded-full bg-emerald-100 px-2 py-0.5 text-xs font-bold text-emerald-700">Disetujui</span>
+                            )}
+                            {b.approvalStatus === "rejected" && (
+                              <div>
+                                <span className="rounded-full bg-red-100 px-2 py-0.5 text-xs font-bold text-red-600">Ditolak</span>
+                                {b.approvalNote && <p className="mt-1 text-xs text-red-500">Catatan: {b.approvalNote}</p>}
+                              </div>
+                            )}
+                          </div>
+                          {b.imageUrl && (
+                            <label className="mt-0.5 inline-block cursor-pointer text-[11px] text-emerald-600 hover:underline">
+                              {uploadingBundleId === b.id ? "Mengupload..." : "Ganti foto"}
+                              <input
+                                type="file"
+                                accept="image/jpeg,image/png,image/webp"
+                                className="hidden"
+                                disabled={uploadingBundleId === b.id}
+                                onChange={(e) => handleUploadBundleImage(b.id, e.target.files?.[0])}
+                              />
+                            </label>
+                          )}
+                        </div>
+                      </div>
+                    </li>
+                  ))}
+                </ul>
+              )}
+
+              {/* Add new bundle */}
+              <div className="rounded-lg border-2 border-dashed border-slate-200 p-4">
+                <p className="mb-3 text-xs font-medium text-slate-500">Buat Paket Bundling</p>
+                <div className="flex flex-col gap-2">
+                  <input
+                    value={newBundleName}
+                    onChange={(e) => setNewBundleName(e.target.value)}
+                    placeholder="Nama paket (contoh: Paket VIP Spesial)"
+                    className="rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500/30"
+                  />
+                  <input
+                    value={newBundleDescription}
+                    onChange={(e) => setNewBundleDescription(e.target.value)}
+                    placeholder="Deskripsi (opsional)"
+                    className="rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500/30"
+                  />
+                  <div className="relative">
+                    <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-sm text-slate-400">Rp</span>
+                    <input
+                      type="text"
+                      inputMode="numeric"
+                      value={newBundlePrice}
+                      onChange={(e) => setNewBundlePrice(formatIDRInput(e.target.value))}
+                      placeholder="Harga total paket"
+                      className="w-full rounded-lg border border-slate-200 py-2 pl-9 pr-3 text-sm outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500/30"
+                    />
+                  </div>
+
+                  {/* Item selector */}
+                  <div className="rounded-lg border border-slate-200 p-3">
+                    <p className="mb-2 text-xs font-medium text-slate-500">Tambah Item ke Paket</p>
+                    <div className="mb-2 flex gap-2">
+                      <button
+                        type="button"
+                        onClick={() => setSelItemType("ticket")}
+                        className={`flex-1 rounded-lg border px-3 py-1.5 text-xs font-semibold ${selItemType === "ticket" ? "border-emerald-500 bg-emerald-50 text-emerald-700" : "border-slate-200 text-slate-500"}`}
+                      >
+                        Tiket
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setSelItemType("merch")}
+                        className={`flex-1 rounded-lg border px-3 py-1.5 text-xs font-semibold ${selItemType === "merch" ? "border-emerald-500 bg-emerald-50 text-emerald-700" : "border-slate-200 text-slate-500"}`}
+                      >
+                        Merchandise
+                      </button>
+                    </div>
+                    <div className="flex gap-2">
+                      {selItemType === "ticket" ? (
+                        <select
+                          value={selTicketTypeId}
+                          onChange={(e) => setSelTicketTypeId(e.target.value)}
+                          className="min-w-0 flex-1 rounded-lg border border-slate-200 px-2 py-1.5 text-sm outline-none focus:border-emerald-500"
+                        >
+                          <option value="">-- Pilih tiket --</option>
+                          {ticketTypes.map((tt) => (
+                            <option key={tt.id} value={tt.id}>{tt.name}</option>
+                          ))}
+                        </select>
+                      ) : (
+                        <select
+                          value={selMerchVariantId}
+                          onChange={(e) => setSelMerchVariantId(e.target.value)}
+                          className="min-w-0 flex-1 rounded-lg border border-slate-200 px-2 py-1.5 text-sm outline-none focus:border-emerald-500"
+                        >
+                          <option value="">-- Pilih merch & size --</option>
+                          {merchItems.flatMap((m) =>
+                            m.variants.map((v) => (
+                              <option key={v.id} value={v.id}>{m.name} ({v.size})</option>
+                            ))
+                          )}
+                        </select>
+                      )}
+                      <input
+                        type="number"
+                        min={1}
+                        value={selItemQty}
+                        onChange={(e) => setSelItemQty(Math.max(1, parseInt(e.target.value) || 1))}
+                        className="w-16 rounded-lg border border-slate-200 px-2 py-1.5 text-center text-sm outline-none focus:border-emerald-500"
+                      />
+                      <button
+                        type="button"
+                        onClick={addItemToBundleDraft}
+                        className="shrink-0 rounded-lg bg-emerald-800 px-3 py-1.5 text-xs font-semibold text-white hover:bg-emerald-900"
+                      >
+                        Tambah
+                      </button>
+                    </div>
+
+                    {bundleDraftItems.length > 0 && (
+                      <ul className="mt-2 flex flex-col gap-1">
+                        {bundleDraftItems.map((it, idx) => (
+                          <li key={idx} className="flex items-center justify-between rounded-lg bg-slate-50 px-3 py-1.5 text-xs text-slate-700">
+                            <span>{it.quantity}× {it.label} <span className="text-slate-400">({it.itemType === "ticket" ? "tiket" : "merch"})</span></span>
+                            <button type="button" onClick={() => removeBundleDraftItem(idx)} className="text-red-400 hover:text-red-500">Hapus</button>
+                          </li>
+                        ))}
+                      </ul>
+                    )}
+                  </div>
+
+                  {bundleError && <p className="rounded-lg bg-red-50 px-3 py-2 text-xs text-red-600">{bundleError}</p>}
+                  <button
+                    onClick={handleAddBundle}
+                    disabled={addingBundle}
+                    className="flex items-center justify-center gap-1.5 rounded-lg bg-emerald-800 py-2 text-sm font-semibold text-white transition-colors hover:bg-emerald-900 disabled:opacity-50"
+                  >
+                    <Plus className="size-4" /> {addingBundle ? "Membuat..." : "Buat Paket"}
+                  </button>
+                  <p className="text-xs text-slate-400">
+                    Stok paket mengambil dari stok tiket &amp; merch. Paket akan direview admin sebelum tampil di storefront.
                   </p>
                 </div>
               </div>

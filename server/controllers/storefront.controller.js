@@ -22,6 +22,11 @@ const getEventStorefront = async (req, res) => {
           include: { variants: { orderBy: { size: 'asc' } } },
           orderBy: { createdAt: 'asc' },
         },
+        bundlePackages: {
+          where: { isActive: true, approvalStatus: 'approved' },
+          include: { items: true },
+          orderBy: { createdAt: 'asc' },
+        },
       },
     });
 
@@ -52,12 +57,46 @@ const getEventStorefront = async (req, res) => {
       })),
     }));
 
+    // Bundle: BundleItem tidak punya relasi FK, jadi resolve nama + stok dari data event.
+    // Availability dihitung terhadap SEMUA tiket/varian event (bukan cuma yang aktif) supaya
+    // paket tetap valid meski salah satu item-nya dinonaktifkan promotor di luar paket.
+    const allTicketTypes = await prisma.ticketType.findMany({ where: { eventId: event.id } });
+    const allVariants = await prisma.merchVariant.findMany({
+      where: { item: { eventId: event.id } },
+      include: { item: { select: { name: true, price: true } } },
+    });
+
+    const bundlePackages = event.bundlePackages.map((b) => {
+      const items = b.items.map((it) => {
+        if (it.itemType === 'ticket') {
+          const tt = allTicketTypes.find((t) => t.id === it.ticketTypeId);
+          return {
+            ...it,
+            label: tt ? tt.name : 'Tiket',
+            unitPrice: tt ? tt.price : 0,
+            unitAvailable: tt ? tt.quota - tt.sold : 0,
+          };
+        }
+        const v = allVariants.find((x) => x.id === it.merchVariantId);
+        return {
+          ...it,
+          label: v ? `${v.item.name} (${v.size})` : 'Merchandise',
+          unitPrice: v ? v.item.price : 0,
+          unitAvailable: v ? v.stock - v.sold : 0,
+        };
+      });
+      // Paket tersedia hanya kalau SEMUA item punya stok cukup untuk minimal 1 paket.
+      const isAvailable = items.every((it) => it.unitAvailable >= it.quantity);
+      return { ...b, items, isAvailable };
+    });
+
     return res.json({
       success: true,
       event: {
         ...event,
         ticketTypes: ticketTypesWithAvailability,
         merchItems: merchWithAvailability,
+        bundlePackages,
         // feePercent legacy (fallback umum); fee per tipe order di-resolve frontend/backend
         // via chain: fee spesifik → platformFeePercent → 3.5. Field ticketFeePercent /
         // merchFeePercent / bundlingFeePercent sudah ikut ter-spread dari ...event.
@@ -86,12 +125,13 @@ const createOrder = async (req, res) => {
         ? items
         : [];
     const merchItems = Array.isArray(req.body.merchItems) ? req.body.merchItems : [];
+    const bundleItems = Array.isArray(req.body.bundleItems) ? req.body.bundleItems : [];
 
     if (!buyerName || !buyerEmail || !buyerPhone) {
       return res.status(400).json({ success: false, message: 'Data pembeli (nama, email, HP) wajib diisi.' });
     }
-    if (ticketItems.length === 0 && merchItems.length === 0) {
-      return res.status(400).json({ success: false, message: 'Pilih minimal 1 tiket atau merchandise.' });
+    if (ticketItems.length === 0 && merchItems.length === 0 && bundleItems.length === 0) {
+      return res.status(400).json({ success: false, message: 'Pilih minimal 1 tiket, merchandise, atau paket.' });
     }
     if (!/^(\+62|62|0)8[0-9]{7,12}$/.test(buyerPhone.replace(/[\s-]/g, ''))) {
       return res.status(400).json({ success: false, message: 'Nomor HP tidak valid.' });
@@ -99,17 +139,6 @@ const createOrder = async (req, res) => {
     if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(buyerEmail)) {
       return res.status(400).json({ success: false, message: 'Email tidak valid.' });
     }
-
-    const hasTickets = ticketItems.length > 0;
-    // NIK wajib & harus valid kalau ada pembelian tiket (anti-calo). Untuk merch-only, NIK opsional.
-    if (hasTickets) {
-      if (!/^\d{16}$/.test(buyerNik || '')) {
-        return res.status(400).json({ success: false, message: 'NIK harus 16 digit angka.' });
-      }
-    } else if (buyerNik && !/^\d{16}$/.test(buyerNik)) {
-      return res.status(400).json({ success: false, message: 'NIK harus 16 digit angka.' });
-    }
-    const safeNik = buyerNik || '';
 
     const event = await prisma.event.findUnique({ where: { slug } });
     if (!event || event.storefrontStatus !== 'approved') {
@@ -124,14 +153,58 @@ const createOrder = async (req, res) => {
       return res.status(400).json({ success: false, message: 'Penjualan telah berakhir.' });
     }
 
-    // Anti-calo: limit NIK hanya berlaku untuk pembelian tiket.
+    // Validasi paket bundling (server-side, tidak percaya harga/isi dari client).
+    const bundleIds = bundleItems.map((b) => b.bundleId);
+    const bundles = bundleIds.length
+      ? await prisma.bundlePackage.findMany({
+          where: { id: { in: bundleIds }, eventId: event.id, isActive: true, approvalStatus: 'approved' },
+          include: { items: true },
+        })
+      : [];
+    for (const bi of bundleItems) {
+      const b = bundles.find((x) => x.id === bi.bundleId);
+      if (!b) return res.status(400).json({ success: false, message: 'Paket bundling tidak tersedia.' });
+      if (Number(bi.quantity) <= 0) return res.status(400).json({ success: false, message: 'Jumlah paket tidak valid.' });
+    }
+
+    // Berapa tiket yang terkandung di paket yang dibeli (untuk NIK limit anti-calo).
+    const bundleTicketCount = bundleItems.reduce((sum, bi) => {
+      const b = bundles.find((x) => x.id === bi.bundleId);
+      const ticketsInBundle = b.items
+        .filter((it) => it.itemType === 'ticket')
+        .reduce((s, it) => s + it.quantity, 0);
+      return sum + ticketsInBundle * Number(bi.quantity);
+    }, 0);
+
+    // Ada tiket kalau beli tiket langsung ATAU beli paket yang mengandung tiket.
+    const hasTickets = ticketItems.length > 0 || bundleTicketCount > 0;
+
+    // NIK wajib & harus valid kalau ada pembelian tiket (anti-calo). Untuk merch-only, NIK opsional.
+    if (hasTickets) {
+      if (!/^\d{16}$/.test(buyerNik || '')) {
+        return res.status(400).json({ success: false, message: 'NIK harus 16 digit angka.' });
+      }
+    } else if (buyerNik && !/^\d{16}$/.test(buyerNik)) {
+      return res.status(400).json({ success: false, message: 'NIK harus 16 digit angka.' });
+    }
+    const safeNik = buyerNik || '';
+
+    // Anti-calo: limit NIK berlaku untuk tiket langsung DAN tiket di dalam paket.
     if (hasTickets) {
       const existingOrders = await prisma.ticketOrder.findMany({
         where: { eventId: event.id, buyerNik: safeNik, status: { in: ['pending', 'paid'] } },
-        include: { items: true },
+        include: { items: true, bundleItems: { include: { bundle: { include: { items: true } } } } },
       });
-      const existingCount = existingOrders.flatMap((o) => o.items).reduce((sum, item) => sum + item.quantity, 0);
-      const newCount = ticketItems.reduce((sum, item) => sum + Number(item.quantity || 0), 0);
+      const existingTicketCount = existingOrders.flatMap((o) => o.items).reduce((sum, item) => sum + item.quantity, 0);
+      const existingBundleTicketCount = existingOrders
+        .flatMap((o) => o.bundleItems)
+        .reduce((sum, boi) => {
+          const t = boi.bundle.items.filter((it) => it.itemType === 'ticket').reduce((s, it) => s + it.quantity, 0);
+          return sum + t * boi.quantity;
+        }, 0);
+      const existingCount = existingTicketCount + existingBundleTicketCount;
+      const newTicketCount = ticketItems.reduce((sum, item) => sum + Number(item.quantity || 0), 0);
+      const newCount = newTicketCount + bundleTicketCount;
       if (newCount <= 0) {
         return res.status(400).json({ success: false, message: 'Jumlah tiket tidak valid.' });
       }
@@ -143,11 +216,17 @@ const createOrder = async (req, res) => {
       }
     }
 
-    const ticketTypes = hasTickets
+    const ticketTypes = ticketItems.length > 0
       ? await prisma.ticketType.findMany({ where: { eventId: event.id, id: { in: ticketItems.map((i) => i.ticketTypeId) } } })
       : [];
 
-    const orderType = hasTickets && merchItems.length > 0 ? 'bundling' : hasTickets ? 'ticket' : 'merch';
+    // orderType hanya LABEL. "bundling" = ada paket kurasi; "mixed" = tiket + merch terpisah
+    // (BUKAN bundling — fee tiket & merch dihitung sendiri-sendiri, lihat kalkulasi fee di bawah).
+    let orderType;
+    if (bundleItems.length > 0) orderType = 'bundling';
+    else if (ticketItems.length > 0 && merchItems.length > 0) orderType = 'mixed';
+    else if (ticketItems.length > 0) orderType = 'ticket';
+    else orderType = 'merch';
 
     let order;
     try {
@@ -208,22 +287,56 @@ const createOrder = async (req, res) => {
           });
         }
 
-        const subtotal = ticketSubtotal + merchSubtotal;
-
-        // Fee per tipe order — fallback chain: fee spesifik → platformFeePercent (legacy) → 3.5.
-        let feePercent;
-        if (orderType === 'bundling') {
-          feePercent = event.bundlingFeePercent ?? event.platformFeePercent ?? DEFAULT_FEE_PERCENT;
-        } else if (orderType === 'merch') {
-          feePercent = event.merchFeePercent ?? event.platformFeePercent ?? DEFAULT_FEE_PERCENT;
-        } else {
-          feePercent = event.ticketFeePercent ?? event.platformFeePercent ?? DEFAULT_FEE_PERCENT;
+        // ===== Paket Bundling (kurasi) =====
+        const bundleCreate = [];
+        let bundleSubtotal = 0;
+        // Nilai tiket di dalam paket (pakai harga face tiket) — dasar pajak, sesuai aturan
+        // "pajak hanya dari porsi tiket". Bundle price dari promotor tidak diitemisasi, jadi
+        // porsi tiket diambil dari harga tiket aslinya (didokumentasikan sebagai simplifikasi MVP).
+        let bundleTicketValue = 0;
+        for (const bi of bundleItems) {
+          const bundle = await tx.bundlePackage.findUnique({ where: { id: bi.bundleId }, include: { items: true } });
+          if (!bundle || bundle.eventId !== event.id || !bundle.isActive || bundle.approvalStatus !== 'approved') {
+            throw new Error('Paket bundling tidak tersedia.');
+          }
+          const qty = Number(bi.quantity);
+          for (const item of bundle.items) {
+            const needed = item.quantity * qty;
+            if (item.itemType === 'ticket') {
+              const tt = await tx.ticketType.findUnique({ where: { id: item.ticketTypeId } });
+              if (!tt || tt.eventId !== event.id) throw new Error(`Tiket dalam paket ${bundle.name} tidak ditemukan.`);
+              if (tt.sold + needed > tt.quota) throw new Error(`Stok tiket dalam paket ${bundle.name} tidak cukup.`);
+              await tx.ticketType.update({ where: { id: tt.id }, data: { sold: { increment: needed } } });
+              bundleTicketValue += tt.price * needed;
+            } else {
+              const variant = await tx.merchVariant.findUnique({ where: { id: item.merchVariantId }, include: { item: true } });
+              if (!variant || variant.item.eventId !== event.id) throw new Error(`Merch dalam paket ${bundle.name} tidak ditemukan.`);
+              if (variant.sold + needed > variant.stock) throw new Error(`Stok merch dalam paket ${bundle.name} tidak cukup.`);
+              await tx.merchVariant.update({ where: { id: variant.id }, data: { sold: { increment: needed } } });
+            }
+          }
+          bundleSubtotal += bundle.price * qty;
+          bundleCreate.push({ bundleId: bundle.id, quantity: qty, price: bundle.price });
+          itemDetails.push({ id: bundle.id, price: bundle.price, quantity: qty, name: `Paket ${bundle.name}`.slice(0, 50) });
         }
 
+        const subtotal = ticketSubtotal + merchSubtotal + bundleSubtotal;
+
+        // Fee dihitung TERPISAH per komponen (bukan satu fee gabungan). Tiket pakai ticketFeePercent,
+        // merch pakai merchFeePercent, paket kurasi pakai bundlingFeePercent. Fallback chain:
+        // fee spesifik → platformFeePercent (legacy) → 3.5.
+        const ticketFeePercent = event.ticketFeePercent ?? event.platformFeePercent ?? DEFAULT_FEE_PERCENT;
+        const merchFeePercent = event.merchFeePercent ?? event.platformFeePercent ?? DEFAULT_FEE_PERCENT;
+        const bundlingFeePercent = event.bundlingFeePercent ?? event.platformFeePercent ?? DEFAULT_FEE_PERCENT;
+        const ticketFee = Math.round(ticketSubtotal * (ticketFeePercent / 100));
+        const merchFee = Math.round(merchSubtotal * (merchFeePercent / 100));
+        const bundleFee = Math.round(bundleSubtotal * (bundlingFeePercent / 100));
+        const feeAmount = ticketFee + merchFee + bundleFee;
+
         const feeBearer = event.feeBearer === 'audience' ? 'audience' : 'promotor';
-        // Pajak 10% HANYA dari subtotal tiket — merch tidak pernah kena pajak.
-        const taxAmount = event.taxEnabled ? Math.round(ticketSubtotal * 0.1) : 0;
-        const feeAmount = Math.round(subtotal * (feePercent / 100));
+        // Pajak 10% HANYA dari porsi tiket (tiket langsung + porsi tiket di dalam paket) — merch tidak pernah kena pajak.
+        const taxableTicketValue = ticketSubtotal + bundleTicketValue;
+        const taxAmount = event.taxEnabled ? Math.round(taxableTicketValue * 0.1) : 0;
 
         // Kalau fee ditanggung penonton, fee ditambahkan ke total tagihan. Kalau ditanggung promotor,
         // penonton hanya bayar subtotal + pajak — fee dipotong dari hasil penjualan promotor (tidak ditagih ke penonton).
@@ -247,7 +360,7 @@ const createOrder = async (req, res) => {
             taxAmount,
             expiredAt,
             status: 'pending',
-            items: hasTickets
+            items: ticketItems.length > 0
               ? {
                   create: ticketItems.map((item) => ({
                     ticketTypeId: item.ticketTypeId,
@@ -257,12 +370,16 @@ const createOrder = async (req, res) => {
                 }
               : undefined,
             merchItems: merchCreate.length > 0 ? { create: merchCreate } : undefined,
+            bundleItems: bundleCreate.length > 0 ? { create: bundleCreate } : undefined,
           },
-          include: { items: true, merchItems: true },
+          include: { items: true, merchItems: true, bundleItems: true },
         });
 
-        if (feeBearer === 'audience' && feeAmount > 0) {
-          itemDetails.push({ id: 'platform-fee', price: feeAmount, quantity: 1, name: `Biaya Layanan nexEvent (${feePercent}%)` });
+        // Fee ditampilkan sebagai baris terpisah per komponen (kalau ditanggung penonton) supaya transparan.
+        if (feeBearer === 'audience') {
+          if (ticketFee > 0) itemDetails.push({ id: 'fee-ticket', price: ticketFee, quantity: 1, name: `Biaya Layanan Tiket (${ticketFeePercent}%)` });
+          if (merchFee > 0) itemDetails.push({ id: 'fee-merch', price: merchFee, quantity: 1, name: `Biaya Layanan Merch (${merchFeePercent}%)` });
+          if (bundleFee > 0) itemDetails.push({ id: 'fee-bundle', price: bundleFee, quantity: 1, name: `Biaya Layanan Paket (${bundlingFeePercent}%)` });
         }
         if (taxAmount > 0) {
           itemDetails.push({ id: 'tax', price: taxAmount, quantity: 1, name: 'Pajak Tiket (10%)' });
@@ -315,6 +432,9 @@ const getOrderStatus = async (req, res) => {
             item: { select: { name: true, imageUrl: true } },
             variant: { select: { size: true } },
           },
+        },
+        bundleItems: {
+          include: { bundle: { select: { name: true, imageUrl: true } } },
         },
       },
     });

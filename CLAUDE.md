@@ -364,7 +364,7 @@ Fitur-fitur berikut wajib diselesaikan untuk kesiapan penuh nexEvent.
 Dikerjakan SATU PER SATU sesuai urutan (ada ketergantungan teknis antar fitur).
 Prinsip: selesai tuntas per fitur, bukan banyak yang setengah jadi.
 
-### 1. Bundling Paket Kurasi (SEDANG BERJALAN)
+### 1. Bundling Paket Kurasi (✅ SELESAI — code-complete, pending deploy + E2E)
 Promotor buat paket khusus, contoh: "Tiket VIP + Kaos = Rp 200.000".
 
 Keputusan final:

@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from "react"
 import { useRouter } from "next/navigation"
-import { CheckCircle, Clock, Phone, Mail, User, Ticket, XCircle, Wallet } from "lucide-react"
+import { CheckCircle, Clock, Phone, Mail, User, Ticket, XCircle, Wallet, Package } from "lucide-react"
 import { useUser } from "@/hooks/useUser"
 
 const API_BASE = "/api"
@@ -44,6 +44,16 @@ interface MerchRequest {
     platformFeePercent: number | null
     promotor: { name: string; email: string }
   }
+}
+
+interface BundleRequest {
+  id: string
+  name: string
+  description: string | null
+  price: number
+  imageUrl: string | null
+  items: { id: string; itemType: "ticket" | "merch"; quantity: number; label: string }[]
+  event: { title: string; promotor: { name: string; email: string } }
 }
 
 interface FeeEvent {
@@ -88,6 +98,12 @@ export default function AdminUsersPage() {
   const [merchRejectFor, setMerchRejectFor] = useState<string | null>(null)
   const [merchRejectNote, setMerchRejectNote] = useState("")
 
+  const [bundleRequests, setBundleRequests] = useState<BundleRequest[]>([])
+  const [loadingBundle, setLoadingBundle] = useState(true)
+  const [processingBundleId, setProcessingBundleId] = useState<string | null>(null)
+  const [bundleRejectFor, setBundleRejectFor] = useState<string | null>(null)
+  const [bundleRejectNote, setBundleRejectNote] = useState("")
+
   const [feeEvents, setFeeEvents] = useState<FeeEvent[]>([])
   const [loadingFees, setLoadingFees] = useState(true)
   const [editedFees, setEditedFees] = useState<Record<string, FeeEdit>>({})
@@ -108,6 +124,7 @@ export default function AdminUsersPage() {
     fetchPendingUsers()
     fetchStorefrontRequests()
     fetchMerchRequests()
+    fetchBundleRequests()
     fetchFeeEvents()
   }, [])
 
@@ -256,6 +273,56 @@ export default function AdminUsersPage() {
       alert("Tidak dapat menghubungi server.")
     } finally {
       setProcessingMerchId(null)
+    }
+  }
+
+  async function fetchBundleRequests() {
+    setLoadingBundle(true)
+    try {
+      const res = await fetch(`${API_BASE}/admin/bundle-requests`, { headers: authHeaders() })
+      const json = await res.json()
+      if (json.success) setBundleRequests(json.data)
+    } catch {}
+    finally { setLoadingBundle(false) }
+  }
+
+  async function handleApproveBundle(id: string) {
+    setProcessingBundleId(id)
+    try {
+      const res = await fetch(`${API_BASE}/admin/bundle-requests/${id}/approve`, {
+        method: "PATCH",
+        headers: authHeaders(),
+      })
+      const json = await res.json()
+      if (json.success) setBundleRequests((prev) => prev.filter((b) => b.id !== id))
+      else alert(json.message || "Gagal menyetujui paket")
+    } catch {
+      alert("Tidak dapat menghubungi server.")
+    } finally {
+      setProcessingBundleId(null)
+    }
+  }
+
+  async function handleRejectBundle(id: string) {
+    setProcessingBundleId(id)
+    try {
+      const res = await fetch(`${API_BASE}/admin/bundle-requests/${id}/reject`, {
+        method: "PATCH",
+        headers: authHeaders(),
+        body: JSON.stringify({ note: bundleRejectNote }),
+      })
+      const json = await res.json()
+      if (json.success) {
+        setBundleRequests((prev) => prev.filter((b) => b.id !== id))
+        setBundleRejectFor(null)
+        setBundleRejectNote("")
+      } else {
+        alert(json.message || "Gagal menolak paket")
+      }
+    } catch {
+      alert("Tidak dapat menghubungi server.")
+    } finally {
+      setProcessingBundleId(null)
     }
   }
 
@@ -625,6 +692,87 @@ export default function AdminUsersPage() {
                     className="rounded-lg bg-red-600 px-4 py-2 text-xs font-semibold text-white hover:bg-red-700 disabled:opacity-50"
                   >
                     {processingMerchId === m.id ? "Memproses..." : "Konfirmasi Tolak"}
+                  </button>
+                </div>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* Persetujuan Paket Bundling */}
+      <div>
+        <h2 className="text-xl font-semibold text-slate-900">Persetujuan Paket Bundling</h2>
+        <p className="mt-1 text-sm text-slate-500">
+          Paket kurasi (tiket + merch) yang menunggu review sebelum tampil di storefront publik.
+        </p>
+      </div>
+
+      {loadingBundle ? (
+        <div className="py-16 text-center text-sm text-slate-400">Memuat data...</div>
+      ) : bundleRequests.length === 0 ? (
+        <div className="rounded-xl border border-slate-200 bg-white py-16 text-center">
+          <Package className="mx-auto mb-3 size-10 text-emerald-500" />
+          <p className="text-sm font-medium text-slate-700">Tidak ada paket pending</p>
+          <p className="mt-1 text-xs text-slate-400">Semua paket sudah diproses.</p>
+        </div>
+      ) : (
+        <div className="divide-y divide-slate-100 rounded-xl border border-slate-200 bg-white">
+          {bundleRequests.map((b) => (
+            <div key={b.id} className="space-y-3 p-4">
+              <div className="flex items-start justify-between gap-3">
+                <div className="flex min-w-0 items-start gap-3">
+                  {b.imageUrl ? (
+                    <img src={b.imageUrl} alt={b.name} className="size-14 shrink-0 rounded-lg border border-slate-200 object-cover" />
+                  ) : (
+                    <div className="flex size-14 shrink-0 items-center justify-center rounded-lg border border-slate-200 bg-slate-50 text-[10px] text-slate-300">
+                      No foto
+                    </div>
+                  )}
+                  <div className="min-w-0">
+                    <p className="truncate font-medium text-slate-900">{b.name}</p>
+                    <p className="text-sm font-semibold text-emerald-700">{IDR.format(b.price)}</p>
+                    <p className="mt-0.5 text-xs text-slate-400">
+                      Isi: {b.items.map((it) => `${it.quantity}× ${it.label}`).join(" + ")}
+                    </p>
+                    <p className="mt-0.5 text-xs text-slate-500">
+                      {b.event.title} · {b.event.promotor.name}
+                    </p>
+                  </div>
+                </div>
+                <div className="flex shrink-0 items-center gap-2">
+                  <button
+                    onClick={() => handleApproveBundle(b.id)}
+                    disabled={processingBundleId === b.id}
+                    className="inline-flex items-center gap-1.5 rounded-md bg-emerald-800 px-3 py-1.5 text-xs font-medium text-white transition-colors hover:bg-emerald-900 disabled:opacity-50"
+                  >
+                    <CheckCircle className="size-3.5" />
+                    {processingBundleId === b.id ? "Memproses..." : "Setujui"}
+                  </button>
+                  <button
+                    onClick={() => setBundleRejectFor(bundleRejectFor === b.id ? null : b.id)}
+                    disabled={processingBundleId === b.id}
+                    className="inline-flex items-center gap-1.5 rounded-md bg-red-50 px-3 py-1.5 text-xs font-medium text-red-600 transition-colors hover:bg-red-100 disabled:opacity-50"
+                  >
+                    <XCircle className="size-3.5" />
+                    Tolak
+                  </button>
+                </div>
+              </div>
+              {bundleRejectFor === b.id && (
+                <div className="flex items-center gap-2">
+                  <input
+                    value={bundleRejectNote}
+                    onChange={(e) => setBundleRejectNote(e.target.value)}
+                    placeholder="Alasan penolakan (opsional)"
+                    className="flex-1 rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-red-400 focus:ring-1 focus:ring-red-200"
+                  />
+                  <button
+                    onClick={() => handleRejectBundle(b.id)}
+                    disabled={processingBundleId === b.id}
+                    className="rounded-lg bg-red-600 px-4 py-2 text-xs font-semibold text-white hover:bg-red-700 disabled:opacity-50"
+                  >
+                    {processingBundleId === b.id ? "Memproses..." : "Konfirmasi Tolak"}
                   </button>
                 </div>
               )}

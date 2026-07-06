@@ -52,6 +52,27 @@ type MerchItem = {
   variants: MerchVariant[]
 }
 
+type BundlePackageItem = {
+  id: string
+  itemType: "ticket" | "merch"
+  ticketTypeId: string | null
+  merchVariantId: string | null
+  quantity: number
+  label: string
+  unitPrice: number
+  unitAvailable: number
+}
+
+type BundlePackage = {
+  id: string
+  name: string
+  description: string | null
+  price: number
+  imageUrl: string | null
+  isAvailable: boolean
+  items: BundlePackageItem[]
+}
+
 type EventData = {
   id: string
   title: string
@@ -73,6 +94,7 @@ type EventData = {
   termsConditions: string | null
   ticketTypes: TicketType[]
   merchItems: MerchItem[]
+  bundlePackages: BundlePackage[]
 }
 
 type StorefrontStatus = "loading" | "not_found" | "not_started" | "ended" | "active" | "error"
@@ -103,6 +125,7 @@ export default function EventStorefrontPage() {
 
   const [quantities, setQuantities] = useState<Record<string, number>>({})
   const [merchQuantities, setMerchQuantities] = useState<Record<string, number>>({})
+  const [bundleQuantities, setBundleQuantities] = useState<Record<string, number>>({})
   const [buyerName, setBuyerName] = useState("")
   const [buyerEmail, setBuyerEmail] = useState("")
   const [buyerPhone, setBuyerPhone] = useState("")
@@ -143,9 +166,19 @@ export default function EventStorefrontPage() {
     [merchQuantities]
   )
 
+  // Paket bundling yang dipilih.
+  const selectedBundles = useMemo(
+    () =>
+      Object.entries(bundleQuantities)
+        .filter(([, qty]) => qty > 0)
+        .map(([bundleId, quantity]) => ({ bundleId, quantity })),
+    [bundleQuantities]
+  )
+
   const totalTicketQty = selectedItems.reduce((s, i) => s + i.quantity, 0)
   const totalMerchQty = selectedMerch.reduce((s, i) => s + i.quantity, 0)
-  const totalQty = totalTicketQty + totalMerchQty // total gabungan (tiket + merch)
+  const totalBundleQty = selectedBundles.reduce((s, i) => s + i.quantity, 0)
+  const totalQty = totalTicketQty + totalMerchQty + totalBundleQty
 
   const ticketSubtotal = selectedItems.reduce((sum, item) => {
     const tt = event?.ticketTypes.find((t) => t.id === item.ticketTypeId)
@@ -155,20 +188,35 @@ export default function EventStorefrontPage() {
     const mi = event?.merchItems.find((m) => m.id === item.itemId)
     return sum + (mi ? mi.price * item.quantity : 0)
   }, 0)
-  const subtotal = ticketSubtotal + merchSubtotal
+  const bundleSubtotal = selectedBundles.reduce((sum, sb) => {
+    const b = event?.bundlePackages.find((x) => x.id === sb.bundleId)
+    return sum + (b ? b.price * sb.quantity : 0)
+  }, 0)
+  const subtotal = ticketSubtotal + merchSubtotal + bundleSubtotal
+
+  // Nilai porsi tiket di dalam paket (harga face tiket) — dasar pajak, sama dengan backend.
+  const bundleTicketValue = selectedBundles.reduce((sum, sb) => {
+    const b = event?.bundlePackages.find((x) => x.id === sb.bundleId)
+    if (!b) return sum
+    const perBundle = b.items
+      .filter((it) => it.itemType === "ticket")
+      .reduce((s, it) => s + it.unitPrice * it.quantity, 0)
+    return sum + perBundle * sb.quantity
+  }, 0)
 
   const feeBearer = event?.feeBearer === "audience" ? "audience" : "promotor"
-  // Fee per tipe order — fallback chain: fee spesifik → platformFeePercent → 3.5 (harus sama dengan backend).
-  const activeFeePercent = event
-    ? totalTicketQty > 0 && totalMerchQty > 0
-      ? (event.bundlingFeePercent ?? event.platformFeePercent ?? 3.5)
-      : totalMerchQty > 0
-        ? (event.merchFeePercent ?? event.platformFeePercent ?? 3.5)
-        : (event.ticketFeePercent ?? event.platformFeePercent ?? 3.5)
-    : 3.5
-  // Pajak 10% HANYA dari subtotal tiket — merch tidak pernah kena pajak.
-  const taxAmount = event?.taxEnabled && totalTicketQty > 0 ? Math.round(ticketSubtotal * 0.1) : 0
-  const feeAmount = event ? Math.round(subtotal * (activeFeePercent / 100)) : 0
+  // Fee dihitung TERPISAH per komponen (harus sama dengan backend): tiket→ticketFee, merch→merchFee,
+  // paket→bundlingFee. Beli tiket + merch biasa BUKAN bundling (fee sendiri-sendiri).
+  const ticketFeePercent = event?.ticketFeePercent ?? event?.platformFeePercent ?? 3.5
+  const merchFeePercent = event?.merchFeePercent ?? event?.platformFeePercent ?? 3.5
+  const bundlingFeePercent = event?.bundlingFeePercent ?? event?.platformFeePercent ?? 3.5
+  const ticketFee = Math.round(ticketSubtotal * (ticketFeePercent / 100))
+  const merchFee = Math.round(merchSubtotal * (merchFeePercent / 100))
+  const bundleFee = Math.round(bundleSubtotal * (bundlingFeePercent / 100))
+  const feeAmount = ticketFee + merchFee + bundleFee
+  // Pajak 10% HANYA dari porsi tiket (tiket langsung + porsi tiket dalam paket) — merch tidak pernah kena pajak.
+  const taxableTicketValue = ticketSubtotal + bundleTicketValue
+  const taxAmount = event?.taxEnabled && taxableTicketValue > 0 ? Math.round(taxableTicketValue * 0.1) : 0
   const totalAmount = feeBearer === "audience" ? subtotal + taxAmount + feeAmount : subtotal + taxAmount
 
   const updateQty = (ticketTypeId: string, delta: number) => {
@@ -193,14 +241,34 @@ export default function EventStorefrontPage() {
     })
   }
 
+  // Max paket yang bisa dibeli = min(floor(stok item / qty item)) untuk semua item dalam paket.
+  const maxBundleQty = (bundle: BundlePackage) => {
+    if (!bundle.isAvailable || bundle.items.length === 0) return 0
+    return bundle.items.reduce((min, it) => {
+      const canMake = it.quantity > 0 ? Math.floor(it.unitAvailable / it.quantity) : 0
+      return Math.min(min, canMake)
+    }, Infinity)
+  }
+
+  const updateBundleQty = (bundle: BundlePackage, delta: number) => {
+    const cap = maxBundleQty(bundle)
+    setBundleQuantities((prev) => {
+      const current = prev[bundle.id] || 0
+      const next = Math.max(0, Math.min(current + delta, cap))
+      return { ...prev, [bundle.id]: next }
+    })
+  }
+
   const handleBuy = async () => {
     setFormError("")
-    if (totalTicketQty === 0 && totalMerchQty === 0) return
+    if (totalTicketQty === 0 && totalMerchQty === 0 && totalBundleQty === 0) return
     if (!buyerName.trim()) return setFormError("Nama lengkap wajib diisi.")
     if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(buyerEmail)) return setFormError("Email tidak valid.")
     if (!/^(\+62|62|0)8[0-9]{7,12}$/.test(buyerPhone.replace(/[\s-]/g, ""))) return setFormError("Nomor HP tidak valid (format 08xx atau +62).")
-    // NIK wajib hanya kalau ada pembelian tiket (anti-calo). Merch-only tidak butuh NIK.
-    if (totalTicketQty > 0 && !/^\d{16}$/.test(buyerNik)) return setFormError("NIK harus 16 digit angka.")
+    // NIK wajib kalau ada pembelian tiket langsung ATAU paket yang mengandung tiket (anti-calo).
+    // Paket yang mengandung tiket dideteksi lewat bundleTicketValue (>0 = ada porsi tiket).
+    const bundleHasTicket = bundleTicketValue > 0
+    if ((totalTicketQty > 0 || bundleHasTicket) && !/^\d{16}$/.test(buyerNik)) return setFormError("NIK harus 16 digit angka.")
 
     setSubmitting(true)
     try {
@@ -214,6 +282,7 @@ export default function EventStorefrontPage() {
           buyerNik,
           ticketItems: selectedItems,
           merchItems: selectedMerch.map((m) => ({ variantId: m.variantId, quantity: m.quantity })),
+          bundleItems: selectedBundles,
         }),
       })
       const data = await res.json()
@@ -380,6 +449,97 @@ export default function EventStorefrontPage() {
                       {facility.name}
                     </div>
                   ))}
+                </div>
+              </div>
+            )}
+
+            {/* PAKET SPESIAL (BUNDLING) — tampil paling atas karena penawaran premium */}
+            {event.bundlePackages && event.bundlePackages.length > 0 && (
+              <div className="border-b border-slate-200 py-6">
+                <h2 className="mb-1 text-base font-bold text-slate-900">Paket Spesial</h2>
+                <p className="mb-4 text-xs text-slate-400">Paket kurasi promotor — tiket &amp; merchandise dalam satu harga.</p>
+                <div className="space-y-4">
+                  {event.bundlePackages.map((bundle) => {
+                    const qty = bundleQuantities[bundle.id] || 0
+                    const cap = maxBundleQty(bundle)
+                    const soldOut = !bundle.isAvailable || cap === 0
+                    // Total harga item satuan (untuk hitung "Hemat" kalau paket lebih murah).
+                    const itemsTotal = bundle.items.reduce((s, it) => s + it.unitPrice * it.quantity, 0)
+                    const savings = itemsTotal - bundle.price
+                    return (
+                      <div
+                        key={bundle.id}
+                        className={`rounded-2xl border p-4 transition-all ${
+                          soldOut
+                            ? "border-slate-200 bg-slate-50 opacity-60"
+                            : qty > 0
+                              ? "border-emerald-500 bg-emerald-50/50 shadow-sm"
+                              : "border-emerald-200 bg-white hover:border-emerald-400"
+                        }`}
+                      >
+                        <div className="mb-3 flex gap-4">
+                          {bundle.imageUrl && (
+                            <img
+                              src={bundle.imageUrl}
+                              alt={bundle.name}
+                              className="size-20 shrink-0 rounded-xl border border-slate-100 object-cover"
+                            />
+                          )}
+                          <div className="min-w-0 flex-1">
+                            <p className="font-bold text-slate-900">{bundle.name}</p>
+                            {bundle.description && <p className="mt-0.5 text-xs text-slate-400">{bundle.description}</p>}
+                            <p className="mt-1 text-lg font-black text-emerald-700">{IDR.format(bundle.price)}</p>
+                            {savings > 0 && (
+                              <span className="mt-1 inline-block rounded-full bg-emerald-100 px-2 py-0.5 text-xs font-bold text-emerald-700">
+                                Hemat {IDR.format(savings)}
+                              </span>
+                            )}
+                          </div>
+                        </div>
+
+                        {/* Isi paket */}
+                        <div className="mb-3 rounded-xl bg-slate-50 p-3">
+                          <p className="mb-1.5 text-xs font-bold uppercase tracking-wide text-slate-500">Isi Paket</p>
+                          <ul className="space-y-1">
+                            {bundle.items.map((it) => (
+                              <li key={it.id} className="flex items-center gap-2 text-sm text-slate-600">
+                                <Check className="h-3.5 w-3.5 shrink-0 text-emerald-600" />
+                                <span>
+                                  {it.quantity}× {it.label}
+                                </span>
+                              </li>
+                            ))}
+                          </ul>
+                        </div>
+
+                        {soldOut ? (
+                          <span className="inline-block rounded-full bg-red-100 px-3 py-1 text-xs font-bold text-red-600">
+                            Paket Tidak Tersedia
+                          </span>
+                        ) : (
+                          <div className="flex items-center justify-end gap-3">
+                            <button
+                              type="button"
+                              onClick={() => updateBundleQty(bundle, -1)}
+                              disabled={qty === 0}
+                              className="flex size-8 items-center justify-center rounded-full border border-slate-300 text-slate-600 transition-colors hover:border-emerald-500 hover:text-emerald-600 disabled:opacity-30"
+                            >
+                              <Minus className="h-3 w-3" />
+                            </button>
+                            <span className="w-6 text-center font-bold text-slate-900">{qty}</span>
+                            <button
+                              type="button"
+                              onClick={() => updateBundleQty(bundle, 1)}
+                              disabled={qty >= cap}
+                              className="flex size-8 items-center justify-center rounded-full bg-emerald-800 text-white transition-colors hover:bg-emerald-700 disabled:opacity-30"
+                            >
+                              <Plus className="h-3 w-3" />
+                            </button>
+                          </div>
+                        )}
+                      </div>
+                    )
+                  })}
                 </div>
               </div>
             )}
@@ -596,10 +756,42 @@ export default function EventStorefrontPage() {
                     )
                   })}
 
+                  {totalBundleQty > 0 && (
+                    <p className="pt-2 text-xs font-bold uppercase tracking-wide text-slate-400">Paket Spesial</p>
+                  )}
+                  {selectedBundles.map((sb) => {
+                    const b = event.bundlePackages.find((x) => x.id === sb.bundleId)
+                    if (!b) return null
+                    return (
+                      <div key={sb.bundleId} className="flex justify-between text-sm">
+                        <span className="text-slate-400">
+                          {sb.quantity}× {b.name}
+                        </span>
+                        <span className="font-bold text-white">{IDR.format(b.price * sb.quantity)}</span>
+                      </div>
+                    )
+                  })}
+
                   {feeBearer === "audience" && feeAmount > 0 && (
-                    <div className="mt-2 flex justify-between border-t border-slate-700 pt-2 text-sm">
-                      <span className="text-slate-400">Biaya layanan ({activeFeePercent}%)</span>
-                      <span className="text-white">{IDR.format(feeAmount)}</span>
+                    <div className="mt-2 space-y-1 border-t border-slate-700 pt-2 text-sm">
+                      {ticketFee > 0 && (
+                        <div className="flex justify-between">
+                          <span className="text-slate-400">Biaya layanan tiket ({ticketFeePercent}%)</span>
+                          <span className="text-white">{IDR.format(ticketFee)}</span>
+                        </div>
+                      )}
+                      {merchFee > 0 && (
+                        <div className="flex justify-between">
+                          <span className="text-slate-400">Biaya layanan merch ({merchFeePercent}%)</span>
+                          <span className="text-white">{IDR.format(merchFee)}</span>
+                        </div>
+                      )}
+                      {bundleFee > 0 && (
+                        <div className="flex justify-between">
+                          <span className="text-slate-400">Biaya layanan paket ({bundlingFeePercent}%)</span>
+                          <span className="text-white">{IDR.format(bundleFee)}</span>
+                        </div>
+                      )}
                     </div>
                   )}
 

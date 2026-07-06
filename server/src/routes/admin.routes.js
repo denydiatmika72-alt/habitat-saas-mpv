@@ -14,6 +14,11 @@ const {
   approveMerchItem,
   rejectMerchItem,
 } = require('../../controllers/merch.controller');
+const {
+  getBundleApprovalRequests,
+  approveBundle,
+  rejectBundle,
+} = require('../../controllers/bundle.controller');
 
 router.get('/users', protect, requireAdmin, getPendingUsers);
 router.patch('/users/:id/approve', protect, requireAdmin, approveUser);
@@ -30,5 +35,9 @@ router.patch('/storefront-requests/:eventId/reject', protect, requireAdmin, reje
 router.get('/merch-requests', protect, requireAdmin, getMerchApprovalRequests);
 router.patch('/merch-requests/:id/approve', protect, requireAdmin, approveMerchItem);
 router.patch('/merch-requests/:id/reject', protect, requireAdmin, rejectMerchItem);
+
+router.get('/bundle-requests', protect, requireAdmin, getBundleApprovalRequests);
+router.patch('/bundle-requests/:id/approve', protect, requireAdmin, approveBundle);
+router.patch('/bundle-requests/:id/reject', protect, requireAdmin, rejectBundle);
 
 module.exports = router;
