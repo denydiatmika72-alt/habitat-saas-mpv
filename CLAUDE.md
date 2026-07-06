@@ -396,7 +396,7 @@ Keputusan final:
 - SATU-SATUNYA batas teknis: stok tidak boleh diset di bawah jumlah yang SUDAH TERJUAL
   (bukan aturan kebijakan, tapi perlindungan agar tiket terjual tidak hilang)
 
-### 3. Box Office Offline (Ticket Box)
+### 3. Box Office Offline (Ticket Box) (✅ SELESAI v1 — code-complete, pending deploy + E2E)
 UI khusus penjualan tiket offline di lokasi fisik.
 
 Konteks pasar: Bali & komunitas belum siap online-only. Cash masih dominan.

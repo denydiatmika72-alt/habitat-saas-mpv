@@ -12,6 +12,10 @@ const {
   getOrdersByEvent,
   getTicketsByOrder,
 } = require('../controllers/ticket.controller');
+const { generateBoxOfficeQR } = require('../controllers/box-office.controller');
+
+// Box office: promotor generate QR untuk penjualan offline di lokasi.
+router.post('/box-office/generate-qr', verifyToken, generateBoxOfficeQR);
 
 // Spesifik routes HARUS di atas /types/:id agar tidak ketubruk wildcard
 router.get('/types', verifyToken, getTicketTypes);

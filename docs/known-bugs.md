@@ -949,3 +949,27 @@ File ini adalah log permanen bug yang sudah pernah terjadi di project ini besert
   - `merchSelections.quantity` sudah = `item.quantity * bundleQty`; untuk display isi paket dipakai `item.quantity` (per 1 paket) dari definisi bundle, bukan quantity di merchSelections.
 - Verifikasi: `node --check` server lolos; `npx tsc --noEmit` client EXIT 0; `npm run build` client sukses. Tidak ada perubahan schema (tidak perlu `db push`). Verifikasi E2E (paket berisi tiket → NIK muncul & wajib; merch-only → NIK tidak muncul; beli paket merch → email & order page tampilkan size) pending setelah deploy Mandor di VPS.
 - Tag: #bundling #nik #storefront #email #order-page #merch #size-selection #anti-calo
+
+---
+
+## [2026-07-06] Box Office Offline (Ticket Box) — implementasi fitur baru (Storefront Roadmap #3)
+
+- Gejala: (Bukan bug — implementasi fitur baru) Pasar Bali & komunitas serupa belum siap online-only, cash masih dominan. Butuh channel penjualan tiket OFFLINE di lokasi yang tetap masuk sistem (bukan cashless-only), dengan pencatatan metode bayar (cash/transfer) sebagai dasar rekonsiliasi hutang fee (roadmap #4 — BELUM dikerjakan, hanya datanya disiapkan).
+- Root cause: N/A — fitur baru.
+- File terkait:
+  - `server/prisma/schema.prisma` — `TicketOrder` +`channel String @default("online")` (values "online" | "box_office") + `paymentMethod String?` (`@map("payment_method")`, "cash" | "transfer", null utk order online/Midtrans). `db push` sukses.
+  - `server/services/ticket.service.js` (BARU) — helper bersama: `makeTicketCode`, `generateTicketsForOrderItems(client, orderItems)` (client bisa prisma ATAU tx), `countTicketsForNik(client, eventId, nik)` (kumulatif lintas SEMUA channel + tiket dalam paket, status pending+paid), `MAX_TICKETS_PER_NIK=4`.
+  - `server/controllers/box-office.controller.js` (BARU) — `generateBoxOfficeQR` (POST, protected, ownership via promotor_id → return URL `/box-office/:eventId` + QR data URL server-side), `getBoxOfficeEvent` (GET publik, event ringkas + jenis tiket aktif + availability), `createBoxOfficeOrder` (POST publik: validasi paymentMethod WAJIB cash/transfer, NIK 16-digit + anti-calo kumulatif via helper, buat order langsung `status:"paid"` `channel:"box_office"` dalam `$transaction` + decrement stok + generate tiket via helper, email opsional kalau ada buyerEmail, return tiket + QR data URL untuk ditampilkan di layar pembeli).
+  - `server/routes/box-office.routes.js` (BARU) — GET `/:eventId` + POST `/:eventId/order` (publik). Register di `src/index.js` → `app.use('/api/box-office', boxOfficeRoutes)`.
+  - `server/routes/ticket.routes.js` — tambah `POST /box-office/generate-qr` (verifyToken) → handler dari box-office.controller.
+  - `server/controllers/payment.controller.js` — refactor generate tiket webhook settlement pakai `generateTicketsForOrderItems` (hapus loop duplikat); import helper.
+  - `server/controllers/storefront.controller.js` — refactor hitung NIK anti-calo pakai `countTicketsForNik` (hapus blok duplikat); `MAX_TICKETS_PER_NIK` sekarang di-import dari service.
+  - `client/src/app/box-office/[eventId]/page.tsx` (BARU) — halaman publik mobile-first: pilih tiket+qty → isi nama/NIK/email(opsional) → radio metode bayar cash/transfer (TANPA default) → submit → tampilkan QR tiket langsung di layar untuk di-screenshot.
+  - `client/src/app/dashboard/tickets/page.tsx` — section "Box Office (Penjualan Offline)": tombol "Generate QR Box Office" → tampilkan QR (img dari data URL server) + link + salin + unduh PNG.
+- Catatan penting:
+  - **Keputusan desain URL:** box office pakai `eventId` langsung di URL/route (bukan token khusus) — sesuai spec routes di-key by `:eventId`, halaman hanya expose info publik (jenis tiket). Kontrol keamanan v1 = penguasaan fisik QR oleh panitia. Order box office langsung "paid" & mengurangi stok PERMANEN (cron tidak menyentuhnya karena status bukan "pending"). Hardening ke depan: token per-event tak-tertebak untuk cegah order palsu oleh yang tahu eventId. Didokumentasikan di komentar controller.
+  - **QR digenerate server-side** (library `qrcode` sudah ada di server; TIDAK ada di client) → dikirim sebagai data URL, dirender `<img>`. Menghindari nambah dependency client + risiko build.
+  - **Anti-calo lintas channel:** `countTicketsForNik` sengaja TIDAK filter channel → limit 4/NIK berlaku kumulatif online + box_office. Jangan tambah filter channel.
+  - `paymentMethod` WAJIB tanpa default (ditolak kalau kosong/invalid) — ini dasar item #4 (hutang fee). JANGAN bangun logika hutang/rekonsiliasi sekarang.
+- Verifikasi: `npx prisma db push` + `generate` sukses; `node --check` semua file server lolos; `npx tsc --noEmit` client EXIT 0; `npm run build` client sukses (route `/box-office/[eventId]` terdaftar). Verifikasi E2E (generate QR di dashboard → buka /box-office/:eventId → beli cash/transfer → tiket QR tampil + stok turun + NIK limit lintas channel) pending setelah deploy Mandor di VPS.
+- Tag: #box-office #offline #ticketing #cash #payment-method #anti-calo #prisma #schema #shared-helper #roadmap

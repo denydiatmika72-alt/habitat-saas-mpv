@@ -1,7 +1,7 @@
 const prisma = require('../src/lib/prisma');
 const { snap } = require('../services/midtrans.service');
+const { countTicketsForNik, MAX_TICKETS_PER_NIK } = require('../services/ticket.service');
 
-const MAX_TICKETS_PER_NIK = 4;
 const BOOKING_MINUTES = 15;
 const DEFAULT_FEE_PERCENT = 3.5;
 
@@ -199,20 +199,10 @@ const createOrder = async (req, res) => {
     }
     const safeNik = buyerNik || '';
 
-    // Anti-calo: limit NIK berlaku untuk tiket langsung DAN tiket di dalam paket.
+    // Anti-calo: limit NIK berlaku untuk tiket langsung DAN tiket di dalam paket, kumulatif lintas
+    // channel (online + box_office) — pakai helper bersama (services/ticket.service.js).
     if (hasTickets) {
-      const existingOrders = await prisma.ticketOrder.findMany({
-        where: { eventId: event.id, buyerNik: safeNik, status: { in: ['pending', 'paid'] } },
-        include: { items: true, bundleItems: { include: { bundle: { include: { items: true } } } } },
-      });
-      const existingTicketCount = existingOrders.flatMap((o) => o.items).reduce((sum, item) => sum + item.quantity, 0);
-      const existingBundleTicketCount = existingOrders
-        .flatMap((o) => o.bundleItems)
-        .reduce((sum, boi) => {
-          const t = boi.bundle.items.filter((it) => it.itemType === 'ticket').reduce((s, it) => s + it.quantity, 0);
-          return sum + t * boi.quantity;
-        }, 0);
-      const existingCount = existingTicketCount + existingBundleTicketCount;
+      const existingCount = await countTicketsForNik(prisma, event.id, safeNik);
       const newTicketCount = ticketItems.reduce((sum, item) => sum + Number(item.quantity || 0), 0);
       const newCount = newTicketCount + bundleTicketCount;
       if (newCount <= 0) {

@@ -212,6 +212,13 @@ export default function TicketsPage() {
   const [approvalError, setApprovalError] = useState("")
   const [copied, setCopied] = useState(false)
 
+  // Box Office offline: QR untuk crew jual tiket cash/transfer di lokasi.
+  const [boxOfficeUrl, setBoxOfficeUrl] = useState("")
+  const [boxOfficeQr, setBoxOfficeQr] = useState("")
+  const [generatingBoxQr, setGeneratingBoxQr] = useState(false)
+  const [boxOfficeError, setBoxOfficeError] = useState("")
+  const [boxCopied, setBoxCopied] = useState(false)
+
   const [savingFeeBearer, setSavingFeeBearer] = useState(false)
   const [savingTax, setSavingTax] = useState(false)
   const [uploadingBanner, setUploadingBanner] = useState(false)
@@ -271,8 +278,35 @@ export default function TicketsPage() {
     setDescription("")
     setSelectedFacilities([])
     setTermsConditions("")
+    setBoxOfficeUrl("")
+    setBoxOfficeQr("")
+    setBoxOfficeError("")
     fetchDetail()
   }, [selectedEventId, isPro, fetchDetail])
+
+  const handleGenerateBoxOfficeQR = async () => {
+    if (!selectedEventId) return
+    setBoxOfficeError("")
+    setGeneratingBoxQr(true)
+    try {
+      const res = await fetch("/api/tickets/box-office/generate-qr", {
+        method: "POST",
+        headers: authHeaders(),
+        body: JSON.stringify({ eventId: selectedEventId }),
+      })
+      const data = await res.json()
+      if (data.success) {
+        setBoxOfficeUrl(data.url)
+        setBoxOfficeQr(data.qrDataUrl)
+      } else {
+        setBoxOfficeError(data.message || "Gagal membuat QR box office.")
+      }
+    } catch {
+      setBoxOfficeError("Gagal menghubungi server.")
+    } finally {
+      setGeneratingBoxQr(false)
+    }
+  }
 
   const handleAddType = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -1559,6 +1593,53 @@ export default function TicketsPage() {
                     </button>
                   )}
                 </div>
+              )}
+            </div>
+
+            {/* Box Office Offline — QR untuk jual tiket cash/transfer di lokasi */}
+            <div className="rounded-xl border border-slate-200 bg-white p-5">
+              <p className="mb-1 text-sm font-semibold text-slate-900">Box Office (Penjualan Offline)</p>
+              <p className="mb-4 text-xs text-slate-500">
+                Tampilkan/cetak QR ini di pintu masuk. Panitia scan → pembeli isi data & pilih bayar cash/transfer di HP masing-masing.
+              </p>
+
+              {!boxOfficeQr ? (
+                <button
+                  onClick={handleGenerateBoxOfficeQR}
+                  disabled={generatingBoxQr || !selectedEventId}
+                  className="rounded-lg bg-emerald-800 px-4 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-emerald-900 disabled:opacity-50"
+                >
+                  {generatingBoxQr ? "Membuat..." : "Generate QR Box Office"}
+                </button>
+              ) : (
+                <div className="flex flex-col items-center gap-3 rounded-xl border border-emerald-200 bg-emerald-50 p-4">
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img src={boxOfficeQr} alt="QR Box Office" className="size-48 rounded-lg bg-white p-2" />
+                  <p className="break-all text-center text-xs font-mono text-slate-600">{boxOfficeUrl}</p>
+                  <div className="flex gap-2">
+                    <button
+                      onClick={() => {
+                        navigator.clipboard.writeText(boxOfficeUrl)
+                        setBoxCopied(true)
+                        setTimeout(() => setBoxCopied(false), 1500)
+                      }}
+                      className="rounded-lg border border-emerald-300 px-3 py-1.5 text-xs font-semibold text-emerald-700 hover:bg-emerald-100"
+                    >
+                      {boxCopied ? "Tersalin!" : "Salin Link"}
+                    </button>
+                    <a
+                      href={boxOfficeQr}
+                      download={`box-office-${selectedEventId}.png`}
+                      className="rounded-lg bg-emerald-800 px-3 py-1.5 text-xs font-semibold text-white hover:bg-emerald-900"
+                    >
+                      Unduh QR
+                    </a>
+                  </div>
+                </div>
+              )}
+
+              {boxOfficeError && (
+                <p className="mt-2 text-xs text-red-600">{boxOfficeError}</p>
               )}
             </div>
           </div>

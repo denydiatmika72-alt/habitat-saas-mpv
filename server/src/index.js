@@ -28,6 +28,7 @@ const storefrontRoutes    = require('../routes/storefront.routes');
 const ticketRoutes        = require('../routes/ticket.routes');
 const merchRoutes         = require('../routes/merch.routes');
 const bundleRoutes        = require('../routes/bundle.routes');
+const boxOfficeRoutes     = require('../routes/box-office.routes');
 const uploadRoutes        = require('../routes/upload.routes');
 require('./cron/pro-subscription.cron');
 require('./cron/ticket-booking.cron');
@@ -97,6 +98,7 @@ app.use('/api/storefront',    storefrontRoutes);
 app.use('/api/tickets',       ticketRoutes);
 app.use('/api/merch',         merchRoutes);
 app.use('/api/bundles',       bundleRoutes);
+app.use('/api/box-office',    boxOfficeRoutes);
 app.use('/api/upload',        uploadRoutes);
 
 app.use((req, res) => {

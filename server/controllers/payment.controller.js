@@ -2,6 +2,7 @@ const crypto = require('crypto');
 const prisma = require('../src/lib/prisma');
 const { snap } = require('../services/midtrans.service');
 const { sendOrderEmail } = require('../services/email.service');
+const { generateTicketsForOrderItems } = require('../services/ticket.service');
 
 const PRICE = { activation: 499000, extension: 99000 };
 const ACTIVATION_DAYS = 90;
@@ -154,12 +155,8 @@ const handleTicketOrderWebhook = async (orderId, transactionStatus, res) => {
     if (transactionStatus === 'settlement' || transactionStatus === 'capture') {
       if (order.status === 'pending') {
         // Generate 1 e-ticket per item tiket (merch tidak menghasilkan tiket, cukup barcode pickup di email).
-        for (const item of order.items) {
-          for (let i = 0; i < item.quantity; i++) {
-            const ticketCode = `NE-${Date.now()}-${Math.random().toString(36).slice(2, 8).toUpperCase()}`;
-            await prisma.ticket.create({ data: { orderItemId: item.id, ticketTypeId: item.ticketTypeId, ticketCode } });
-          }
-        }
+        // Pakai helper bersama supaya identik dengan flow box office (lihat services/ticket.service.js).
+        await generateTicketsForOrderItems(prisma, order.items);
 
         // Generate e-ticket untuk tiket yang ada DI DALAM paket bundling (× jumlah paket).
         // Tiket paket di-link ke bundleOrderItem (bukan orderItem) + simpan ticketTypeId agar tahu jenisnya.
