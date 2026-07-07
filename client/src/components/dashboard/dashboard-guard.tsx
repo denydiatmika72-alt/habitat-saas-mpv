@@ -18,6 +18,10 @@ export function DashboardGuard({ children }: { children: React.ReactNode }) {
       router.push("/field")
       return
     }
+    if (cachedRole === "scanner") {
+      router.push("/scanner")
+      return
+    }
     // Fallback: verifikasi ke server untuk token lama yang tidak punya user_role di localStorage
     fetch("/api/auth/me", { headers: { Authorization: `Bearer ${token}` } })
       .then((r) => (r.ok ? r.json() : null))
@@ -29,6 +33,7 @@ export function DashboardGuard({ children }: { children: React.ReactNode }) {
         const role = data.data?.role
         if (role) localStorage.setItem("user_role", role)
         if (role === "crew") router.push("/field")
+        else if (role === "scanner") router.push("/scanner")
       })
       .catch(() => {})
   }, [router])

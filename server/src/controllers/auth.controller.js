@@ -12,7 +12,7 @@ const register = async (req, res) => {
   if (password.length < 6)
     return res.status(400).json({ success: false, message: 'Password minimal 6 karakter.' });
 
-  const validRoles = ['promotor', 'crew'];
+  const validRoles = ['promotor', 'crew', 'scanner'];
   const userRole = validRoles.includes(role) ? role : 'promotor';
 
   try {

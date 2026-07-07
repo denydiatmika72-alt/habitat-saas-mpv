@@ -452,6 +452,12 @@ Yang BELUM diputuskan:
 
 _Update bagian ini setiap prioritas berubah, supaya Claude Code dan Claude.ai selalu tahu fokus development saat ini._
 
+## Mobile App Migration (Long-Term, Lowest Priority)
+
+Founder berencana suatu saat mengubah nexEvent dari web app menjadi aplikasi mobile yang bisa di-download (App Store / Play Store). **Ini adalah item PALING TERAKHIR** — baru dikerjakan setelah SEMUA fitur web selesai dan produk siap go-to-market.
+
+**Aturan sampai saat itu tiba:** SEMUA fitur baru (termasuk Ticket Scanner) dibangun **web-based only** — tidak ada pertimbangan native mobile wrapping di tahap ini. Catatan ini hanya placeholder perencanaan, bukan tugas aktif.
+
 ## Aturan Tambahan
 
 - Setiap selesai coding, selalu commit + push + deploy.sh

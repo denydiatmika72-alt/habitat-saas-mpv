@@ -1,11 +1,18 @@
 "use client"
 
 import { useEffect, useState } from "react"
-import { Lock, Users, Plus, Trash2, ChevronDown, ChevronUp, ArrowUpCircle } from "lucide-react"
+import { Lock, Users, Plus, Trash2, ChevronDown, ChevronUp, ArrowUpCircle, ScanLine } from "lucide-react"
 import Link from "next/link"
 import { useUser } from "@/hooks/useUser"
 
 type Event = { id: string; title: string }
+
+type Scanner = {
+  scannerId: string
+  name: string
+  email: string
+  assignedAt: string
+}
 
 type CrewMember = {
   accountId: string
@@ -51,6 +58,14 @@ export default function CrewPage() {
   const [toppingUp, setToppingUp] = useState<Record<string, boolean>>({})
   const [expandedCrew, setExpandedCrew] = useState<Record<string, boolean>>({})
 
+  // Scanner invite state
+  const [scanners, setScanners] = useState<Scanner[]>([])
+  const [fetchingScanners, setFetchingScanners] = useState(false)
+  const [scannerEmail, setScannerEmail] = useState("")
+  const [invitingScanner, setInvitingScanner] = useState(false)
+  const [scannerError, setScannerError] = useState("")
+  const [scannerSuccess, setScannerSuccess] = useState("")
+
   useEffect(() => {
     fetch("/api/events", { headers: authHeaders() })
       .then((r) => (r.ok ? r.json() : null))
@@ -66,6 +81,18 @@ export default function CrewPage() {
       .then((data) => { if (data?.success) setCrew(data.crew) })
       .catch(() => {})
       .finally(() => setFetchingCrew(false))
+  }, [selectedEventId, isPro])
+
+  useEffect(() => {
+    if (!selectedEventId || !isPro) return
+    setScannerError("")
+    setScannerSuccess("")
+    setFetchingScanners(true)
+    fetch(`/api/scanner/event/${selectedEventId}`, { headers: authHeaders() })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((data) => { if (data?.success) setScanners(data.scanners) })
+      .catch(() => {})
+      .finally(() => setFetchingScanners(false))
   }, [selectedEventId, isPro])
 
   const handleInvite = async (e: React.FormEvent) => {
@@ -95,6 +122,46 @@ export default function CrewPage() {
     } finally {
       setInviting(false)
     }
+  }
+
+  const handleInviteScanner = async (e: React.FormEvent) => {
+    e.preventDefault()
+    setScannerError("")
+    setScannerSuccess("")
+    if (!scannerEmail || !selectedEventId) return
+    setInvitingScanner(true)
+    try {
+      const res = await fetch("/api/scanner/invite", {
+        method: "POST",
+        headers: authHeaders(),
+        body: JSON.stringify({ email: scannerEmail, eventId: selectedEventId }),
+      })
+      const data = await res.json()
+      if (data.success) {
+        setScannerEmail("")
+        setScannerSuccess(`Scanner ${data.scanner?.name ?? ""} berhasil diundang.`)
+        const refresh = await fetch(`/api/scanner/event/${selectedEventId}`, { headers: authHeaders() })
+        const refreshData = await refresh.json()
+        if (refreshData.success) setScanners(refreshData.scanners)
+      } else {
+        setScannerError(data.message ?? "Gagal mengundang scanner.")
+      }
+    } catch {
+      setScannerError("Gagal menghubungi server.")
+    } finally {
+      setInvitingScanner(false)
+    }
+  }
+
+  const handleRemoveScanner = async (scannerId: string) => {
+    if (!confirm("Hapus scanner ini dari event? Mereka tidak bisa lagi memvalidasi tiket event ini.")) return
+    try {
+      await fetch(`/api/scanner/event/${selectedEventId}/${scannerId}`, {
+        method: "DELETE",
+        headers: authHeaders(),
+      })
+      setScanners((prev) => prev.filter((s) => s.scannerId !== scannerId))
+    } catch {}
   }
 
   const handleTopup = async (accountId: string, crewUserId: string) => {
@@ -397,6 +464,103 @@ export default function CrewPage() {
               </div>
             </div>
           </div>
+      )}
+
+      {/* ── Undang Scanner Tiket (validasi QR di venue) ── */}
+      {selectedEventId && (
+        <>
+          <div className="flex items-start gap-4 border-t border-slate-200 pt-6">
+            <div className="flex size-11 items-center justify-center rounded-xl bg-emerald-50 text-emerald-800">
+              <ScanLine className="size-5" />
+            </div>
+            <div>
+              <h2 className="text-xl font-semibold tracking-tight text-slate-900">Scanner Tiket</h2>
+              <p className="mt-0.5 text-sm text-slate-500">
+                Undang petugas untuk memvalidasi QR tiket di pintu masuk venue.
+              </p>
+              <p className="mt-1 text-xs text-slate-400">
+                Petugas harus sudah daftar di nexeventapp.tech dengan role &quot;scanner&quot;, lalu login di nexeventapp.tech/scanner.
+              </p>
+            </div>
+          </div>
+
+          <div className="grid gap-6 lg:grid-cols-5">
+            {/* Left: invite form */}
+            <div className="lg:col-span-2">
+              <div className="rounded-xl border border-slate-200 bg-white p-5">
+                <p className="mb-1 text-sm font-semibold text-slate-900">Undang Scanner ke Event</p>
+                <p className="mb-4 text-xs text-slate-400">
+                  Masukkan email akun scanner yang sudah terdaftar.
+                </p>
+                <form onSubmit={handleInviteScanner} className="space-y-3">
+                  <div>
+                    <label className="mb-1 block text-xs font-medium text-slate-500">Email Scanner</label>
+                    <input
+                      type="email"
+                      value={scannerEmail}
+                      onChange={(e) => setScannerEmail(e.target.value)}
+                      placeholder="scanner@email.com"
+                      required
+                      className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2.5 text-sm text-slate-900 placeholder:text-slate-400 outline-none transition-colors focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500/30"
+                    />
+                  </div>
+                  {scannerError && (
+                    <p className="rounded-lg bg-red-50 px-3 py-2 text-xs text-red-600">{scannerError}</p>
+                  )}
+                  {scannerSuccess && (
+                    <p className="rounded-lg bg-emerald-50 px-3 py-2 text-xs text-emerald-700">{scannerSuccess}</p>
+                  )}
+                  <button
+                    type="submit"
+                    disabled={invitingScanner}
+                    className="flex w-full items-center justify-center gap-2 rounded-lg bg-emerald-800 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-emerald-900 disabled:opacity-50"
+                  >
+                    <Plus className="size-4" />
+                    {invitingScanner ? "Mengundang..." : "Undang Scanner"}
+                  </button>
+                </form>
+              </div>
+            </div>
+
+            {/* Right: scanner list */}
+            <div className="lg:col-span-3">
+              <div className="rounded-xl border border-slate-200 bg-white p-5">
+                <p className="mb-4 text-sm font-semibold text-slate-900">
+                  Scanner Terdaftar ({scanners.length})
+                </p>
+                {fetchingScanners ? (
+                  <div className="flex justify-center py-8">
+                    <div className="h-6 w-6 animate-spin rounded-full border-2 border-emerald-800 border-t-transparent" />
+                  </div>
+                ) : scanners.length === 0 ? (
+                  <p className="py-8 text-center text-sm text-slate-400">
+                    Belum ada scanner di event ini.
+                  </p>
+                ) : (
+                  <ul className="space-y-3">
+                    {scanners.map((s) => (
+                      <li key={s.scannerId} className="flex items-start justify-between gap-3 rounded-xl border border-slate-100 bg-slate-50 p-4">
+                        <div className="min-w-0">
+                          <div className="flex items-center gap-2">
+                            <ScanLine className="size-4 shrink-0 text-emerald-700" />
+                            <p className="truncate text-sm font-semibold text-slate-900">{s.name}</p>
+                          </div>
+                          <p className="mt-0.5 truncate text-xs text-slate-400">{s.email}</p>
+                        </div>
+                        <button
+                          onClick={() => handleRemoveScanner(s.scannerId)}
+                          className="flex size-8 shrink-0 items-center justify-center rounded-lg text-slate-400 transition-colors hover:bg-red-50 hover:text-red-500"
+                        >
+                          <Trash2 className="size-4" />
+                        </button>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </div>
+            </div>
+          </div>
+        </>
       )}
     </div>
   )

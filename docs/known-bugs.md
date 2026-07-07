@@ -1150,4 +1150,28 @@ File ini adalah log permanen bug yang sudah pernah terjadi di project ini besert
 - Catatan: `project.md` (status doc lama, dihapus user sebelum batch ini) sengaja TIDAK ikut di-commit — bukan perubahan milik Claude, di-flag ke user.
 - Tag: #deployment #vps #production #ticket-box #fee-debt #midtrans #prisma #db-sync #smoke-test
 
+---
+
+## [2026-07-08] Ticket Scanner (Roadmap #5) — implementasi baru + catatan CLAUDE.md Mobile App
+
+- Gejala/konteks: (Bukan bug — implementasi fitur baru.) Validasi QR tiket di venue. Akses WAJIB login (role "scanner", mirror Field Crew), web-based only (kamera HP di browser, tanpa install app). Plus catatan roadmap baru di CLAUDE.md: rencana migrasi ke mobile app = prioritas PALING TERAKHIR; sampai itu semua fitur web-based only.
+- Root cause: n/a (fitur baru).
+- File terkait:
+  - `CLAUDE.md` — section baru "Mobile App Migration (Long-Term, Lowest Priority)".
+  - `server/prisma/schema.prisma` — `User.role` whitelist tambah "scanner" (komentar); model baru `EventScanner` (id, eventId, userId, createdAt, `@@unique([eventId,userId])`, relasi ke Event+User, mirror EventCrew) + relasi balik `eventScanners` di User & Event. Apply via `npx prisma db push` + `generate` (bukan migrate — no migration history).
+  - `server/src/controllers/auth.controller.js` — register `validRoles` tambah "scanner".
+  - `server/controllers/scanner.controller.js` (BARU) — `inviteScanner` (promotor, cek ownership+email exist+role scanner+duplikat), `getMyScannerEvents` (scanner), `validateTicket` (scanner). Resolusi eventId tiket: `orderItem.order.eventId ?? bundleOrderItem.order.eventId ?? ticketType.eventId`. validateTicket cek: scanner di-assign ke event (else 403) → tiket ada (else 404) → eventId cocok (else 400) → belum dipakai (else 400 + usedAt, JANGAN re-mark). Mark used via `updateMany where isUsed:false` (atomik, cegah double-accept 2 scanner barengan).
+  - `server/routes/scanner.routes.js` (BARU) + daftar `/api/scanner` di `server/src/index.js`. `/my-events` didaftarkan sebelum route lain (pola konsisten).
+  - Auth middleware TIDAK diubah — sudah role-agnostic (fallback ambil role dari DB kalau JWT lama tak punya role); tidak ada whitelist role di middleware, cek role dilakukan di controller.
+  - `client/src/app/scanner/page.tsx` (BARU) — halaman standalone (bukan /dashboard layout), LIGHT theme (bg-slate-50 + emerald-800, TIDAK ulangi kesalahan dark-theme /field). Views: loading/login/wrong-role/no-events/pick-event/scanning. Kamera + decode via `html5-qrcode` (dynamic import di dalam useEffect), guard `processingRef` cegah 1 QR divalidasi berkali-kali, overlay full-screen hijau (valid: nama+jenis) / merah (ditolak: alasan + waktu pakai), auto-kembali 3 detik / tap.
+  - `client/src/app/login/page.tsx` — redirect role: crew→/field, scanner→/scanner, else /dashboard.
+  - `client/src/components/dashboard/dashboard-guard.tsx` — scanner yang buka /dashboard → redirect /scanner (fast-path localStorage + fallback /api/auth/me).
+  - `client/src/app/field/page.tsx` — wrong-role view role-aware (scanner → link /scanner).
+  - `client/src/app/register/page.tsx` — role toggle jadi 3 opsi (Promotor/Crew/Scanner), sembunyikan field EO untuk non-promotor, hint login via /scanner.
+  - `client/package.json` — tambah `html5-qrcode@^2.3.8` (npm install --legacy-peer-deps).
+- Fix/Implementasi: (lihat File terkait).
+- Verifikasi E2E (controller nyata ke DB, data test terisolasi lalu dihapus): 17/17 check PASS — inviteScanner (+ guard duplikat & non-scanner), getMyScannerEvents (scoping: lihat eventA, tidak lihat eventB yang tak di-assign), validateTicket tiket valid → 200 + isUsed flip + usedAt + buyerName/typeName benar, scan ulang → 400 status "used" + usedAt, tiket beda event → 400 (tiket lain tidak ikut ter-mark), event tak di-assign → 403, kode ngawur → 404. `node --check` semua file server OK; `npx tsc --noEmit` client EXIT 0; `prisma db push` sukses (table event_scanners dibuat) + generate.
+- Catatan deploy: schema sudah di-push ke Supabase production (table `event_scanners` dibuat) tapi KODE belum di-deploy ke VPS — DB sementara ahead of code (table baru belum dipakai kode lama, aman). Deploy penuh (git push → deploy.sh → prisma generate di VPS) menyusul saat diminta. Halaman `/scanner` frontend butuh Vercel redeploy (otomatis saat push).
+- Tag: #scanner #ticket-validation #roadmap-5 #role #scanner-role #html5-qrcode #qr #field-crew-pattern #prisma #schema #feature #web-based #mobile-app-note
+
 

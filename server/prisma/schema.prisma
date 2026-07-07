@@ -19,7 +19,7 @@ model User {
   phone     String?
   status    String   @default("pending")
   plan      String   @default("starter")
-  role      String   @default("promotor")
+  role      String   @default("promotor") // "promotor" | "crew" | "scanner"
   isAdmin   Boolean  @default(false)
 
   proEventId   String?
@@ -32,6 +32,7 @@ model User {
   events            Event[]
   expenses          Expense[]
   eventCrew         EventCrew[]
+  eventScanners     EventScanner[]
   pettyCashAccounts PettyCashAccount[]
   otherIncomes      OtherIncome[]
   proTransactions   ProTransaction[]
@@ -95,6 +96,7 @@ model Event {
   purchaseOrders     PurchaseOrder[]
   expenses           Expense[]
   crew               EventCrew[]
+  eventScanners      EventScanner[]
   pettyCashAccounts  PettyCashAccount[]
   otherIncomes       OtherIncome[]
   ticketTypes        TicketType[]
@@ -558,6 +560,21 @@ model EventCrew {
 
   @@unique([eventId, userId])
   @@map("event_crew")
+}
+
+// Akun scanner (role "scanner") yang di-assign ke sebuah event untuk validasi tiket di venue.
+// Mirror pola EventCrew: satu akun scanner bisa bertugas di banyak event lintas waktu.
+model EventScanner {
+  id        String   @id @default(uuid())
+  eventId   String   @map("event_id")
+  userId    String   @map("user_id")
+  createdAt DateTime @default(now()) @map("created_at")
+
+  event     Event    @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([eventId, userId])
+  @@map("event_scanners")
 }
 
 model PettyCashAccount {

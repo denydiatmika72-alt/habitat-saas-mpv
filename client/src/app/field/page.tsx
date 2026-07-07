@@ -46,6 +46,7 @@ type View = "loading" | "login" | "wrong-role" | "pick-event" | "main" | "expens
 export default function FieldPage() {
   const [view, setView] = useState<View>("loading")
   const [userName, setUserName] = useState("")
+  const [userRole, setUserRole] = useState("")
   const [assignments, setAssignments] = useState<Assignment[]>([])
   const [selectedAssignment, setSelectedAssignment] = useState<Assignment | null>(null)
   const [account, setAccount] = useState<AccountDetail | null>(null)
@@ -70,7 +71,7 @@ export default function FieldPage() {
       const res = await fetch("/api/auth/me", { headers: authHeaders() })
       if (!res.ok) { setView("login"); return }
       const data = await res.json()
-      if (data.data.role !== "crew") { setView("wrong-role"); setUserName(data.data.name); return }
+      if (data.data.role !== "crew") { setView("wrong-role"); setUserName(data.data.name); setUserRole(data.data.role); return }
       setUserName(data.data.name)
       loadAssignments()
     } catch { setView("login") }
@@ -114,7 +115,7 @@ export default function FieldPage() {
       const data = await res.json()
       if (data.success) {
         localStorage.setItem("token", data.token)
-        if (data.data.role !== "crew") { setView("wrong-role"); setUserName(data.data.name); return }
+        if (data.data.role !== "crew") { setView("wrong-role"); setUserName(data.data.name); setUserRole(data.data.role); return }
         setUserName(data.data.name)
         loadAssignments()
       } else {
@@ -219,18 +220,20 @@ export default function FieldPage() {
   }
 
   if (view === "wrong-role") {
+    const dest = userRole === "scanner" ? "/scanner" : "/dashboard"
+    const destLabel = userRole === "scanner" ? "Ke Halaman Scanner →" : "Ke Dashboard Promotor →"
     return (
       <div className="flex min-h-screen items-center justify-center bg-slate-50 px-4">
         <div className="max-w-sm text-center">
           <p className="mb-2 text-lg font-semibold text-slate-900">Hei, {userName}!</p>
           <p className="mb-6 text-sm text-slate-500">
-            Halaman ini khusus untuk Field Crew. Akun kamu terdaftar sebagai promotor.
+            Halaman ini khusus untuk Field Crew. Akun kamu terdaftar sebagai {userRole === "scanner" ? "scanner" : "promotor"}.
           </p>
           <Link
-            href="/dashboard"
+            href={dest}
             className="inline-flex items-center gap-2 rounded-xl bg-emerald-800 px-6 py-3 text-sm font-bold text-white transition-colors hover:bg-emerald-900"
           >
-            Ke Dashboard Promotor →
+            {destLabel}
           </Link>
         </div>
       </div>

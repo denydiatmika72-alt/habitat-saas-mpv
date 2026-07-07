@@ -30,6 +30,7 @@ const merchRoutes         = require('../routes/merch.routes');
 const bundleRoutes        = require('../routes/bundle.routes');
 const ticketBoxRoutes     = require('../routes/ticket-box.routes');
 const feeDebtRoutes       = require('../routes/fee-debt.routes');
+const scannerRoutes       = require('../routes/scanner.routes');
 const uploadRoutes        = require('../routes/upload.routes');
 require('./cron/pro-subscription.cron');
 require('./cron/ticket-booking.cron');
@@ -101,6 +102,7 @@ app.use('/api/merch',         merchRoutes);
 app.use('/api/bundles',       bundleRoutes);
 app.use('/api/ticket-box',    ticketBoxRoutes);
 app.use('/api/admin/fee-debt', feeDebtRoutes);
+app.use('/api/scanner',       scannerRoutes);
 app.use('/api/upload',        uploadRoutes);
 
 app.use((req, res) => {

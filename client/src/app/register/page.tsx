@@ -5,9 +5,9 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Label } from "@/components/ui/label";
-import { CheckCircle, MessageCircle, Mail, Crown, HardHat } from 'lucide-react';
+import { CheckCircle, MessageCircle, Mail, Crown, HardHat, ScanLine } from 'lucide-react';
 
-type Role = 'promotor' | 'crew';
+type Role = 'promotor' | 'crew' | 'scanner';
 
 export default function RegisterPage() {
   const [isLoading, setIsLoading] = useState(false);
@@ -23,6 +23,7 @@ export default function RegisterPage() {
   });
 
   const isCrew = role === 'crew';
+  const isScanner = role === 'scanner';
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     setFormData({ ...formData, [e.target.name]: e.target.value });
@@ -74,6 +75,11 @@ export default function RegisterPage() {
                   Setelah diaktifkan, login via <span className="font-bold">nexeventapp.tech/field</span>
                 </p>
               )}
+              {isScanner && (
+                <p className="mt-2 text-sm font-medium text-emerald-700">
+                  Setelah diaktifkan, login via <span className="font-bold">nexeventapp.tech/scanner</span>
+                </p>
+              )}
             </div>
             <div className="rounded-xl bg-amber-50 border border-amber-200 p-4 text-left space-y-3">
               <p className="text-xs font-semibold text-amber-800 uppercase tracking-wide">Hubungi Admin</p>
@@ -112,7 +118,7 @@ export default function RegisterPage() {
         <CardHeader className="text-center">
           <CardTitle className="text-2xl font-bold text-slate-900">Daftar Akun Baru</CardTitle>
           <CardDescription>
-            {isCrew ? "Buat akun Field Crew untuk event." : "Buat workspace untuk EO / Promotor Anda."}
+            {isCrew ? "Buat akun Field Crew untuk event." : isScanner ? "Buat akun Scanner tiket untuk validasi di venue." : "Buat workspace untuk EO / Promotor Anda."}
           </CardDescription>
         </CardHeader>
         <CardContent>
@@ -121,36 +127,54 @@ export default function RegisterPage() {
             {/* Role selector */}
             <div className="space-y-2">
               <Label>Daftar sebagai</Label>
-              <div className="grid grid-cols-2 gap-2">
+              <div className="grid grid-cols-3 gap-2">
                 <button
                   type="button"
                   onClick={() => setRole('promotor')}
-                  className={`flex items-center gap-2 rounded-lg border px-3 py-2.5 text-sm font-medium transition-colors ${
+                  className={`flex flex-col items-center gap-1 rounded-lg border px-2 py-2.5 text-xs font-medium transition-colors ${
                     role === 'promotor'
                       ? 'border-emerald-600 bg-emerald-50 text-emerald-800'
                       : 'border-slate-200 bg-white text-slate-600 hover:bg-slate-50'
                   }`}
                 >
                   <Crown className="size-4 shrink-0" />
-                  Promotor Event
+                  Promotor
                 </button>
                 <button
                   type="button"
                   onClick={() => setRole('crew')}
-                  className={`flex items-center gap-2 rounded-lg border px-3 py-2.5 text-sm font-medium transition-colors ${
+                  className={`flex flex-col items-center gap-1 rounded-lg border px-2 py-2.5 text-xs font-medium transition-colors ${
                     role === 'crew'
                       ? 'border-emerald-600 bg-emerald-50 text-emerald-800'
                       : 'border-slate-200 bg-white text-slate-600 hover:bg-slate-50'
                   }`}
                 >
                   <HardHat className="size-4 shrink-0" />
-                  Crew Lapangan
+                  Crew
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setRole('scanner')}
+                  className={`flex flex-col items-center gap-1 rounded-lg border px-2 py-2.5 text-xs font-medium transition-colors ${
+                    role === 'scanner'
+                      ? 'border-emerald-600 bg-emerald-50 text-emerald-800'
+                      : 'border-slate-200 bg-white text-slate-600 hover:bg-slate-50'
+                  }`}
+                >
+                  <ScanLine className="size-4 shrink-0" />
+                  Scanner
                 </button>
               </div>
               {isCrew && (
                 <p className="text-xs text-slate-500 bg-slate-50 rounded-lg px-3 py-2 border border-slate-200">
                   Akun crew hanya bisa diakses via{' '}
                   <span className="font-medium text-emerald-700">nexeventapp.tech/field</span>
+                </p>
+              )}
+              {isScanner && (
+                <p className="text-xs text-slate-500 bg-slate-50 rounded-lg px-3 py-2 border border-slate-200">
+                  Akun scanner hanya bisa diakses via{' '}
+                  <span className="font-medium text-emerald-700">nexeventapp.tech/scanner</span>
                 </p>
               )}
             </div>
@@ -165,7 +189,7 @@ export default function RegisterPage() {
               />
             </div>
 
-            {!isCrew && (
+            {role === 'promotor' && (
               <div className="space-y-2">
                 <Label>Nama Promotor / EO</Label>
                 <Input
@@ -192,7 +216,7 @@ export default function RegisterPage() {
               <Input
                 name="email"
                 type="email"
-                placeholder={isCrew ? "email@kamu.com" : "promotor@event.com"}
+                placeholder={role === 'promotor' ? "promotor@event.com" : "email@kamu.com"}
                 onChange={handleChange}
                 required
               />

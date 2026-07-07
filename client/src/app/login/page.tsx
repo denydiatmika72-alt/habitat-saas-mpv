@@ -32,7 +32,8 @@ function PromoterLoginForm() {
         if (data.data?.plan) localStorage.setItem('user_plan', data.data.plan);
         if (data.data?.role) localStorage.setItem('user_role', data.data.role);
         localStorage.setItem('user_is_admin', data.data?.isAdmin ? 'true' : 'false');
-        router.push(data.data?.role === 'crew' ? '/field' : '/dashboard');
+        const role = data.data?.role;
+        router.push(role === 'crew' ? '/field' : role === 'scanner' ? '/scanner' : '/dashboard');
       } else {
         setErrorMsg(data.message || 'Email atau password salah.');
       }
