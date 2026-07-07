@@ -1133,4 +1133,21 @@ File ini adalah log permanen bug yang sudah pernah terjadi di project ini besert
 - Verifikasi: data test terisolasi (promotor+event disposable) — 1 order cash (fee 1750) + 1 order transfer (fee 3500), keduanya paid+unsettled. `getFeeDebtByPromoter` → totalDebt 1750, orderCount 1 (transfer dikecualikan); `getFeeDebtDetail` → hanya 1 order method 'cash', totalDebt 1750. Data test dihapus. `node --check` fee-debt.controller.js OK; `npx tsc --noEmit` client EXIT 0.
 - Tag: #fee-debt #cash-only #transfer #midtrans #ticket-box #reconciliation #roadmap-4
 
+---
+
+## [2026-07-07] Deploy batch akumulasi ke production (Ticket Box + Midtrans transfer + Fee Debt)
+
+- Gejala: Sejumlah fitur besar sudah selesai & terverifikasi lokal tapi menumpuk sebagai perubahan uncommitted lintas sesi, belum di-deploy. Kondisi khusus: kolom `feeSettled` + migrasi channel 1 baris SUDAH diterapkan langsung ke Supabase production (via .env lokal sesi sebelumnya), tapi kode backend/frontend BELUM di-deploy ke VPS → DB production & kode production sempat out-of-sync.
+- Root cause: Bukan bug — hutang deploy. DB diubah lebih dulu (schema + data), kode menyusul.
+- File terkait: (2 commit) `2a7fe6d` feat: Ticket Box overhaul (rename total box-office→ticket-box, Midtrans transfer, Fee Debt Reconciliation cash-only) — 15 file; `5bd730d` chore: script one-off migrasi channel. Deploy via `deploy.sh` di VPS.
+- Fix / Langkah deploy (urutan wajib push → verify SHA → deploy.sh):
+  1. 2 commit logis: (a) batch fitur interdependen jadi satu (index.js mewire route ticket-box + fee-debt sekaligus, jadi tak bisa dipisah tanpa commit intermediate yang tak build); (b) script migrasi one-off terpisah.
+  2. `git push` → verifikasi `origin/main` = `5bd730d` di GitHub sebelum deploy (hindari race condition 2026-06-30).
+  3. `bash deploy.sh` di VPS: git pull afd7165..5bd730d, npm install, `prisma generate` (client kenal `feeSettled`), `prisma db push` → "already in sync" (schema sudah ada), pm2 restart. DEPLOY_EXIT=0.
+  4. Guard crash-loop: 2× `pm2 describe` jeda ~12s → online, restarts flat 73, unstable 0, uptime naik (19s→42s).
+  5. Smoke test production: `GET /api/ticket-box/:id` → 200 (JSON benar); route lama `/api/box-office/:id` → 404; `/api/admin/fee-debt/by-promoter` → 401 (wired + auth, bukan 404); frontend Vercel `/ticket-box/:id` → 200, `/box-office/:id` → 404; pm2 logs bersih (no error setelah request nyata).
+  6. Konfirmasi sinkron: VPS HEAD = `5bd730d`; DB `channel box_office=0, ticket_box=1`; query filter `feeSettled` sukses (client production kenal field). DB & kode production kini SINKRON.
+- Catatan: `project.md` (status doc lama, dihapus user sebelum batch ini) sengaja TIDAK ikut di-commit — bukan perubahan milik Claude, di-flag ke user.
+- Tag: #deployment #vps #production #ticket-box #fee-debt #midtrans #prisma #db-sync #smoke-test
+
 
