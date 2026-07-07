@@ -20,6 +20,11 @@ type EventData = {
   event_date: string
   bannerUrl: string | null
   logoUrl: string | null
+  // Setting fee/pajak event (sama dengan online storefront). Dipakai untuk hitung rincian harga
+  // sebelum pembeli commit metode bayar. feeBearer 'audience' → fee+pajak ditambahkan ke total.
+  feeBearer: "audience" | "promotor" | null
+  taxEnabled: boolean
+  ticketFeePercent: number
 }
 
 type ResultTicket = { id: string; ticketCode: string; typeName: string; qrDataUrl: string }
@@ -90,6 +95,16 @@ export default function BoxOfficePage() {
     const tt = ticketTypes.find((t) => t.id === i.ticketTypeId)
     return sum + (tt ? tt.price * i.quantity : 0)
   }, 0)
+
+  // Rincian harga mengikuti computeFeeAndTax di backend PERSIS (box office = ticket-only):
+  // feeAmount = round(subtotal * ticketFeePercent/100); taxAmount = taxEnabled ? round(subtotal*0.1) : 0.
+  // Backend tetap sumber kebenaran final — di sini hanya untuk tampilan sebelum bayar. TANPA pembulatan tambahan.
+  const feeBearer = event?.feeBearer === "audience" ? "audience" : "promotor"
+  const feeAmount = Math.round(subtotal * ((event?.ticketFeePercent ?? 0) / 100))
+  const taxAmount = event?.taxEnabled ? Math.round(subtotal * 0.1) : 0
+  // Fee & pajak dua aturan TERPISAH (sama dgn backend): fee ditagih hanya kalau feeBearer 'audience';
+  // pajak SELALU ditagih kalau taxEnabled (tak tergantung feeBearer). Backend tetap sumber kebenaran final.
+  const payable = subtotal + (feeBearer === "audience" ? feeAmount : 0) + (event?.taxEnabled ? taxAmount : 0)
 
   const handleSubmit = async () => {
     setFormError("")
@@ -303,6 +318,34 @@ export default function BoxOfficePage() {
         </div>
       )}
 
+      {/* Rincian harga tampil kalau ada tambahan yang ditagih ke pembeli: fee (hanya saat audience)
+          ATAU pajak (kapan pun taxEnabled). Baris "Biaya Layanan" hanya muncul saat feeBearer 'audience';
+          baris "Pajak" muncul kapan pun taxEnabled — dua aturan terpisah, sama dgn backend. */}
+      {totalQty > 0 && (feeBearer === "audience" || event?.taxEnabled) && (
+        <div className="mb-4 flex flex-col gap-2 rounded-2xl border border-slate-200 bg-white p-4 text-sm">
+          <div className="flex items-center justify-between text-slate-600">
+            <span>Harga Tiket</span>
+            <span className="font-semibold text-slate-900">{IDR.format(subtotal)}</span>
+          </div>
+          {feeBearer === "audience" && (
+            <div className="flex items-center justify-between text-slate-600">
+              <span>Biaya Layanan{event?.ticketFeePercent ? ` (${event.ticketFeePercent}%)` : ""}</span>
+              <span className="font-semibold text-slate-900">{IDR.format(feeAmount)}</span>
+            </div>
+          )}
+          {event?.taxEnabled && (
+            <div className="flex items-center justify-between text-slate-600">
+              <span>Pajak (10%)</span>
+              <span className="font-semibold text-slate-900">{IDR.format(taxAmount)}</span>
+            </div>
+          )}
+          <div className="mt-1 flex items-center justify-between border-t border-slate-200 pt-2">
+            <span className="font-bold text-slate-900">Total Bayar</span>
+            <span className="text-base font-black text-emerald-700">{IDR.format(payable)}</span>
+          </div>
+        </div>
+      )}
+
       {formError && <div className="mb-3 rounded-lg bg-red-50 px-3 py-2 text-sm text-red-600">{formError}</div>}
 
       <div className="sticky bottom-4 mt-auto">
@@ -312,7 +355,7 @@ export default function BoxOfficePage() {
           disabled={totalQty === 0 || submitting}
           className="flex w-full items-center justify-center gap-2 rounded-2xl bg-emerald-800 py-4 text-base font-black text-white shadow-lg disabled:opacity-40"
         >
-          {submitting ? <Loader2 className="size-5 animate-spin" /> : totalQty > 0 ? `Bayar — ${IDR.format(subtotal)}` : "Pilih tiket dulu"}
+          {submitting ? <Loader2 className="size-5 animate-spin" /> : totalQty > 0 ? `Bayar — ${IDR.format(payable)}` : "Pilih tiket dulu"}
         </button>
       </div>
     </div>

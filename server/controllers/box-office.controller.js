@@ -1,7 +1,7 @@
 const prisma = require('../src/lib/prisma');
 const QRCode = require('qrcode');
 const { sendOrderEmail } = require('../services/email.service');
-const { generateTicketsForOrderItems, countTicketsForNik, MAX_TICKETS_PER_NIK, computeFeeAndTax } = require('../services/ticket.service');
+const { generateTicketsForOrderItems, countTicketsForNik, MAX_TICKETS_PER_NIK, computeFeeAndTax, resolveFeePercents } = require('../services/ticket.service');
 
 const PAYMENT_METHODS = ['cash', 'transfer'];
 
@@ -50,6 +50,12 @@ const getBoxOfficeEvent = async (req, res) => {
       isSoldOut: tt.sold >= tt.quota,
     }));
 
+    // Fee & pajak: box office pakai setting event yang SAMA dengan online storefront
+    // (satu setting per event). feeBearer + taxEnabled + fee % (tiket) dikirim ke frontend
+    // supaya rincian harga bisa ditampilkan SEBELUM pembeli pilih metode bayar.
+    // Box office ticket-only → yang relevan cuma ticketFeePercent (fallback chain via resolveFeePercents).
+    const { ticketFeePercent } = resolveFeePercents(event);
+
     return res.json({
       success: true,
       event: {
@@ -59,6 +65,9 @@ const getBoxOfficeEvent = async (req, res) => {
         event_date: event.event_date,
         bannerUrl: event.bannerUrl,
         logoUrl: event.logoUrl,
+        feeBearer: event.feeBearer,
+        taxEnabled: event.taxEnabled,
+        ticketFeePercent,
       },
       ticketTypes,
     });
@@ -137,15 +146,18 @@ const createBoxOfficeOrder = async (req, res) => {
         // Box office HANYA menjual TicketType (tanpa merch/bundle) → cukup kirim ticketSubtotal.
         const { feeAmount, taxAmount } = computeFeeAndTax(event, { ticketSubtotal: subtotal });
 
-        // TODO(keputusan bisnis — box office feeBearer & pajak ke pembeli):
-        // Saat ini `totalAmount = subtotal` (harga face tiket) = uang cash/transfer yang BENAR-BENAR ditagih
-        // ke walk-up buyer di venue. `feeAmount` & `taxAmount` DICATAT (untuk P&L + rekonsiliasi hutang fee
-        // roadmap #4) tapi TIDAK ditambahkan ke yang ditagih — default box office = promotor menanggung fee
-        // (feeBearer 'promotor'), karena menagih fee/pajak di atas harga cash bulat ke pembeli walk-in itu tak lazim.
-        // PERLU KEPUTUSAN USER: apakah box office boleh menagih fee/pajak ke pembeli (feeBearer 'audience',
-        // totalAmount = subtotal + feeAmount + taxAmount)? Jangan ubah tanpa keputusan eksplisit.
-        const feeBearer = 'promotor';
-        const totalAmount = subtotal;
+        // Box office mengikuti setting feeBearer event yang SAMA dengan online storefront — satu setting per
+        // event yang sudah dipilih promotor & disetujui admin (event.feeBearer). Tidak ada setting fee khusus
+        // box office; hanya UI & metode bayar yang beda, aturan fee identik dengan createOrder di
+        // storefront.controller.js. Branching dibuat sama persis supaya konsisten (jangan bikin formula baru).
+        const feeBearer = event.feeBearer === 'audience' ? 'audience' : 'promotor';
+        // Fee & pajak = DUA aturan TERPISAH (sama persis dgn storefront.controller.js createOrder — jangan digabung):
+        //   - Platform FEE ditambahkan ke tagihan HANYA kalau feeBearer 'audience'. Kalau 'promotor', fee
+        //     diserap promotor (tidak ditagih ke pembeli).
+        //   - PAJAK 10% SELALU ditagih ke pembeli kalau event.taxEnabled — TIDAK tergantung feeBearer sama sekali.
+        // feeAmount & taxAmount TETAP dipersist ke order apa pun kasusnya (untuk P&L + rekonsiliasi hutang fee #4).
+        // Pakai angka mentah computeFeeAndTax, TANPA pembulatan tambahan.
+        const totalAmount = subtotal + (feeBearer === 'audience' ? feeAmount : 0) + (event.taxEnabled ? taxAmount : 0);
 
         const orderId = `nexevent-boxoffice-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
         const order = await tx.ticketOrder.create({
