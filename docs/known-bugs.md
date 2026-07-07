@@ -1174,4 +1174,21 @@ File ini adalah log permanen bug yang sudah pernah terjadi di project ini besert
 - Catatan deploy: schema sudah di-push ke Supabase production (table `event_scanners` dibuat) tapi KODE belum di-deploy ke VPS — DB sementara ahead of code (table baru belum dipakai kode lama, aman). Deploy penuh (git push → deploy.sh → prisma generate di VPS) menyusul saat diminta. Halaman `/scanner` frontend butuh Vercel redeploy (otomatis saat push).
 - Tag: #scanner #ticket-validation #roadmap-5 #role #scanner-role #html5-qrcode #qr #field-crew-pattern #prisma #schema #feature #web-based #mobile-app-note
 
+---
+
+## [2026-07-08] Ticket Scanner — UI "Undang Scanner" untuk promotor + deploy production
+
+- Gejala/konteks: (Bukan bug — melengkapi fitur + deploy.) Backend scanner (invite/my-events/validate) sudah jalan tapi TIDAK ada UI promotor untuk mengundang scanner ke event, jadi founder tak bisa tes flow penuh tanpa panggil API manual. Selain itu seluruh fitur Ticket Scanner (dari sesi sebelumnya) masih pending deploy — DB (`event_scanners` + role "scanner") sudah di-push ke prod tapi kode belum di VPS.
+- Root cause: UI invite scanner belum dibuat + fitur belum di-deploy.
+- File terkait:
+  - `server/controllers/scanner.controller.js` — tambah `getEventScanners` (GET /api/scanner/event/:eventId, promotor + ownership via promotor_id, mirror crew.getEventCrew) & `removeScanner` (DELETE /api/scanner/event/:eventId/:scannerId, promotor + ownership).
+  - `server/routes/scanner.routes.js` — daftar route baru (spesifik sebelum generik).
+  - `client/src/app/dashboard/crew/page.tsx` — section baru "Scanner Tiket": form undang (email + event terpilih via selector event yang sudah ada) → POST /api/scanner/invite; list scanner terdaftar (GET /event/:eventId) dengan tombol hapus (DELETE). Pesan error tampil apa adanya dari backend ("User ini bukan scanner...", "Scanner ini sudah ditambahkan ke event.", dst).
+  - `docs/known-bugs.md`, deploy via `deploy.sh`.
+- Keputusan gating: section ditempel di halaman Field Crew yang SUDAH Pro-gated (`isPro` guard) → invite scanner otomatis Pro-only. Konsisten dengan model Pro-per-event (fitur operasional = Pro; storefront/ticketing yang menghasilkan tiket juga Pro). Dicatat sebagai pilihan sadar.
+- Verifikasi E2E (controller nyata ke DB, data test terisolasi lalu dihapus): 10/10 PASS — invite → 201; getEventScanners list benar + guard promotor lain → 404; getMyScannerEvents scanner lihat event; validateTicket tiket asli → 200 + isUsed flip + buyerName benar; removeScanner → 200, list kosong, scanner yang dihapus → 403 saat validasi. `node --check` scanner files OK; `npx tsc --noEmit` client EXIT 0.
+- Deploy: commit `16fcbb2` (seluruh fitur Ticket Scanner + UI ini). push → verify origin/main=16fcbb2 → `deploy.sh` (git pull 5bd730d..16fcbb2, npm install, prisma generate [client kenal EventScanner], db push "already in sync", pm2 restart). DEPLOY_EXIT=0. Guard crash-loop: 2× pm2 describe → online, restarts flat 74, unstable 0, uptime naik (13s→32s). Smoke test prod: /api/scanner/my-events, /event/:id, /invite semua 401 (wired + auth, bukan 404); VPS HEAD=16fcbb2. Frontend (/scanner + section crew) via Vercel auto-deploy saat push.
+- Tag: #scanner #invite-ui #promotor #deployment #vps #production #pro-gated #ownership #roadmap-5 #field-crew-pattern
+
+
 
