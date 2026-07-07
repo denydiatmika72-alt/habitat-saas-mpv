@@ -135,6 +135,7 @@ model TicketOrder {
   feeAmount       Int       @default(0) @map("fee_amount")
   feeBearer       String    @default("promotor") @map("fee_bearer")
   taxAmount       Int       @default(0) @map("tax_amount")
+  feeSettled      Boolean   @default(false) @map("fee_settled") // hutang fee box_office ke nexEvent sudah dilunasi (rekonsiliasi admin)
   orderType       String    @default("ticket") @map("order_type") // "ticket" | "merch" | "bundling"
   channel         String    @default("online") // "online" | "box_office"
   paymentMethod   String?   @map("payment_method") // "cash" | "transfer" (box office); null utk order online/Midtrans

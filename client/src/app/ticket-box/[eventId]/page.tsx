@@ -1,8 +1,25 @@
 "use client"
 
 import { useEffect, useState, useCallback } from "react"
-import { useParams } from "next/navigation"
+import { useParams, useRouter } from "next/navigation"
+import Script from "next/script"
 import { Calendar, MapPin, Minus, Plus, Loader2, CheckCircle2, Ticket } from "lucide-react"
+
+declare global {
+  interface Window {
+    snap?: {
+      pay: (
+        token: string,
+        options: {
+          onSuccess?: (result: unknown) => void
+          onPending?: (result: unknown) => void
+          onError?: (result: unknown) => void
+          onClose?: () => void
+        }
+      ) => void
+    }
+  }
+}
 
 type TicketType = {
   id: string
@@ -41,8 +58,9 @@ type Status = "loading" | "not_found" | "active" | "error"
 const IDR = new Intl.NumberFormat("id-ID", { style: "currency", currency: "IDR", maximumFractionDigits: 0 })
 const MAX_QTY_PER_TYPE = 4
 
-export default function BoxOfficePage() {
+export default function TicketBoxPage() {
   const { eventId } = useParams<{ eventId: string }>()
+  const router = useRouter()
 
   const [status, setStatus] = useState<Status>("loading")
   const [event, setEvent] = useState<EventData | null>(null)
@@ -60,7 +78,7 @@ export default function BoxOfficePage() {
 
   const fetchEvent = useCallback(async () => {
     try {
-      const res = await fetch(`/api/box-office/${eventId}`)
+      const res = await fetch(`/api/ticket-box/${eventId}`)
       const data = await res.json()
       if (!data.success) {
         setStatus("not_found")
@@ -96,7 +114,7 @@ export default function BoxOfficePage() {
     return sum + (tt ? tt.price * i.quantity : 0)
   }, 0)
 
-  // Rincian harga mengikuti computeFeeAndTax di backend PERSIS (box office = ticket-only):
+  // Rincian harga mengikuti computeFeeAndTax di backend PERSIS (Ticket Box Offline = ticket-only):
   // feeAmount = round(subtotal * ticketFeePercent/100); taxAmount = taxEnabled ? round(subtotal*0.1) : 0.
   // Backend tetap sumber kebenaran final — di sini hanya untuk tampilan sebelum bayar. TANPA pembulatan tambahan.
   const feeBearer = event?.feeBearer === "audience" ? "audience" : "promotor"
@@ -118,7 +136,7 @@ export default function BoxOfficePage() {
 
     setSubmitting(true)
     try {
-      const res = await fetch(`/api/box-office/${eventId}/order`, {
+      const res = await fetch(`/api/ticket-box/${eventId}/order`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -135,6 +153,28 @@ export default function BoxOfficePage() {
         setSubmitting(false)
         return
       }
+
+      // TRANSFER → backend balikin { token, orderId } (belum ada tiket). Buka Snap Midtrans; setelah
+      // sukses/pending, arahkan ke /order/:orderId (halaman status existing: countdown, polling, e-ticket).
+      // CASH → backend balikin { tickets }, tampilkan QR langsung di layar (perilaku lama, tak berubah).
+      if (data.token) {
+        if (!window.snap) {
+          setFormError("Gagal memuat pembayaran. Muat ulang halaman lalu coba lagi.")
+          setSubmitting(false)
+          return
+        }
+        window.snap.pay(data.token, {
+          onSuccess: () => router.push(`/order/${data.orderId}`),
+          onPending: () => router.push(`/order/${data.orderId}`),
+          onError: () => {
+            setFormError("Pembayaran gagal. Silakan coba lagi.")
+            setSubmitting(false)
+          },
+          onClose: () => setSubmitting(false),
+        })
+        return
+      }
+
       setResult(data)
     } catch {
       setFormError("Gagal menghubungi server.")
@@ -155,7 +195,7 @@ export default function BoxOfficePage() {
       <div className="flex min-h-screen flex-col items-center justify-center gap-2 bg-slate-50 px-6 text-center">
         <Ticket className="size-10 text-slate-300" />
         <p className="text-lg font-semibold text-slate-900">Event tidak ditemukan</p>
-        <p className="text-sm text-slate-500">Periksa kembali QR / link box office.</p>
+        <p className="text-sm text-slate-500">Periksa kembali QR / link Ticket Box Offline.</p>
       </div>
     )
   }
@@ -190,9 +230,16 @@ export default function BoxOfficePage() {
   // ===== Form pembelian =====
   return (
     <div className="mx-auto flex min-h-screen w-full max-w-md flex-col bg-slate-50 px-4 py-6">
+      {/* Snap Midtrans untuk metode TRANSFER. NOTE: masih SANDBOX (CLAUDE.md roadmap #10 — menunggu
+          approval KYC production). window.snap.pay dipanggil di handleSubmit saat paymentMethod transfer. */}
+      <Script
+        src="https://app.sandbox.midtrans.com/snap/snap.js"
+        data-client-key={process.env.NEXT_PUBLIC_MIDTRANS_CLIENT_KEY}
+        strategy="afterInteractive"
+      />
       <div className="mb-4 rounded-2xl border border-slate-200 bg-white p-4">
         <span className="mb-1 inline-block rounded-full bg-emerald-100 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-emerald-700">
-          Box Office
+          Ticket Box Offline
         </span>
         <h1 className="text-lg font-bold text-slate-900">{event?.title}</h1>
         <div className="mt-1 flex flex-col gap-0.5 text-xs text-slate-500">

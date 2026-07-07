@@ -84,8 +84,10 @@ const handleWebhook = async (req, res) => {
       return res.status(200).json({ success: false, message: 'Invalid signature.' });
     }
 
-    // Semua order storefront (tiket, merch, bundling) di-route ke handler yang sama.
-    if (/^nexevent-(ticket|merch|bundling)-/.test(order_id)) {
+    // Semua order tiket (online storefront: tiket/merch/bundling + Ticket Box transfer) di-route ke handler
+    // yang sama. `ticketbox` = prefix orderId Ticket Box transfer (nexevent-ticketbox-...) — WAJIB ada di sini,
+    // kalau tidak settlement transfer Ticket Box tidak akan pernah generate tiket + kirim email.
+    if (/^nexevent-(ticket|merch|bundling|ticketbox)-/.test(order_id)) {
       return handleTicketOrderWebhook(order_id, transaction_status, res);
     }
 
@@ -155,7 +157,7 @@ const handleTicketOrderWebhook = async (orderId, transactionStatus, res) => {
     if (transactionStatus === 'settlement' || transactionStatus === 'capture') {
       if (order.status === 'pending') {
         // Generate 1 e-ticket per item tiket (merch tidak menghasilkan tiket, cukup barcode pickup di email).
-        // Pakai helper bersama supaya identik dengan flow box office (lihat services/ticket.service.js).
+        // Pakai helper bersama supaya identik dengan flow Ticket Box (lihat services/ticket.service.js).
         await generateTicketsForOrderItems(prisma, order.items);
 
         // Generate e-ticket untuk tiket yang ada DI DALAM paket bundling (× jumlah paket).

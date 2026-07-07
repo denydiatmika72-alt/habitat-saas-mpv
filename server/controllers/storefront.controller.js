@@ -203,7 +203,7 @@ const createOrder = async (req, res) => {
     const safeNik = buyerNik || '';
 
     // Anti-calo: limit NIK berlaku untuk tiket langsung DAN tiket di dalam paket, kumulatif lintas
-    // channel (online + box_office) — pakai helper bersama (services/ticket.service.js).
+    // channel (online + ticket_box) — pakai helper bersama (services/ticket.service.js).
     if (hasTickets) {
       const existingCount = await countTicketsForNik(prisma, event.id, safeNik);
       const newTicketCount = ticketItems.reduce((sum, item) => sum + Number(item.quantity || 0), 0);
@@ -342,7 +342,7 @@ const createOrder = async (req, res) => {
         const subtotal = ticketSubtotal + merchSubtotal + bundleSubtotal;
 
         // Fee (terpisah per komponen) + pajak dihitung lewat helper bersama (services/ticket.service.js)
-        // supaya identik dengan box office. Fallback chain fee spesifik → platformFeePercent → 3.5;
+        // supaya identik dengan Ticket Box. Fallback chain fee spesifik → platformFeePercent → 3.5;
         // pajak 10% hanya dari porsi tiket & hanya kalau event.taxEnabled.
         const { ticketFeePercent, merchFeePercent, bundlingFeePercent, ticketFee, merchFee, bundleFee, feeAmount, taxAmount } =
           computeFeeAndTax(event, { ticketSubtotal, merchSubtotal, bundleSubtotal, bundleTicketValue });

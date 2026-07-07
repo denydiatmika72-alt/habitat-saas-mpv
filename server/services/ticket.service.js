@@ -1,5 +1,5 @@
 // Helper bersama untuk generate e-ticket & hitung batas tiket per NIK (anti-calo).
-// Dipakai oleh flow online (storefront webhook) dan offline (box office) supaya logika identik.
+// Dipakai oleh flow online (storefront webhook) dan offline (Ticket Box) supaya logika identik.
 
 const MAX_TICKETS_PER_NIK = 4;
 const DEFAULT_FEE_PERCENT = 3.5;
@@ -16,10 +16,10 @@ function resolveFeePercents(event) {
   };
 }
 
-// Sumber tunggal kalkulasi fee & pajak untuk SEMUA channel (online storefront + box office).
+// Sumber tunggal kalkulasi fee & pajak untuk SEMUA channel (online storefront + Ticket Box).
 // Fee dihitung TERPISAH per komponen (tiket/merch/paket). Pajak 10% HANYA dari porsi tiket
 // (tiket langsung + porsi tiket di dalam paket) dan HANYA kalau `event.taxEnabled`.
-// Semua subtotal default 0 → caller ticket-only (box office) cukup kirim `ticketSubtotal`.
+// Semua subtotal default 0 → caller ticket-only (Ticket Box) cukup kirim `ticketSubtotal`.
 function computeFeeAndTax(event, { ticketSubtotal = 0, merchSubtotal = 0, bundleSubtotal = 0, bundleTicketValue = 0 } = {}) {
   const { ticketFeePercent, merchFeePercent, bundlingFeePercent } = resolveFeePercents(event);
   const ticketFee = Math.round(ticketSubtotal * (ticketFeePercent / 100));
@@ -49,7 +49,7 @@ async function generateTicketsForOrderItems(client, orderItems) {
 }
 
 // Hitung total tiket yang sudah dimiliki sebuah NIK di sebuah event — KUMULATIF lintas
-// SEMUA channel (online + box_office), termasuk tiket di dalam paket bundling.
+// SEMUA channel (online + ticket_box), termasuk tiket di dalam paket bundling.
 // Status pending & paid dihitung (booking online yang belum bayar tetap "menahan" kuota NIK).
 async function countTicketsForNik(client, eventId, nik) {
   const orders = await client.ticketOrder.findMany({

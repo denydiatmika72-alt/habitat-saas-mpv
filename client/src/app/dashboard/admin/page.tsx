@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from "react"
 import { useRouter } from "next/navigation"
-import { CheckCircle, Clock, Phone, Mail, User, Ticket, XCircle, Wallet, Package } from "lucide-react"
+import { CheckCircle, Clock, Phone, Mail, User, Ticket, XCircle, Wallet, Package, Receipt, ChevronDown, ChevronUp } from "lucide-react"
 import { useUser } from "@/hooks/useUser"
 
 const API_BASE = "/api"
@@ -72,6 +72,27 @@ interface FeeEvent {
 
 type FeeEdit = { ticket?: string; merch?: string; bundling?: string }
 
+interface FeeDebtPromoter {
+  promotorId: string
+  promotorName: string
+  promotorEmail: string
+  totalDebt: number
+  orderCount: number
+}
+
+interface FeeDebtOrder {
+  id: string
+  orderId: string
+  eventTitle: string
+  createdAt: string
+  paymentMethod: "cash" | "transfer" | null
+  feeBearer: "audience" | "promotor" | string
+  ticketSubtotal: number
+  feeAmount: number
+  taxAmount: number
+  totalAmount: number
+}
+
 const IDR = new Intl.NumberFormat("id-ID", { style: "currency", currency: "IDR", maximumFractionDigits: 0 })
 
 export default function AdminUsersPage() {
@@ -109,6 +130,14 @@ export default function AdminUsersPage() {
   const [editedFees, setEditedFees] = useState<Record<string, FeeEdit>>({})
   const [savingFeeId, setSavingFeeId] = useState<string | null>(null)
 
+  const [feeDebts, setFeeDebts] = useState<FeeDebtPromoter[]>([])
+  const [loadingFeeDebts, setLoadingFeeDebts] = useState(true)
+  const [feeDebtDetail, setFeeDebtDetail] = useState<Record<string, FeeDebtOrder[]>>({})
+  const [expandedDebtId, setExpandedDebtId] = useState<string | null>(null)
+  const [loadingDetailId, setLoadingDetailId] = useState<string | null>(null)
+  const [confirmSettleFor, setConfirmSettleFor] = useState<string | null>(null)
+  const [settlingDebtId, setSettlingDebtId] = useState<string | null>(null)
+
   useEffect(() => {
     if (!userLoading && user && !user.isAdmin) {
       router.replace("/dashboard")
@@ -126,6 +155,7 @@ export default function AdminUsersPage() {
     fetchMerchRequests()
     fetchBundleRequests()
     fetchFeeEvents()
+    fetchFeeDebts()
   }, [])
 
   if (userLoading) return <div className="py-16 text-center text-sm text-slate-400">Memuat...</div>
@@ -371,6 +401,66 @@ export default function AdminUsersPage() {
       alert("Tidak dapat menghubungi server.")
     } finally {
       setSavingFeeId(null)
+    }
+  }
+
+  async function fetchFeeDebts() {
+    setLoadingFeeDebts(true)
+    try {
+      const res = await fetch(`${API_BASE}/admin/fee-debt/by-promoter`, { headers: authHeaders() })
+      const json = await res.json()
+      if (json.success) setFeeDebts(json.data)
+    } catch {}
+    finally { setLoadingFeeDebts(false) }
+  }
+
+  async function toggleFeeDebtDetail(promotorId: string) {
+    // Tutup kalau sudah terbuka.
+    if (expandedDebtId === promotorId) {
+      setExpandedDebtId(null)
+      return
+    }
+    setExpandedDebtId(promotorId)
+    setConfirmSettleFor(null)
+    // Fetch detail sekali; cache di state.
+    if (!feeDebtDetail[promotorId]) {
+      setLoadingDetailId(promotorId)
+      try {
+        const res = await fetch(`${API_BASE}/admin/fee-debt/${promotorId}/detail`, { headers: authHeaders() })
+        const json = await res.json()
+        if (json.success) setFeeDebtDetail((prev) => ({ ...prev, [promotorId]: json.data }))
+      } catch {}
+      finally { setLoadingDetailId(null) }
+    }
+  }
+
+  async function handleSettleFeeDebt(promotorId: string) {
+    setSettlingDebtId(promotorId)
+    try {
+      const res = await fetch(`${API_BASE}/admin/fee-debt/${promotorId}/settle`, {
+        method: "PATCH",
+        headers: authHeaders(),
+        body: JSON.stringify({}), // settle SEMUA hutang ticket_box promotor yang belum lunas (as of now)
+      })
+      const json = await res.json()
+      if (json.success) {
+        // Hilangkan promotor dari daftar hutang + bersihkan cache detailnya.
+        setFeeDebts((prev) => prev.filter((d) => d.promotorId !== promotorId))
+        setFeeDebtDetail((prev) => {
+          const next = { ...prev }
+          delete next[promotorId]
+          return next
+        })
+        setExpandedDebtId(null)
+        setConfirmSettleFor(null)
+        alert(`Hutang fee ditandai lunas (${json.settledCount} transaksi).`)
+      } else {
+        alert(json.message || "Gagal menandai lunas")
+      }
+    } catch {
+      alert("Tidak dapat menghubungi server.")
+    } finally {
+      setSettlingDebtId(null)
     }
   }
 
@@ -861,6 +951,137 @@ export default function AdminUsersPage() {
                   >
                     {savingFeeId === ev.id ? "Menyimpan..." : "Simpan Fee"}
                   </button>
+                )}
+              </div>
+            )
+          })}
+        </div>
+      )}
+
+      {/* Rekonsiliasi Fee (Hutang Ticket Box) */}
+      <div>
+        <h2 className="text-xl font-semibold text-slate-900">Rekonsiliasi Fee (Hutang Ticket Box)</h2>
+        <p className="mt-1 text-sm text-slate-500">
+          Fee dari transaksi Ticket Box tunai (cash) tidak terpotong otomatis lewat Midtrans, jadi
+          tercatat sebagai hutang promotor ke nexEvent. Tandai lunas setelah promotor menyetor manual.
+          (Transaksi transfer sudah lewat Midtrans — fee terpotong otomatis, tidak masuk hutang.)
+        </p>
+      </div>
+
+      {loadingFeeDebts ? (
+        <div className="py-16 text-center text-sm text-slate-400">Memuat data...</div>
+      ) : feeDebts.length === 0 ? (
+        <div className="rounded-xl border border-slate-200 bg-white py-16 text-center">
+          <Receipt className="mx-auto mb-3 size-10 text-emerald-500" />
+          <p className="text-sm font-medium text-slate-700">Tidak ada hutang fee</p>
+          <p className="mt-1 text-xs text-slate-400">Semua fee Ticket Box sudah dilunasi atau belum ada transaksi.</p>
+        </div>
+      ) : (
+        <div className="space-y-3">
+          {feeDebts.map((d) => {
+            const detail = feeDebtDetail[d.promotorId]
+            const isExpanded = expandedDebtId === d.promotorId
+            return (
+              <div key={d.promotorId} className="rounded-xl border border-slate-200 bg-white p-4">
+                <div className="flex items-start justify-between gap-3">
+                  <div className="min-w-0">
+                    <p className="truncate font-medium text-slate-900">{d.promotorName}</p>
+                    <p className="truncate text-xs text-slate-400">{d.promotorEmail}</p>
+                    <p className="mt-1 text-xs text-slate-500">{d.orderCount} transaksi belum lunas</p>
+                  </div>
+                  <div className="shrink-0 text-right">
+                    <p className="text-[11px] uppercase tracking-wide text-slate-400">Total Hutang</p>
+                    <p className="text-lg font-black text-amber-600">{IDR.format(d.totalDebt)}</p>
+                  </div>
+                </div>
+
+                <div className="mt-3 flex items-center gap-2">
+                  <button
+                    onClick={() => toggleFeeDebtDetail(d.promotorId)}
+                    className="inline-flex items-center gap-1.5 rounded-md border border-slate-200 px-3 py-1.5 text-xs font-medium text-slate-600 transition-colors hover:bg-slate-50"
+                  >
+                    {isExpanded ? <ChevronUp className="size-3.5" /> : <ChevronDown className="size-3.5" />}
+                    {isExpanded ? "Tutup rincian" : "Lihat rincian"}
+                  </button>
+                  <button
+                    onClick={() => setConfirmSettleFor(confirmSettleFor === d.promotorId ? null : d.promotorId)}
+                    disabled={settlingDebtId === d.promotorId}
+                    className="inline-flex items-center gap-1.5 rounded-md bg-emerald-800 px-3 py-1.5 text-xs font-medium text-white transition-colors hover:bg-emerald-900 disabled:opacity-50"
+                  >
+                    <CheckCircle className="size-3.5" />
+                    Tandai Lunas
+                  </button>
+                </div>
+
+                {/* Konfirmasi sebelum settle — aksi menyentuh pembukuan nyata, jadi wajib konfirmasi dulu. */}
+                {confirmSettleFor === d.promotorId && (
+                  <div className="mt-3 rounded-lg border border-amber-200 bg-amber-50 p-3">
+                    <p className="text-sm text-amber-800">
+                      Tandai <span className="font-bold">{IDR.format(d.totalDebt)}</span> ({d.orderCount} transaksi)
+                      sebagai <span className="font-bold">LUNAS</span>? Pastikan promotor sudah menyetor fee ini.
+                    </p>
+                    <div className="mt-2 flex items-center gap-2">
+                      <button
+                        onClick={() => handleSettleFeeDebt(d.promotorId)}
+                        disabled={settlingDebtId === d.promotorId}
+                        className="rounded-lg bg-emerald-700 px-4 py-2 text-xs font-semibold text-white hover:bg-emerald-800 disabled:opacity-50"
+                      >
+                        {settlingDebtId === d.promotorId ? "Memproses..." : "Ya, Tandai Lunas"}
+                      </button>
+                      <button
+                        onClick={() => setConfirmSettleFor(null)}
+                        disabled={settlingDebtId === d.promotorId}
+                        className="rounded-lg border border-slate-200 px-4 py-2 text-xs font-semibold text-slate-600 hover:bg-slate-50 disabled:opacity-50"
+                      >
+                        Batal
+                      </button>
+                    </div>
+                  </div>
+                )}
+
+                {isExpanded && (
+                  <div className="mt-3 border-t border-slate-100 pt-3">
+                    {loadingDetailId === d.promotorId ? (
+                      <p className="py-4 text-center text-xs text-slate-400">Memuat rincian...</p>
+                    ) : !detail || detail.length === 0 ? (
+                      <p className="py-4 text-center text-xs text-slate-400">Tidak ada rincian.</p>
+                    ) : (
+                      <div className="overflow-x-auto">
+                        <table className="w-full text-xs">
+                          <thead className="border-b border-slate-100 text-slate-500">
+                            <tr>
+                              <th className="px-2 py-2 text-left font-medium">Event</th>
+                              <th className="px-2 py-2 text-left font-medium">Tanggal</th>
+                              <th className="px-2 py-2 text-left font-medium">Bayar</th>
+                              <th className="px-2 py-2 text-right font-medium">Subtotal Tiket</th>
+                              <th className="px-2 py-2 text-right font-medium">Fee</th>
+                            </tr>
+                          </thead>
+                          <tbody className="divide-y divide-slate-50">
+                            {detail.map((o) => (
+                              <tr key={o.id}>
+                                <td className="px-2 py-2 text-slate-700">{o.eventTitle}</td>
+                                <td className="px-2 py-2 text-slate-500">{formatDate(o.createdAt)}</td>
+                                <td className="px-2 py-2">
+                                  <span
+                                    className={`rounded-full px-2 py-0.5 text-[10px] font-bold ${
+                                      o.paymentMethod === "cash"
+                                        ? "bg-blue-100 text-blue-700"
+                                        : "bg-violet-100 text-violet-700"
+                                    }`}
+                                  >
+                                    {o.paymentMethod === "cash" ? "Tunai" : o.paymentMethod === "transfer" ? "Transfer" : "—"}
+                                  </span>
+                                </td>
+                                <td className="px-2 py-2 text-right text-slate-600">{IDR.format(o.ticketSubtotal)}</td>
+                                <td className="px-2 py-2 text-right font-semibold text-amber-600">{IDR.format(o.feeAmount)}</td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    )}
+                  </div>
                 )}
               </div>
             )

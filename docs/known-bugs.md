@@ -1050,3 +1050,87 @@ File ini adalah log permanen bug yang sudah pernah terjadi di project ini besert
 - Fix: pisahkan fee (ikut feeBearer) dan pajak (ikut taxEnabled) sebagai dua penambahan independen — mirror persis pola storefront. Total Bayar di frontend = total backend (tidak ada angka terpisah yang bisa drift).
 - Verifikasi (panggil `createBoxOfficeOrder` nyata ke DB, event "Throne Party", tiket "Regular" 50.000, ticketFeePercent 3.5, dibolak-balik feeBearer/taxEnabled lalu direstore): (A) audience+tax → total 56.750 (=50k+1.750 fee+5.000 pajak); (B) **promotor+tax → total 55.000 (=50k+5.000 pajak, fee TIDAK ditagih)** ← inti fix, sebelumnya keliru 50.000; (C) promotor+tax OFF → total 50.000 (face saja). Semua kasus `feeAmount:1750` & `taxAmount` tetap tercatat sesuai. Order test dihapus + stok dikembalikan tiap kali. `node --check` box-office.controller.js OK; `npx tsc --noEmit` client EXIT 0.
 - Tag: #box-office #pajak #tax #fee-platform #feeBearer #storefront-parity #undercharge #regression
+
+---
+
+## [2026-07-07] Sistem Hutang Fee / Rekonsiliasi Box Office (Roadmap #4) — implementasi baru
+
+- Gejala/konteks: (Bukan bug — implementasi fitur Roadmap #4.) Transaksi Box Office (cash & transfer) TIDAK lewat Midtrans, jadi platform fee tidak terpotong otomatis seperti transaksi online. Fee tsb harus dicatat sebagai HUTANG (piutang nexEvent) yang dilunasi promotor manual (transfer bank di luar app) lalu ditandai lunas oleh admin. Sebelumnya belum ada tracking sama sekali.
+- Root cause: Belum ada field penanda pelunasan di `TicketOrder` maupun endpoint/UI rekonsiliasi.
+- File terkait:
+  - `server/prisma/schema.prisma` — `TicketOrder` tambah `feeSettled Boolean @default(false) @map("fee_settled")`. Apply via `npx prisma db push` + `npx prisma generate` (project tanpa migration history — JANGAN `migrate dev`).
+  - `server/controllers/fee-debt.controller.js` (BARU) — `getFeeDebtByPromoter` (agregasi total feeAmount per promotor, group by di app karena Prisma groupBy tak bisa lintas relasi), `getFeeDebtDetail` (rincian order per promotor + hitung ticketSubtotal dari items), `settleFeeDebt` (set `feeSettled:true`). Filter dasar konsisten: `channel:"box_office" AND status:"paid" AND feeSettled:false`.
+  - `server/routes/fee-debt.routes.js` (BARU) — `GET /by-promoter`, `GET /:promotorId/detail`, `PATCH /:promotorId/settle`, semua `protect + requireAdmin`. Route spesifik `/by-promoter` didaftarkan SEBELUM `/:promotorId/...` agar tak ketubruk wildcard.
+  - `server/src/index.js` — daftar `app.use('/api/admin/fee-debt', feeDebtRoutes)`. (adminRoutes di `/api/admin` tidak match path ini → fall-through ke mount fee-debt.)
+  - `client/src/app/dashboard/admin/page.tsx` — section baru "Rekonsiliasi Fee (Hutang Box Office)": tabel per promotor (nama, total hutang IDR, jumlah transaksi), expand rincian order (event/tanggal/metode bayar/subtotal/fee), tombol "Tandai Lunas" dengan konfirmasi inline (aksi menyentuh pembukuan nyata → wajib konfirmasi sebelum submit).
+- Keputusan desain penting:
+  - **Cash DAN transfer dua-duanya dihitung sebagai hutang** (bukan cash saja). CLAUDE.md roadmap #4 hanya sebut "cash" eksplisit, tapi transfer (ke rekening promotor) juga bypass Midtrans → fee sama-sama tidak auto-potong. Diikutkan berdasarkan logika ini — DI-FLAG ke user untuk konfirmasi interpretasi.
+  - **Hutang = jumlah `feeAmount` apapun `feeBearer`-nya.** Baik audience (fee ada di kas cash yang dipegang promotor) maupun promotor (promotor menanggung) → dua-duanya wajib disetor ke nexEvent.
+  - `settleFeeDebt` tanpa body → settle SEMUA order box_office paid belum-settle milik promotor (as of now); body `{orderIds:[]}` opsional untuk settle sebagian. Guard: resolusi ID via findMany dulu (updateMany tak dukung filter relasi), hanya order box_office+paid+belum-settle+milik promotorId yang tersentuh (pending/online/promotor lain aman).
+  - **TIDAK ada mekanisme blocking/enforcement** (blokir buat event baru / deposit) — per CLAUDE.md eksplisit BELUM diputuskan. Task ini tracking/rekonsiliasi saja. Pertanyaan enforcement DI-FLAG ke user.
+- Verifikasi: dataset test terisolasi (promotor+event+ticketType disposable) di DB nyata. 3 order box_office belum-settle (2 cash + 1 transfer, feeAmount 1750+3500+1750) → agregasi totalDebt 7000/3 order ✅; kontrol (1 sudah-settle, 1 online, 1 pending) benar DIKECUALIKAN ✅; detail kembalikan 3 order + subtotal benar ✅; settle → settledCount 3, `feeSettled` flip true, unsettled→0, promotor hilang dari daftar ✅; order pending TIDAK ikut ter-settle ✅. Semua data test dihapus. `node --check` fee-debt.controller.js/routes/index.js OK; `npx tsc --noEmit` client EXIT 0.
+- Tag: #fee-debt #rekonsiliasi #box-office #roadmap-4 #admin #prisma #schema #feature #cash #transfer
+
+---
+
+## [2026-07-07] Rename "Box Office" → "Ticket Box Offline" (label user-facing saja)
+
+- Gejala/konteks: (Bukan bug — perubahan penamaan atas keputusan founder.) Fitur penjualan tiket offline di lokasi dulu bernama "Box Office"; diganti jadi "Ticket Box Offline" di semua teks yang dilihat user (promotor & pembeli walk-up).
+- Root cause: n/a (rename).
+- File terkait (HANYA teks user-facing + komentar prosa; identifier/route/log tag TIDAK diubah):
+  - `client/src/app/dashboard/tickets/page.tsx` — judul section "Box Office (Penjualan Offline)" → "Ticket Box Offline"; tombol "Generate QR Box Office" → "Generate QR Ticket Box"; `alt` QR; pesan error "Gagal membuat QR box office." → "...Ticket Box."; nama file unduhan `box-office-*.png` → `ticket-box-*.png`; komentar prosa.
+  - `client/src/app/box-office/[eventId]/page.tsx` — badge "Box Office" → "Ticket Box Offline"; copy not-found "link box office" → "link Ticket Box Offline"; komentar prosa.
+  - `server/controllers/box-office.controller.js` — komentar blok desain (prosa) "box office" → "Ticket Box Offline".
+- TIDAK diubah (sengaja, untuk minim risiko):
+  - **Folder & route path TIDAK di-rename**: `client/src/app/box-office/[eventId]`, `/api/box-office/*`, `/box-office/[eventId]`, `POST /api/tickets/box-office/generate-qr`. Alasan KRITIS: QR yang sudah dicetak & disebar promotor di lapangan meng-encode URL `/box-office/:eventId` langsung — rename path akan merusak QR lama. (DI-FLAG ke founder: mau rename path juga? berarti QR lama harus regenerate & cetak ulang.)
+  - Identifier internal (`generateBoxOfficeQR`, `boxOfficeUrl`, `channel: "box_office"`, orderId prefix `nexevent-boxoffice-`), log tag `[BOX OFFICE ...]`, dan section admin "Rekonsiliasi Fee (Hutang Box Office)" (menunggu keputusan transfer→Midtrans di task lanjutan).
+- Verifikasi: `node --check` box-office.controller.js OK; `npx tsc --noEmit` client EXIT 0. Grep memastikan tak ada lagi teks "Box Office" user-facing tersisa di fitur ini (yang tersisa hanya identifier/komentar internal + section Fee Debt yang sengaja ditunda).
+- Tag: #rename #ticket-box-offline #box-office #ui #user-facing #no-logic-change
+
+---
+
+## [2026-07-07] Rename total "Box Office" → "Ticket Box" (folder/route/identifier) + Midtrans untuk metode transfer
+
+- Gejala/konteks: (Bukan bug — 2 keputusan founder dieksekusi bersama.) (1) Rename TOTAL "Box Office" → "Ticket Box" termasuk path URL, route API, dan identifier internal (bukan cuma teks) — breaking change disengaja (masih fase testing, hanya founder yang pakai QR). (2) Metode `transfer` di Ticket Box HARUS lewat Midtrans (uang tidak pernah langsung ke rekening promotor); `cash` tetap seperti semula (instant paid + QR di layar).
+- Root cause: (1) sesi sebelumnya hanya rename teks user-facing, path/identifier sengaja dipertahankan agar QR lama tak rusak — kini founder minta rename penuh. (2) Sebelumnya `createBoxOfficeOrder` memperlakukan cash & transfer identik (instant paid, tanpa Midtrans) — tidak sesuai aturan bisnis transfer wajib Midtrans.
+- File terkait:
+  - RENAME FILE (git mv): `client/src/app/box-office/[eventId]` → `client/src/app/ticket-box/[eventId]`; `server/routes/box-office.routes.js` → `ticket-box.routes.js`; `server/controllers/box-office.controller.js` → `ticket-box.controller.js`.
+  - `server/controllers/ticket-box.controller.js` — fungsi: `generateBoxOfficeQR`→`generateTicketBoxQR`, `getBoxOfficeEvent`→`getTicketBoxEvent`, `createBoxOfficeOrder`→`createTicketBoxOrder`; `channel: 'box_office'`→`'ticket_box'`; orderId prefix `nexevent-boxoffice-`→`nexevent-ticketbox-`; URL QR `/box-office/`→`/ticket-box/`; log tag `[TICKET BOX ...]`. **Step 2**: branch `paymentMethod` — cash = perilaku lama (status paid, generate tiket, QR di response); transfer = status `pending`, `expiredAt = now+15min`, build Snap parameter (item_details tiket + fee bila audience + pajak bila taxEnabled, `gross_amount == Σ item_details`), `snap.createTransaction`, simpan `midtransToken`, response `{ token, orderId }` (belum ada tiket).
+  - `server/routes/ticket-box.routes.js`, `server/routes/ticket.routes.js` (`/box-office/generate-qr`→`/ticket-box/generate-qr`), `server/src/index.js` (`/api/box-office`→`/api/ticket-box`).
+  - `server/controllers/payment.controller.js` — **CRITICAL**: regex router webhook `/^nexevent-(ticket|merch|bundling)-/` → tambah `ticketbox` → `/^nexevent-(ticket|merch|bundling|ticketbox)-/`, kalau tidak settlement transfer Ticket Box tak akan generate tiket + email.
+  - `server/controllers/fee-debt.controller.js` — `DEBT_ORDER_WHERE.channel` `'box_office'`→`'ticket_box'` (kalau tidak, rekonsiliasi berhenti nemu order). Logika bisnis TIDAK diubah (masih hitung cash+transfer, unsettled, paid).
+  - `client/src/app/ticket-box/[eventId]/page.tsx` — komponen `BoxOfficePage`→`TicketBoxPage`; fetch `/api/box-office/*`→`/api/ticket-box/*`; **Step 2**: `<Script>` snap.js (sandbox) + `window.snap` typing; `handleSubmit` branch — kalau response ada `token` (transfer) → `window.snap.pay(token)` lalu redirect `/order/:orderId` (reuse halaman status existing); kalau ada `tickets` (cash) → tampilkan QR seperti semula.
+  - `client/src/app/dashboard/tickets/page.tsx` — identifier `boxOffice*`/`setBoxOffice*`/`handleGenerateBoxOfficeQR` → `ticketBox*`/`handleGenerateTicketBoxQR`; fetch path.
+  - `client/src/app/dashboard/admin/page.tsx`, `server/services/ticket.service.js`, `server/controllers/storefront.controller.js`, `server/routes/fee-debt.routes.js` — label & komentar prosa "Box Office"→"Ticket Box", `box_office`→`ticket_box`.
+- Cron: `server/src/cron/ticket-booking.cron.js` TIDAK berubah — sudah release semua order `status:'pending'` lewat `expiredAt` lintas channel, jadi transfer Ticket Box yang tak dibayar auto di-restock (verified secara logika).
+- Catatan penting / follow-up:
+  - **Data lama belum dimigrasi**: ada 1 order lama `channel:'box_office'` (paid) di DB. Setelah rename, order itu tak lagi terlihat di rekonsiliasi fee sampai channel-nya di-update ke `ticket_box`. Migrasi bulk (`UPDATE ... WHERE channel='box_office'`) diblok auto-mode (mass update produksi) — perlu dijalankan manual dgn approval. Dampak minimal (fase testing, 1 baris).
+  - **Follow-up fee-debt** (belum dikerjakan, sesuai instruksi): karena transfer kini lewat Midtrans (fee auto-potong), transfer seharusnya TIDAK lagi dihitung hutang — hanya CASH. Filter cash-only ditambahkan di task lanjutan. Copy admin "cash & transfer" masih apa adanya.
+  - **Midtrans masih SANDBOX** (roadmap #10, menunggu KYC) — flow transfer bisa dites penuh di sandbox, belum terima pembayaran nyata sampai production aktif. Ditandai di komentar dekat integrasi.
+- Verifikasi E2E (data test terisolasi di DB nyata, Midtrans sandbox): TRANSFER → `createTicketBoxOrder` panggil `snap.createTransaction` sungguhan → token valid, order `pending`, channel `ticket_box`, stok reserved, tiket belum dibuat, prefix `nexevent-ticketbox-`; webhook settlement (signature valid sha512) → order `paid`, `paidAt` terisi, 1 tiket ter-generate. CASH → instant `paid`, tiket+QR (`data:image...`) di response, tanpa token. Semua data test dihapus. `node --check` semua file server modified OK; `npx tsc --noEmit` client EXIT 0 (setelah hapus cache `.next` yang menyimpan tipe route lama).
+- Tag: #rename #ticket-box #breaking-change #midtrans #transfer #snap #webhook #fee-debt #cron #sandbox #roadmap-10
+
+---
+
+## [2026-07-07] Migrasi data legacy channel 'box_office' → 'ticket_box'
+
+- Gejala: Setelah rename total Box Office → Ticket Box (channel baru `ticket_box`), ada 1 order lama tersisa ber-`channel: 'box_office'` (paid, cash, fee 0). Order ini tak terlihat lagi di Rekonsiliasi Fee karena filter kini pakai `ticket_box`.
+- Root cause: Rename hanya mengubah kode (nilai channel untuk order BARU); data row lama tidak ikut termigrasi. Migrasi bulk sebelumnya sempat diblok auto-mode (mass update produksi) → ditunda sampai approval founder.
+- File terkait: `server/scripts/migrate-box-office-channel.js` (baru, one-off, disimpan di scripts/ sesuai konvensi seperti reset-sponsor-password.js).
+- Fix: Jalankan `prisma.ticketOrder.updateMany({ where: { channel: 'box_office' }, data: { channel: 'ticket_box' } })`. Script log jumlah sebelum (1), jalankan update, verifikasi sisa `box_office` = 0 DAN tiap row kini `ticket_box` dgn semua field lain (orderId/status/paymentMethod/totalAmount/feeAmount/feeSettled) UTUH. Hanya field `channel` disentuh. Hasil: 1 row termigrasi, terverifikasi.
+- Tag: #migration #data #ticket-box #box-office #channel #fee-debt #one-off-script
+
+---
+
+## [2026-07-07] Fee Debt Reconciliation dibatasi cash-only (transfer sudah auto lewat Midtrans)
+
+- Gejala: Order Ticket Box `transfer` (paid, unsettled) ikut terhitung sebagai hutang fee di Rekonsiliasi Fee — padahal fee-nya sudah otomatis terpotong Midtrans saat settlement (double-count / salah tagih ke promotor).
+- Root cause: Filter `DEBT_ORDER_WHERE` hanya cek `channel: 'ticket_box'` (cash + transfer), belum membedakan metode bayar. Sejak transfer Ticket Box WAJIB lewat Midtrans, hanya CASH yang benar-benar bypass Midtrans dan perlu disetor manual (= hutang).
+- File terkait:
+  - `server/controllers/fee-debt.controller.js` — tambah `paymentMethod: 'cash'` ke `DEBT_ORDER_WHERE` (objek filter tunggal yang dipakai bersama di `getFeeDebtByPromoter`, `getFeeDebtDetail`, `settleFeeDebt` → satu titik perubahan). Update komentar terkait.
+  - `client/src/app/dashboard/admin/page.tsx` — copy section "Rekonsiliasi Fee (Hutang Ticket Box)" diubah dari "(cash & transfer)" jadi "tunai (cash)" + catatan bahwa transfer sudah lewat Midtrans (fee auto-potong, tidak masuk hutang).
+- Fix: (lihat File terkait) Transfer kini dikecualikan dari hitungan hutang; hanya cash yang muncul.
+- Verifikasi: data test terisolasi (promotor+event disposable) — 1 order cash (fee 1750) + 1 order transfer (fee 3500), keduanya paid+unsettled. `getFeeDebtByPromoter` → totalDebt 1750, orderCount 1 (transfer dikecualikan); `getFeeDebtDetail` → hanya 1 order method 'cash', totalDebt 1750. Data test dihapus. `node --check` fee-debt.controller.js OK; `npx tsc --noEmit` client EXIT 0.
+- Tag: #fee-debt #cash-only #transfer #midtrans #ticket-box #reconciliation #roadmap-4
+
+
