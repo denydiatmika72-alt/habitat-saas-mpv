@@ -36,6 +36,8 @@ model User {
   pettyCashAccounts PettyCashAccount[]
   otherIncomes      OtherIncome[]
   proTransactions   ProTransaction[]
+  payoutRequests    PayoutRequest[] @relation("PromotorPayouts")
+  processedPayouts  PayoutRequest[] @relation("AdminProcessedPayouts")
 
   @@map("users")
 }
@@ -532,6 +534,25 @@ model PurchaseOrderItem {
   purchaseOrder   PurchaseOrder @relation(fields: [purchaseOrderId], references: [id], onDelete: Cascade)
 
   @@map("purchase_order_items")
+}
+
+// Pencairan Dana (Payout) — MVP MANUAL: app hanya TRACK request + status approval.
+// Transfer bank sesungguhnya dilakukan admin/founder manual di luar app, lalu ditandai "transferred".
+// BUKAN disbursement otomatis (Midtrans Iris) — itu butuh verifikasi bisnis terpisah.
+model PayoutRequest {
+  id                 String    @id @default(uuid())
+  promotorId         String    @map("promotor_id")
+  amount             Int       // IDR, jumlah yang diminta cair
+  status             String    @default("pending") // "pending" | "approved" | "rejected" | "transferred"
+  requestedAt        DateTime  @default(now()) @map("requested_at")
+  processedAt        DateTime? @map("processed_at")
+  processedByAdminId String?   @map("processed_by_admin_id")
+  adminNote          String?   @map("admin_note")
+
+  promotor           User      @relation("PromotorPayouts", fields: [promotorId], references: [id], onDelete: Cascade)
+  processedByAdmin   User?     @relation("AdminProcessedPayouts", fields: [processedByAdminId], references: [id])
+
+  @@map("payout_requests")
 }
 
 model PromoterSettings {

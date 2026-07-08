@@ -93,6 +93,20 @@ interface FeeDebtOrder {
   totalAmount: number
 }
 
+interface PayoutAdminRow {
+  id: string
+  amount: number
+  status: string
+  requestedAt: string
+  processedAt: string | null
+  adminNote: string | null
+  promotorName: string
+  promotorEmail: string
+  bankName: string | null
+  bankAccount: string | null
+  accountHolder: string | null
+}
+
 const IDR = new Intl.NumberFormat("id-ID", { style: "currency", currency: "IDR", maximumFractionDigits: 0 })
 
 export default function AdminUsersPage() {
@@ -138,6 +152,14 @@ export default function AdminUsersPage() {
   const [confirmSettleFor, setConfirmSettleFor] = useState<string | null>(null)
   const [settlingDebtId, setSettlingDebtId] = useState<string | null>(null)
 
+  // Payout (Pencairan Dana)
+  const [payoutPending, setPayoutPending] = useState<PayoutAdminRow[]>([])
+  const [payoutApproved, setPayoutApproved] = useState<PayoutAdminRow[]>([])
+  const [loadingPayouts, setLoadingPayouts] = useState(true)
+  const [payoutConfirm, setPayoutConfirm] = useState<{ id: string; action: "approve" | "reject" | "transferred" } | null>(null)
+  const [payoutRejectNote, setPayoutRejectNote] = useState("")
+  const [processingPayoutId, setProcessingPayoutId] = useState<string | null>(null)
+
   useEffect(() => {
     if (!userLoading && user && !user.isAdmin) {
       router.replace("/dashboard")
@@ -156,6 +178,7 @@ export default function AdminUsersPage() {
     fetchBundleRequests()
     fetchFeeEvents()
     fetchFeeDebts()
+    fetchPayouts()
   }, [])
 
   if (userLoading) return <div className="py-16 text-center text-sm text-slate-400">Memuat...</div>
@@ -461,6 +484,42 @@ export default function AdminUsersPage() {
       alert("Tidak dapat menghubungi server.")
     } finally {
       setSettlingDebtId(null)
+    }
+  }
+
+  async function fetchPayouts() {
+    setLoadingPayouts(true)
+    try {
+      const res = await fetch(`${API_BASE}/admin/payout/pending`, { headers: authHeaders() })
+      const json = await res.json()
+      if (json.success) {
+        setPayoutPending(json.pending)
+        setPayoutApproved(json.approved)
+      }
+    } catch {}
+    finally { setLoadingPayouts(false) }
+  }
+
+  async function handlePayoutAction(id: string, action: "approve" | "reject" | "transferred") {
+    setProcessingPayoutId(id)
+    try {
+      const res = await fetch(`${API_BASE}/admin/payout/${id}/${action}`, {
+        method: "PATCH",
+        headers: authHeaders(),
+        body: JSON.stringify(action === "reject" ? { adminNote: payoutRejectNote } : {}),
+      })
+      const json = await res.json()
+      if (json.success) {
+        setPayoutConfirm(null)
+        setPayoutRejectNote("")
+        await fetchPayouts()
+      } else {
+        alert(json.message || "Gagal memproses pencairan.")
+      }
+    } catch {
+      alert("Tidak dapat menghubungi server.")
+    } finally {
+      setProcessingPayoutId(null)
     }
   }
 
@@ -1086,6 +1145,163 @@ export default function AdminUsersPage() {
               </div>
             )
           })}
+        </div>
+      )}
+
+      {/* ── Pencairan Dana (Payout) ── */}
+      <div>
+        <h2 className="text-xl font-semibold text-slate-900">Pencairan Dana (Payout)</h2>
+        <p className="mt-1 text-sm text-slate-500">
+          Setujui pengajuan pencairan promotor. Transfer dana dilakukan MANUAL via banking app Anda di luar aplikasi,
+          lalu tandai &quot;Sudah Ditransfer&quot;.
+        </p>
+      </div>
+
+      {loadingPayouts ? (
+        <div className="py-16 text-center text-sm text-slate-400">Memuat data...</div>
+      ) : (
+        <div className="space-y-6">
+          {/* Pending — perlu approve/reject */}
+          <div>
+            <p className="mb-2 text-sm font-semibold text-slate-700">Menunggu Persetujuan ({payoutPending.length})</p>
+            {payoutPending.length === 0 ? (
+              <div className="rounded-xl border border-slate-200 bg-white py-10 text-center">
+                <Wallet className="mx-auto mb-3 size-9 text-emerald-500" />
+                <p className="text-sm text-slate-400">Tidak ada pengajuan menunggu persetujuan.</p>
+              </div>
+            ) : (
+              <div className="space-y-3">
+                {payoutPending.map((p) => (
+                  <div key={p.id} className="rounded-xl border border-slate-200 bg-white p-4">
+                    <div className="flex flex-wrap items-start justify-between gap-3">
+                      <div className="min-w-0">
+                        <p className="font-medium text-slate-900">{p.promotorName}</p>
+                        <p className="text-xs text-slate-400">{p.promotorEmail}</p>
+                        <p className="mt-2 text-sm text-slate-600">
+                          <span className="font-semibold text-slate-900">{p.bankName || "(bank?)"}</span>{" "}
+                          <span className="font-mono">{p.bankAccount || "-"}</span>
+                          <span className="text-slate-400"> · a/n {p.accountHolder || "-"}</span>
+                        </p>
+                        <p className="mt-1 text-[11px] text-slate-400">Diajukan {formatDate(p.requestedAt)}</p>
+                      </div>
+                      <div className="shrink-0 text-right">
+                        <p className="text-lg font-black text-emerald-800">{IDR.format(p.amount)}</p>
+                        <div className="mt-2 flex items-center gap-2">
+                          <button
+                            onClick={() => setPayoutConfirm({ id: p.id, action: "approve" })}
+                            disabled={processingPayoutId === p.id}
+                            className="inline-flex items-center gap-1.5 rounded-md bg-emerald-800 px-3 py-1.5 text-xs font-medium text-white hover:bg-emerald-900 disabled:opacity-50"
+                          >
+                            <CheckCircle className="size-3.5" /> Setujui
+                          </button>
+                          <button
+                            onClick={() => { setPayoutConfirm({ id: p.id, action: "reject" }); setPayoutRejectNote("") }}
+                            disabled={processingPayoutId === p.id}
+                            className="inline-flex items-center gap-1.5 rounded-md bg-red-50 px-3 py-1.5 text-xs font-medium text-red-600 hover:bg-red-100 disabled:opacity-50"
+                          >
+                            <XCircle className="size-3.5" /> Tolak
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+
+                    {payoutConfirm?.id === p.id && payoutConfirm.action === "approve" && (
+                      <div className="mt-3 rounded-lg border border-amber-200 bg-amber-50 p-3">
+                        <p className="text-sm text-amber-800">
+                          Setujui pencairan <span className="font-bold">{IDR.format(p.amount)}</span> untuk {p.promotorName}?
+                          Setelah disetujui, Anda transfer manual lalu tandai sudah ditransfer.
+                        </p>
+                        <div className="mt-2 flex items-center gap-2">
+                          <button onClick={() => handlePayoutAction(p.id, "approve")} disabled={processingPayoutId === p.id}
+                            className="rounded-lg bg-emerald-700 px-4 py-2 text-xs font-semibold text-white hover:bg-emerald-800 disabled:opacity-50">
+                            {processingPayoutId === p.id ? "Memproses..." : "Ya, Setujui"}
+                          </button>
+                          <button onClick={() => setPayoutConfirm(null)} disabled={processingPayoutId === p.id}
+                            className="rounded-lg border border-slate-200 px-4 py-2 text-xs font-semibold text-slate-600 hover:bg-slate-50">
+                            Batal
+                          </button>
+                        </div>
+                      </div>
+                    )}
+
+                    {payoutConfirm?.id === p.id && payoutConfirm.action === "reject" && (
+                      <div className="mt-3 rounded-lg border border-red-200 bg-red-50 p-3">
+                        <input
+                          value={payoutRejectNote}
+                          onChange={(e) => setPayoutRejectNote(e.target.value)}
+                          placeholder="Alasan penolakan (opsional)"
+                          className="mb-2 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-red-400 focus:ring-1 focus:ring-red-200"
+                        />
+                        <div className="flex items-center gap-2">
+                          <button onClick={() => handlePayoutAction(p.id, "reject")} disabled={processingPayoutId === p.id}
+                            className="rounded-lg bg-red-600 px-4 py-2 text-xs font-semibold text-white hover:bg-red-700 disabled:opacity-50">
+                            {processingPayoutId === p.id ? "Memproses..." : "Konfirmasi Tolak"}
+                          </button>
+                          <button onClick={() => setPayoutConfirm(null)} disabled={processingPayoutId === p.id}
+                            className="rounded-lg border border-slate-200 px-4 py-2 text-xs font-semibold text-slate-600 hover:bg-slate-50">
+                            Batal
+                          </button>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+
+          {/* Approved — sudah disetujui, perlu ditandai sudah ditransfer */}
+          {payoutApproved.length > 0 && (
+            <div>
+              <p className="mb-2 text-sm font-semibold text-slate-700">Disetujui — Menunggu Transfer ({payoutApproved.length})</p>
+              <div className="space-y-3">
+                {payoutApproved.map((p) => (
+                  <div key={p.id} className="rounded-xl border border-blue-200 bg-blue-50/40 p-4">
+                    <div className="flex flex-wrap items-start justify-between gap-3">
+                      <div className="min-w-0">
+                        <p className="font-medium text-slate-900">{p.promotorName}</p>
+                        <p className="mt-1 text-sm text-slate-600">
+                          <span className="font-semibold text-slate-900">{p.bankName || "(bank?)"}</span>{" "}
+                          <span className="font-mono">{p.bankAccount || "-"}</span>
+                          <span className="text-slate-400"> · a/n {p.accountHolder || "-"}</span>
+                        </p>
+                        <p className="mt-1 text-[11px] text-slate-400">Disetujui {p.processedAt ? formatDate(p.processedAt) : "-"}</p>
+                      </div>
+                      <div className="shrink-0 text-right">
+                        <p className="text-lg font-black text-blue-700">{IDR.format(p.amount)}</p>
+                        <button
+                          onClick={() => setPayoutConfirm({ id: p.id, action: "transferred" })}
+                          disabled={processingPayoutId === p.id}
+                          className="mt-2 inline-flex items-center gap-1.5 rounded-md bg-blue-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-blue-700 disabled:opacity-50"
+                        >
+                          <CheckCircle className="size-3.5" /> Tandai Sudah Ditransfer
+                        </button>
+                      </div>
+                    </div>
+
+                    {payoutConfirm?.id === p.id && payoutConfirm.action === "transferred" && (
+                      <div className="mt-3 rounded-lg border border-blue-200 bg-white p-3">
+                        <p className="text-sm text-slate-700">
+                          Konfirmasi Anda <span className="font-bold">SUDAH mentransfer {IDR.format(p.amount)}</span> ke rekening{" "}
+                          {p.bankName} {p.bankAccount} (a/n {p.accountHolder}) via banking app Anda?
+                        </p>
+                        <div className="mt-2 flex items-center gap-2">
+                          <button onClick={() => handlePayoutAction(p.id, "transferred")} disabled={processingPayoutId === p.id}
+                            className="rounded-lg bg-blue-600 px-4 py-2 text-xs font-semibold text-white hover:bg-blue-700 disabled:opacity-50">
+                            {processingPayoutId === p.id ? "Memproses..." : "Ya, Sudah Ditransfer"}
+                          </button>
+                          <button onClick={() => setPayoutConfirm(null)} disabled={processingPayoutId === p.id}
+                            className="rounded-lg border border-slate-200 px-4 py-2 text-xs font-semibold text-slate-600 hover:bg-slate-50">
+                            Batal
+                          </button>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
         </div>
       )}
     </div>
