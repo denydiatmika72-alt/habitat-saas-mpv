@@ -536,12 +536,15 @@ Keputusan final:
 7. ✅ Storefront Ticketing B2C (Live)
 8. ✅ Fee Platform Implementation (fee per tipe order + kelola fee editable di admin)
 9. ✅ Merchandise Storefront + Approval
-10. 🔴 URGENT: Midtrans Production (menunggu approval KYC — sistem masih Sandbox)
-11. Storefront advanced features → lihat section "Storefront Feature Roadmap"
+10. ✅ Payout / Pencairan Dana (manual-transfer, commit 4df3f1c — deployed + verified production)
+11. 🔴 URGENT: Midtrans Production (menunggu approval KYC — sistem masih Sandbox)
+12. Storefront advanced features → lihat section "Storefront Feature Roadmap"
     (Bundling paket kurasi, edit/pindah stok, box office offline, hutang fee, scanner tiket)
-12. Ticket Sales Manual Input (untuk promotor yang pakai platform lain)
-13. Event Summary Report (kirim via email saat event selesai)
-14. CRON Job booking timeout (sudah ada — verifikasi)
+13. Payout & Laporan Keuangan lanjutan → lihat section "Payout & Laporan Keuangan Roadmap"
+    (potong hutang fee otomatis, laporan pencairan PDF, laporan pendapatan platform, data audiens)
+14. Ticket Sales Manual Input (untuk promotor yang pakai platform lain)
+15. Event Summary Report (kirim via email saat event selesai)
+16. CRON Job booking timeout (sudah ada — verifikasi)
 
 _Update bagian ini setiap prioritas berubah, supaya Claude Code dan Claude.ai selalu tahu fokus development saat ini._
 
