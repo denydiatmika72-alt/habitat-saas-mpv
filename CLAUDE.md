@@ -432,6 +432,99 @@ Yang BELUM diputuskan:
 - Akses scanner: link bebas (siapapun panitia bisa scan) VS akun petugas khusus
 - Idealnya web-based (buka kamera HP → scan → validasi real-time, tanpa install app)
 
+## Payout & Laporan Keuangan Roadmap (Urutan Pengerjaan)
+
+Rangkaian fitur keuangan lanjutan: pencairan dana promotor + laporan keuangan
+untuk promotor dan admin. Dikerjakan SATU PER SATU sesuai urutan di bawah
+(ada ketergantungan data & logic antar fitur). Prinsip sama: selesai tuntas per
+fitur, bukan banyak yang setengah jadi.
+
+### 1. Payout / Pencairan Dana (✅ SELESAI — code-complete, deployed, tested by founder)
+Promotor menarik hasil penjualan ke rekening bank sendiri, dicairkan manual oleh admin.
+
+Keputusan final:
+- Promotor bisa ajukan pencairan dana kapan saja — TIDAK perlu menunggu event selesai
+- Saldo cair = total penjualan (tiket + merchandise + bundling) + pajak 10% (jika ada) − fee platform
+- Pajak 10% tetap menjadi hak promotor sepenuhnya — hanya fee platform yang jadi hak nexEvent
+- Wajib approval admin dulu sebelum pencairan dianggap sah
+- Transfer dilakukan MANUAL oleh admin lewat aplikasi bank sendiri — BUKAN otomatis lewat
+  Midtrans Iris/Disbursement API. Keputusan MVP demi kesederhanaan: Iris API butuh
+  verifikasi bisnis terpisah dari Snap yang sudah dipakai
+- Setelah transfer manual selesai, admin menandai status "Sudah Ditransfer" di sistem
+- Data rekening bank promotor: REUSE field yang sudah ada di model PromoterSettings
+  (bankName/bankAccount/accountHolder) — field yang sama dipakai untuk "Transfer Ke" di
+  invoice PDF sponsor. Tidak ada duplikasi field.
+
+Status: sudah di-deploy ke production dan sudah dites langsung oleh founder (approve +
+tandai transfer berhasil). Perlu verifikasi ulang status endpoint di sesi berikutnya untuk
+memastikan seluruh rute API aktif di production.
+
+### 2. Potong Otomatis Hutang Fee saat Pencairan (belum dibangun)
+Integrasi payout dengan Sistem Hutang Fee (Rekonsiliasi) — lihat Storefront Roadmap #4.
+
+Keputusan final:
+- Saat promotor ajukan pencairan, sistem WAJIB cek dulu apakah promotor punya hutang fee
+  cash yang belum lunas (dari Fee Debt Reconciliation)
+- Jika saldo pencairan CUKUP menutup hutang: potong otomatis dari nominal pencairan, hutang
+  langsung ditandai lunas (`feeSettled: true`) — promotor TIDAK perlu transfer manual
+  terpisah ke nexEvent untuk melunasi hutangnya
+- Jika saldo pencairan TIDAK CUKUP menutup hutang: pencairan DITOLAK SELURUHNYA (bukan
+  dipotong sebagian) — sistem tampilkan notifikasi jelas alasan penolakan, dilampiri rincian
+  data pendapatan promotor supaya mereka paham kenapa ditolak
+- Ini mengubah alur `requestPayout` yang sudah ada di payout.controller.js — perlu
+  terintegrasi dengan fee-debt.controller.js yang sudah ada
+
+### 3. Laporan Pencairan (Payout Statement) — download promotor (belum dibangun)
+Bukti resmi pencairan yang bisa diunduh promotor setelah transfer selesai.
+
+Keputusan final:
+- Setelah pencairan disetujui admin dan ditandai "Sudah Ditransfer", promotor bisa download
+  1 file laporan (PDF) berisi:
+  - Rincian penjualan LENGKAP — mencakup tiket, merchandise, DAN bundling (bukan tiket saja)
+  - Sisa saldo yang masih bisa ditarik (jika tidak ditarik semua sekaligus)
+  - Sisa hutang fee (jika masih ada yang belum lunas setelah potongan otomatis di item #2)
+- Gunakan library pdfkit yang sudah dipakai untuk Invoice PDF dan PO PDF (lihat section
+  "PDF Generation")
+
+### 4. Laporan Pendapatan Platform — untuk Admin (belum dibangun)
+Laporan revenue nexEvent dari seluruh sumber fee + langganan Pro.
+
+Keputusan final:
+- Bisa pilih periode: per bulan (default) ATAU rentang tanggal bebas (custom date range)
+- Rincian sumber fee dipecah per jenis: fee tiket online, fee tiket cash (Ticket Box
+  Offline), fee merchandise, fee bundling, DAN pendapatan langganan Pro (Rp 499.000
+  aktivasi + Rp 99.000 perpanjangan)
+- Angka final yang ditampilkan = fee yang BENAR-BENAR sudah masuk ke rekening nexEvent
+  (fee online otomatis lewat Midtrans + fee cash yang hutangnya SUDAH ditandai lunas +
+  pendapatan Pro) — BUKAN fee yang masih tercatat tapi belum diterima
+- Bisa dilihat per promotor (breakdown individual), tidak hanya total gabungan
+- Tampilkan juga total hutang fee KESELURUHAN (semua promotor digabung) DAN rincian hutang
+  PER promotor — reuse data dari Fee Debt Reconciliation yang sudah ada
+
+### 5. Data Audiens / Pembeli Tiket — untuk Promotor (belum dibangun)
+Data demografis pembeli untuk bantu promotor pitching ke sponsor.
+
+Keputusan final:
+- TIDAK perlu ubah form pembelian tiket yang sudah ada — umur & gender pembeli dihitung
+  otomatis dari NIK 16-digit yang sudah wajib diisi saat beli tiket (struktur NIK Indonesia:
+  digit ke-7–12 adalah tanggal lahir, dengan penambahan 40 pada digit tanggal untuk menandai
+  gender perempuan)
+- Promotor klik satu tombol "Download Data Audience" → hasilkan SATU file PDF gabungan berisi:
+  1. Dashboard/grafik visual (sebaran umur, perbandingan gender, dll)
+  2. Data mentah asli (tabel: nama, NIK, tanggal beli, jenis tiket, dll) sebagai bukti
+     otentik yang bisa di-cross-check sponsor — WAJIB disertakan bersama dashboard, bukan
+     dashboard saja, supaya data kredibel dan tidak terkesan dikarang
+- Tujuan bisnis: bantu promotor pitching ke sponsor dengan data target audiens yang kredibel
+  dan bisa diverifikasi
+
+**Urutan eksekusi yang disepakati (kerjakan SATU PER SATU sesuai urutan ini):**
+1. Verifikasi ulang status deploy Payout (item #1) — pastikan seluruh endpoint aktif di production
+2. Bangun item #2 dan #3 sekaligus (saling terkait erat — logic potong hutang otomatis dan
+   laporan pencairan pakai data yang sama)
+3. Bangun item #4 (Laporan Pendapatan Platform)
+4. Bangun item #5 (Data Audiens) — boleh dipercepat urutannya jika perlu, karena ternyata
+   tidak memerlukan perubahan skema/form sama sekali
+
 ## Next Priority (Roadmap)
 
 1. ✅ Expense Tracker
