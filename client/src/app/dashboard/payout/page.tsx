@@ -1,13 +1,14 @@
 "use client"
 
 import { useEffect, useState, useCallback } from "react"
-import { Banknote, Wallet, Pencil, Check } from "lucide-react"
+import { Banknote, Wallet, Pencil, Check, Download } from "lucide-react"
 
 type Bank = { filled: boolean; bankName: string | null; bankAccount: string | null; accountHolder: string | null }
 type Balance = { available: number; gross: number; reserved: number; bank: Bank }
 type PayoutRequest = {
   id: string
   amount: number
+  debtDeducted: number
   status: "pending" | "approved" | "rejected" | "transferred"
   requestedAt: string
   processedAt: string | null
@@ -37,6 +38,10 @@ export default function PayoutPage() {
   const [submitting, setSubmitting] = useState(false)
   const [formError, setFormError] = useState("")
   const [formSuccess, setFormSuccess] = useState("")
+  // Breakdown penolakan karena saldo tak cukup menutup nominal + hutang fee (item #2, model koreksi).
+  const [rejectInfo, setRejectInfo] = useState<
+    { totalDebt: number; availableBalance: number; requestedAmount: number; maxAllowedAmount: number } | null
+  >(null)
 
   // Bank edit
   const [editingBank, setEditingBank] = useState(false)
@@ -45,6 +50,9 @@ export default function PayoutPage() {
   const [accountHolder, setAccountHolder] = useState("")
   const [savingBank, setSavingBank] = useState(false)
   const [bankError, setBankError] = useState("")
+
+  // Download laporan pencairan (hanya untuk status "transferred")
+  const [downloadingId, setDownloadingId] = useState<string | null>(null)
 
   const load = useCallback(async () => {
     try {
@@ -103,6 +111,7 @@ export default function PayoutPage() {
     e.preventDefault()
     setFormError("")
     setFormSuccess("")
+    setRejectInfo(null)
     const amt = parseInt(amount || "0", 10)
     if (!amt || amt <= 0) { setFormError("Masukkan nominal yang valid."); return }
     setSubmitting(true)
@@ -117,6 +126,9 @@ export default function PayoutPage() {
         setAmount("")
         setFormSuccess("Pengajuan pencairan terkirim. Menunggu persetujuan admin.")
         await load()
+      } else if (data.debtBreakdown) {
+        // Ditolak karena nominal + hutang fee melebihi saldo — tampilkan rincian + saran max.
+        setRejectInfo(data.debtBreakdown)
       } else {
         setFormError(data.message ?? "Gagal mengajukan pencairan.")
       }
@@ -124,6 +136,40 @@ export default function PayoutPage() {
       setFormError("Gagal menghubungi server.")
     } finally {
       setSubmitting(false)
+    }
+  }
+
+  // Pola aman download PDF (lihat known-bugs.md): cek res.ok dulu; kalau error parse JSON,
+  // kalau sukses langsung blob (content-type via proxy tidak reliable).
+  const handleDownloadStatement = async (id: string) => {
+    setDownloadingId(id)
+    try {
+      const res = await fetch(`/api/payout/${id}/statement-pdf`, {
+        headers: { Authorization: `Bearer ${getToken()}` },
+      })
+      if (!res.ok) {
+        let message = `Server error (${res.status})`
+        try {
+          const errData = await res.json()
+          message = (errData as Record<string, unknown>).message as string || message
+        } catch { message = res.statusText || message }
+        alert("Gagal mengunduh laporan: " + message)
+        return
+      }
+      const blob = await res.blob()
+      if (blob.size < 100) { alert("Laporan kosong — coba lagi."); return }
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement("a")
+      a.href = url
+      a.download = `Laporan-Pencairan-${id}.pdf`
+      document.body.appendChild(a)
+      a.click()
+      document.body.removeChild(a)
+      setTimeout(() => URL.revokeObjectURL(url), 1000)
+    } catch (e) {
+      alert("Gagal mengunduh laporan: " + (e instanceof Error ? e.message : "Unknown error"))
+    } finally {
+      setDownloadingId(null)
     }
   }
 
@@ -243,6 +289,25 @@ export default function PayoutPage() {
                 </div>
                 {formError && <p className="rounded-lg bg-red-50 px-3 py-2 text-xs text-red-600">{formError}</p>}
                 {formSuccess && <p className="rounded-lg bg-emerald-50 px-3 py-2 text-xs text-emerald-700">{formSuccess}</p>}
+                {rejectInfo && (
+                  <div className="rounded-lg border border-red-200 bg-red-50 px-3 py-2.5 text-xs text-red-700">
+                    <p className="font-semibold">Pencairan tidak bisa diproses.</p>
+                    <p className="mt-1 text-red-600">
+                      Nominal Anda ({IDR.format(rejectInfo.requestedAmount)}) ditambah hutang fee cash
+                      ({IDR.format(rejectInfo.totalDebt)}) melebihi saldo Anda ({IDR.format(rejectInfo.availableBalance)}).
+                    </p>
+                    <div className="mt-2 space-y-0.5 border-t border-red-200 pt-2 text-red-600">
+                      <div className="flex justify-between"><span>Saldo tersedia</span><span className="font-medium">{IDR.format(rejectInfo.availableBalance)}</span></div>
+                      <div className="flex justify-between"><span>Hutang fee cash</span><span className="font-medium">− {IDR.format(rejectInfo.totalDebt)}</span></div>
+                      <div className="flex justify-between border-t border-red-200 pt-0.5 font-bold text-red-800">
+                        <span>Maksimal bisa diajukan</span><span>{IDR.format(rejectInfo.maxAllowedAmount)}</span>
+                      </div>
+                    </div>
+                    <p className="mt-2 text-[11px] text-red-500">
+                      Turunkan nominal menjadi maksimal {IDR.format(rejectInfo.maxAllowedAmount)}, lalu ajukan lagi.
+                    </p>
+                  </div>
+                )}
                 <button type="submit" disabled={submitting || (balance?.available ?? 0) <= 0}
                   className="flex w-full items-center justify-center gap-2 rounded-lg bg-emerald-800 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-emerald-900 disabled:opacity-50">
                   <Wallet className="size-4" /> {submitting ? "Mengajukan..." : "Ajukan Pencairan"}
@@ -272,19 +337,41 @@ export default function PayoutPage() {
                       <th className="px-2 py-2 text-right font-medium">Nominal</th>
                       <th className="px-2 py-2 font-medium">Status</th>
                       <th className="px-2 py-2 font-medium">Catatan</th>
+                      <th className="px-2 py-2 font-medium">Laporan</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-50">
                     {requests.map((r) => (
                       <tr key={r.id}>
                         <td className="px-2 py-3 text-slate-500">{fmtDate(r.requestedAt)}</td>
-                        <td className="px-2 py-3 text-right font-semibold text-slate-900">{IDR.format(r.amount)}</td>
+                        <td className="px-2 py-3 text-right font-semibold text-slate-900">
+                          {IDR.format(r.amount)}
+                          {r.debtDeducted > 0 && (
+                            <span className="mt-0.5 block text-[10px] font-normal text-amber-600">
+                              − {IDR.format(r.debtDeducted)} potong hutang fee
+                            </span>
+                          )}
+                        </td>
                         <td className="px-2 py-3">
                           <span className={`rounded-full px-2 py-0.5 text-[10px] font-bold ${STATUS_BADGE[r.status].cls}`}>
                             {STATUS_BADGE[r.status].label}
                           </span>
                         </td>
                         <td className="px-2 py-3 text-xs text-slate-400">{r.adminNote || "—"}</td>
+                        <td className="px-2 py-3">
+                          {r.status === "transferred" ? (
+                            <button
+                              onClick={() => handleDownloadStatement(r.id)}
+                              disabled={downloadingId === r.id}
+                              className="flex items-center gap-1 rounded-lg border border-emerald-200 bg-emerald-50 px-2.5 py-1.5 text-xs font-semibold text-emerald-700 transition-colors hover:bg-emerald-100 disabled:opacity-50"
+                            >
+                              <Download className="size-3.5" />
+                              {downloadingId === r.id ? "Mengunduh..." : "Laporan"}
+                            </button>
+                          ) : (
+                            <span className="text-xs text-slate-300">—</span>
+                          )}
+                        </td>
                       </tr>
                     ))}
                   </tbody>

@@ -8,12 +8,15 @@ const {
   approvePayoutRequest,
   rejectPayoutRequest,
   markPayoutTransferred,
+  getPayoutStatementPDF,
 } = require('../controllers/payout.controller');
 
 // Promotor-facing → mount di /api/payout
+// Route statis ('/balance', '/my-requests') di atas '/:id/...' agar tidak ketubruk wildcard.
 const payoutRoutes = express.Router();
 payoutRoutes.get('/balance', protect, getAvailableBalance);
 payoutRoutes.get('/my-requests', protect, getMyPayoutRequests);
+payoutRoutes.get('/:id/statement-pdf', protect, getPayoutStatementPDF);
 payoutRoutes.post('/request', protect, requestPayout);
 
 // Admin-facing → mount di /api/admin/payout (mirror pola fee-debt).

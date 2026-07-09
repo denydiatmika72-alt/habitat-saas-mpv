@@ -1,4 +1,6 @@
 const prisma = require('../src/lib/prisma');
+const PDFDocument = require('pdfkit');
+const { getPromotorFeeDebt } = require('../services/fee-debt.service');
 
 // Pencairan Dana (Payout) — MVP MANUAL.
 // App hanya TRACK request + status approval. Transfer bank sesungguhnya dilakukan admin/founder
@@ -70,14 +72,50 @@ const requestPayout = async (req, res) => {
     const { available } = await computeBalance(req.user.id);
     if (available <= 0)
       return res.status(400).json({ success: false, message: 'Saldo yang bisa dicairkan Rp 0.' });
-    if (amount > available)
-      return res.status(400).json({ success: false, message: `Nominal melebihi saldo yang bisa dicairkan (maks Rp ${available.toLocaleString('id-ID')}).` });
 
-    const request = await prisma.payoutRequest.create({
-      data: { promotorId: req.user.id, amount, status: 'pending' },
+    // ── Item #2 (KOREKSI interpretasi — founder-confirmed 2026-07-08): hutang fee = TAMBAHAN, BUKAN potongan ──
+    // Model BENAR: promotor menerima PENUH `amount` yang diminta (tidak dikurangi apa pun). Hutang fee
+    // cash (Ticket Box) ditarik TERPISAH dari saldo di transaksi yang sama. Syarat WAJIB:
+    //   amount + totalDebt <= available
+    // Kalau tidak muat → TOLAK SELURUHNYA (jangan auto-turunkan / auto-adjust). Kirim `maxAllowedAmount`
+    // (= available - totalDebt) supaya promotor bisa ajukan ULANG dengan nominal lebih kecil SENDIRI.
+    const { orderIds: debtOrderIds, totalDebt } = await getPromotorFeeDebt(req.user.id);
+
+    if (amount + totalDebt > available) {
+      const maxAllowedAmount = Math.max(0, available - totalDebt);
+      const message = totalDebt > 0
+        ? `Pencairan ditolak. Nominal (Rp ${amount.toLocaleString('id-ID')}) + hutang fee cash (Rp ${totalDebt.toLocaleString('id-ID')}) melebihi saldo Anda (Rp ${available.toLocaleString('id-ID')}). Maksimal yang bisa Anda ajukan sekarang: Rp ${maxAllowedAmount.toLocaleString('id-ID')}. Turunkan nominal lalu coba lagi.`
+        : `Nominal melebihi saldo yang bisa dicairkan (maks Rp ${available.toLocaleString('id-ID')}).`;
+      return res.status(400).json({
+        success: false,
+        message,
+        debtBreakdown: { totalDebt, availableBalance: available, requestedAmount: amount, maxAllowedAmount },
+      });
+    }
+
+    // Diterima (amount + totalDebt <= available). Buat request dengan `amount` PENUH (tidak dikurangi) +
+    // settle hutang secara atomik — kalau salah satu gagal, dua-duanya rollback. `debtDeducted` = totalDebt
+    // untuk audit: uang efektif ditarik dari saldo di transaksi yang sama, TAPI tidak dipotong dari yang
+    // diterima promotor (promotor tetap terima `amount` penuh).
+    const request = await prisma.$transaction(async (tx) => {
+      const created = await tx.payoutRequest.create({
+        data: { promotorId: req.user.id, amount, debtDeducted: totalDebt, status: 'pending' },
+      });
+      if (debtOrderIds.length > 0) {
+        await tx.ticketOrder.updateMany({
+          where: { id: { in: debtOrderIds } },
+          data: { feeSettled: true },
+        });
+      }
+      return created;
     });
 
-    return res.status(201).json({ success: true, request });
+    return res.status(201).json({
+      success: true,
+      request,
+      debtDeducted: totalDebt,
+      netTransfer: amount, // promotor menerima PENUH nominal yang diminta (hutang ditarik terpisah dari saldo)
+    });
   } catch (err) {
     console.error('[PAYOUT REQUEST ERROR]', err);
     return res.status(500).json({ success: false, message: 'Server error.' });
@@ -116,6 +154,11 @@ async function decorateWithPromotor(requests) {
     return {
       id: r.id,
       amount: r.amount,
+      // Model BENAR (founder-confirmed 2026-07-09): admin mentransfer PENUH `amount` yang diminta promotor.
+      // `debtDeducted` = hutang fee cash yang ikut dilunasi dari SALDO promotor pada transaksi yang sama
+      // (audit/bookkeeping) — BUKAN dipotong dari nominal yang ditransfer. Karena itu tidak ada `netAmount`
+      // (amount - debt) lagi: admin selalu transfer `amount` bulat.
+      debtDeducted: r.debtDeducted,
       status: r.status,
       requestedAt: r.requestedAt,
       processedAt: r.processedAt,
@@ -213,6 +256,187 @@ const markPayoutTransferred = async (req, res) => {
   }
 };
 
+// GET /api/payout/:id/statement-pdf — promotor (item #3)
+// Laporan pencairan (PDF) untuk 1 PayoutRequest yang sudah "transferred". Ownership dicek —
+// hanya promotor pemilik yang bisa unduh. Isi: rincian penjualan (tiket + merch + bundling),
+// detail pencairan (nominal, potongan hutang, net transfer), sisa saldo, sisa hutang fee.
+// Pola aman PDF (lihat known-bugs.md): SEMUA query selesai SEBELUM doc.pipe(res); layout pakai
+// moveDown + { continued } + { align:'right' } (bukan x,y eksplisit); post-pipe dibungkus
+// try/catch { doc.end() } agar stream selalu tertutup.
+const getPayoutStatementPDF = async (req, res) => {
+  const { id } = req.params;
+  const userId = req.user.id;
+
+  // ── STEP 1: Fetch + validasi SEBELUM menyentuh PDF stream ──
+  let payout, user, bank, orders, balance, debt;
+  try {
+    payout = await prisma.payoutRequest.findUnique({ where: { id } });
+    if (!payout)
+      return res.status(404).json({ success: false, message: 'Pengajuan pencairan tidak ditemukan.' });
+    if (payout.promotorId !== userId)
+      return res.status(403).json({ success: false, message: 'Anda tidak berhak mengunduh laporan pencairan ini.' });
+    if (payout.status !== 'transferred')
+      return res.status(400).json({ success: false, message: 'Laporan hanya tersedia untuk pencairan yang sudah berstatus "Sudah Ditransfer".' });
+
+    user = await prisma.user.findUnique({ where: { id: userId }, select: { name: true, email: true } });
+    bank = await getBankInfo(userId);
+    orders = await prisma.ticketOrder.findMany({
+      where: { status: 'paid', event: { promotor_id: userId } },
+      select: { orderType: true, totalAmount: true, feeAmount: true },
+    });
+    balance = await computeBalance(userId);
+    debt = await getPromotorFeeDebt(userId);
+  } catch (err) {
+    console.error('[PAYOUT STATEMENT DATA ERROR]', err);
+    return res.status(500).json({ success: false, message: 'Gagal mengambil data laporan pencairan.' });
+  }
+
+  // ── STEP 2: Agregasi semua nilai SEBELUM piping ──
+  const safe = (n) => Math.round(Number(n) || 0);
+  const fmtIDR = (n) => 'Rp ' + safe(n).toLocaleString('id-ID');
+  const fmtDate = (d) =>
+    d ? new Date(d).toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric' }) : '-';
+
+  const TYPES = [
+    ['ticket', 'Penjualan Tiket'],
+    ['merch', 'Penjualan Merchandise'],
+    ['bundling', 'Penjualan Bundling'],
+  ];
+  const group = { ticket: { gross: 0, fee: 0, count: 0 }, merch: { gross: 0, fee: 0, count: 0 }, bundling: { gross: 0, fee: 0, count: 0 } };
+  for (const o of orders) {
+    const key = group[o.orderType] ? o.orderType : 'ticket';
+    group[key].gross += safe(o.totalAmount);
+    group[key].fee += safe(o.feeAmount);
+    group[key].count += 1;
+  }
+  const totalGross = TYPES.reduce((s, [k]) => s + group[k].gross, 0);
+  const totalFee = TYPES.reduce((s, [k]) => s + group[k].fee, 0);
+  const totalNet = totalGross - totalFee; // = balance.gross
+
+  const amount = safe(payout.amount);
+  const debtDeducted = safe(payout.debtDeducted);
+  // Model benar (founder-confirmed): promotor menerima PENUH `amount`; hutang ditarik terpisah dari saldo.
+  const remainingDebt = safe(debt.totalDebt);
+
+  // ── STEP 3: Mulai PDF hanya SETELAH semua data siap ──
+  const doc = new PDFDocument({ size: 'A4', margin: 50 });
+  const GREEN = '#065f46';
+  const DARK = '#0f172a';
+  const GRAY = '#64748b';
+  const RED = '#dc2626';
+
+  res.setHeader('Content-Type', 'application/pdf');
+  res.setHeader('Content-Disposition', `attachment; filename="Laporan-Pencairan-${id}.pdf"`);
+  doc.pipe(res);
+
+  try {
+    // Header
+    doc.fontSize(18).fillColor(GREEN).font('Helvetica-Bold').text('LAPORAN PENCAIRAN DANA', { align: 'center' });
+    doc.moveDown(0.2);
+    doc.fontSize(11).fillColor(DARK).font('Helvetica').text('nexEvent — Music Event Operating System', { align: 'center' });
+    doc.moveDown(0.5);
+    doc.moveTo(50, doc.y).lineTo(545, doc.y).lineWidth(2).strokeColor(GREEN).stroke();
+    doc.moveDown(0.8);
+
+    // Info promotor + pencairan
+    doc.fontSize(9).fillColor(GRAY).font('Helvetica');
+    const infoLines = [
+      ['Promotor', user?.name || '-'],
+      ['Email', user?.email || '-'],
+      ['ID Pencairan', id],
+      ['Tanggal Pengajuan', fmtDate(payout.requestedAt)],
+      ['Tanggal Ditransfer', fmtDate(payout.processedAt)],
+      ['Status', 'Sudah Ditransfer'],
+    ];
+    infoLines.forEach(([label, val]) => {
+      doc.fillColor(GRAY).text(`${label}: `, { continued: true }).fillColor(DARK).text(val);
+    });
+    doc.moveDown(0.8);
+
+    // Detail Pencairan
+    doc.fontSize(11).fillColor(GREEN).font('Helvetica-Bold').text('DETAIL PENCAIRAN');
+    doc.moveDown(0.3);
+    const payRows = [
+      ['Nominal Dicairkan (Diterima Penuh)', fmtIDR(amount), true],
+    ];
+    if (debtDeducted > 0) {
+      payRows.push(['Hutang Fee Cash Dilunasi (dari saldo)', fmtIDR(debtDeducted), false]);
+    }
+    payRows.forEach(([label, val, bold]) => {
+      doc.fontSize(9).fillColor(bold ? GREEN : DARK).font(bold ? 'Helvetica-Bold' : 'Helvetica')
+        .text(label, { continued: true }).text(val, { align: 'right' });
+    });
+    doc.font('Helvetica').fontSize(8).fillColor(GRAY).moveDown(0.3)
+      .text(`Rekening tujuan: ${bank.bankName || '-'} • ${bank.bankAccount || '-'} • a/n ${bank.accountHolder || '-'}`);
+    if (debtDeducted > 0) {
+      doc.fontSize(8).fillColor(GRAY)
+        .text('* Anda menerima PENUH nominal di atas. Hutang fee cash (Ticket Box) sebesar itu dilunasi terpisah dari saldo Anda pada transaksi yang sama — tidak mengurangi jumlah yang ditransfer.');
+    }
+    doc.moveDown(0.8);
+
+    // Rincian Penjualan (sumber saldo)
+    doc.fontSize(11).fillColor(GREEN).font('Helvetica-Bold').text('RINCIAN PENJUALAN (SUMBER SALDO)');
+    doc.fontSize(8).fillColor(GRAY).font('Helvetica')
+      .text('Total penjualan berbayar sepanjang akun ini — dasar perhitungan saldo yang bisa dicairkan.');
+    doc.moveDown(0.3);
+    TYPES.forEach(([key, label]) => {
+      const g = group[key];
+      const net = g.gross - g.fee;
+      doc.fontSize(9).fillColor(DARK).font('Helvetica-Bold').text(`${label} (${g.count} transaksi)`);
+      doc.font('Helvetica').fillColor(GRAY).fontSize(9)
+        .text('  Kotor', { continued: true }).fillColor(DARK).text(fmtIDR(g.gross), { align: 'right' });
+      doc.fillColor(GRAY).text('  Fee platform', { continued: true }).fillColor(DARK).text('- ' + fmtIDR(g.fee), { align: 'right' });
+      doc.fillColor(GRAY).font('Helvetica-Bold').text('  Bersih', { continued: true }).fillColor(DARK).text(fmtIDR(net), { align: 'right' });
+      doc.font('Helvetica').moveDown(0.4);
+    });
+    doc.moveTo(50, doc.y).lineTo(545, doc.y).lineWidth(0.5).strokeColor(GREEN).stroke();
+    doc.moveDown(0.2);
+    doc.fontSize(10).fillColor(GREEN).font('Helvetica-Bold')
+      .text('TOTAL PENJUALAN BERSIH', { continued: true }).text(fmtIDR(totalNet), { align: 'right' });
+    doc.moveDown(0.8);
+
+    // Ringkasan Saldo
+    doc.fontSize(11).fillColor(GREEN).font('Helvetica-Bold').text('RINGKASAN SALDO');
+    doc.moveDown(0.3);
+    const balRows = [
+      ['Total Pemasukan Bersih', fmtIDR(balance.gross), false],
+      ['Sudah Diajukan / Dicairkan', '- ' + fmtIDR(balance.reserved), false],
+      ['Sisa Saldo Bisa Ditarik', fmtIDR(balance.available), true],
+    ];
+    balRows.forEach(([label, val, bold]) => {
+      doc.fontSize(9).fillColor(bold ? GREEN : DARK).font(bold ? 'Helvetica-Bold' : 'Helvetica')
+        .text(label, { continued: true }).text(val, { align: 'right' });
+    });
+    doc.font('Helvetica').moveDown(0.8);
+
+    // Sisa Hutang Fee
+    doc.fontSize(11).fillColor(remainingDebt > 0 ? RED : GREEN).font('Helvetica-Bold').text('SISA HUTANG FEE');
+    doc.moveDown(0.3);
+    if (remainingDebt > 0) {
+      doc.fontSize(9).fillColor(RED).font('Helvetica-Bold')
+        .text('Hutang fee cash belum lunas', { continued: true }).text(fmtIDR(remainingDebt), { align: 'right' });
+      doc.font('Helvetica').fontSize(8).fillColor(GRAY).moveDown(0.2)
+        .text('Berasal dari transaksi Ticket Box cash setelah pencairan ini. Akan dipotong otomatis pada pencairan berikutnya.');
+    } else {
+      doc.fontSize(9).fillColor(GREEN).font('Helvetica').text('Tidak ada hutang fee yang tersisa. Lunas.');
+    }
+    doc.moveDown(1);
+
+    // Footer
+    doc.moveTo(50, doc.y).lineTo(545, doc.y).lineWidth(0.5).strokeColor('#e2e8f0').stroke();
+    doc.moveDown(0.3);
+    doc.fontSize(8).fillColor(GRAY).font('Helvetica')
+      .text(`Dokumen ini dibuat otomatis oleh nexEvent pada ${fmtDate(new Date())} — bukti resmi pencairan dana.`, { align: 'center' })
+      .text('nexeventapp.tech', { align: 'center' });
+
+    doc.end();
+  } catch (err) {
+    console.error('[PAYOUT STATEMENT GENERATION ERROR]', err);
+    // Header sudah terkirim (pipe dimulai) — tidak bisa kirim JSON. Tutup stream agar tidak truncated.
+    try { doc.end(); } catch {}
+  }
+};
+
 module.exports = {
   getAvailableBalance,
   requestPayout,
@@ -221,4 +445,5 @@ module.exports = {
   approvePayoutRequest,
   rejectPayoutRequest,
   markPayoutTransferred,
+  getPayoutStatementPDF,
 };

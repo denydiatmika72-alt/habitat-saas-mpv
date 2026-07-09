@@ -542,7 +542,8 @@ model PurchaseOrderItem {
 model PayoutRequest {
   id                 String    @id @default(uuid())
   promotorId         String    @map("promotor_id")
-  amount             Int       // IDR, jumlah yang diminta cair
+  amount             Int       // IDR, jumlah yang diminta cair (di-reserve dari saldo). Promotor menerima PENUH nominal ini — TIDAK dikurangi hutang (koreksi founder 2026-07-09)
+  debtDeducted       Int       @default(0) @map("debt_deducted") // hutang fee cash yang IKUT dilunasi dari SALDO pada pencairan ini (item #2, audit). BUKAN dipotong dari amount — transfer ke promotor = amount penuh. Syarat terima: amount + debtDeducted <= available
   status             String    @default("pending") // "pending" | "approved" | "rejected" | "transferred"
   requestedAt        DateTime  @default(now()) @map("requested_at")
   processedAt        DateTime? @map("processed_at")

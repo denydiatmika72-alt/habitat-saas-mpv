@@ -1,4 +1,5 @@
 const prisma = require('../src/lib/prisma');
+const { DEBT_ORDER_WHERE } = require('../services/fee-debt.service');
 
 // Rekonsiliasi Hutang Fee (Roadmap #4).
 //
@@ -16,9 +17,9 @@ const prisma = require('../src/lib/prisma');
 // (computeFeeAndTax di services/ticket.service.js) TERLEPAS dari feeBearer. Jadi hutang =
 // jumlah feeAmount, apapun feeBearer-nya (audience → fee ada di kas cash yang dipegang promotor;
 // promotor → promotor menanggung; dua-duanya tetap wajib disetor ke nexEvent).
-
-// Filter dasar order yang MASUK hitungan hutang (dipakai konsisten di semua handler).
-const DEBT_ORDER_WHERE = { channel: 'ticket_box', paymentMethod: 'cash', status: 'paid', feeSettled: false };
+//
+// Filter dasar order hutang (DEBT_ORDER_WHERE) sekarang tinggal di services/fee-debt.service.js
+// supaya dipakai sama persis oleh payout.controller.js (potong otomatis saat pencairan, item #2).
 
 // GET /api/admin/fee-debt/by-promoter — admin only
 // Agregasi total hutang fee per promotor (ticket_box + cash, paid, belum settle).

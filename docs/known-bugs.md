@@ -1225,3 +1225,46 @@ File ini adalah log permanen bug yang sudah pernah terjadi di project ini besert
 - Verifikasi pasca-redeploy (HTTP biasa, tanpa SSH): ketiga endpoint payout flip **404 → 401** (`/api/payout/balance`, `/api/payout/my-requests`, `/api/admin/payout/pending`), control `/api/scanner/my-events` tetap 401. 401 (bukan 404) = rute terdaftar + guard `protect`/`requireAdmin` aktif = kode 4df3f1c live di prod. Tidak melakukan aksi approve/transfer nyata terhadap data production (fitur uang nyata — hanya cek keberadaan rute + auth).
 - Pelajaran untuk sesi depan: (1) `deploy.sh` `set -e` bisa gagal senyap di `git pull` — selalu konfirmasi VPS `git rev-parse HEAD` == commit target setelah deploy. (2) Cara cepat pastikan deploy landing TANPA SSH: smoke test endpoint fitur baru harus 401 bukan 404, sambil bandingkan endpoint fitur lama sebagai control. (3) PC kantor tak bisa SSH ke VPS — deploy WAJIB dijalankan founder dari home PC.
 - Tag: #payout #deployment #vps #production #deploy-sh #set-e #git-pull #silent-fail #404-vs-401 #smoke-test #no-ssh #real-money #sensitive
+
+---
+
+## [2026-07-08] Payout item #2 (potong otomatis hutang fee) + item #3 (Laporan Pencairan PDF)
+
+- Gejala/konteks: (Bukan bug — implementasi fitur Payout Roadmap #2 & #3, real-money.) #2: saat promotor request pencairan, hutang fee cash (Ticket Box) harus otomatis dipotong & di-settle. #3: setelah pencairan "transferred", promotor bisa unduh 1 PDF laporan (rincian tiket+merch+bundling, sisa saldo, sisa hutang).
+- Root cause: n/a (fitur baru).
+- File terkait:
+  - `server/services/fee-debt.service.js` (BARU) — sumber TUNGGAL definisi hutang: `DEBT_ORDER_WHERE = { channel:'ticket_box', paymentMethod:'cash', status:'paid', feeSettled:false }` + `getPromotorFeeDebt(promotorId)` → `{ orderIds, totalDebt, orderCount }`. Dipakai bersama fee-debt.controller.js (rekonsiliasi admin) & payout.controller.js (potong otomatis) — TIDAK duplikasi filter di dua file.
+  - `server/controllers/fee-debt.controller.js` — refactor: import `DEBT_ORDER_WHERE` dari service (hapus definisi lokal), perilaku identik.
+  - `server/prisma/schema.prisma` — `PayoutRequest.debtDeducted Int @default(0)` (berapa hutang dipotong dari pencairan ini). `db push` + `generate`.
+  - `server/controllers/payout.controller.js` — `requestPayout` tambah langkah hutang: ambil `getPromotorFeeDebt`. Kalau `amount < totalDebt` → TOLAK seluruhnya (400) + `debtBreakdown { totalDebt, available, requested }`. Kalau `amount >= totalDebt` → `$transaction` atomik: buat PayoutRequest (debtDeducted=totalDebt) + `updateMany` order hutang `feeSettled:true`. `netTransfer = amount - totalDebt`. Kalau tak ada hutang → perilaku lama (no change). Baru: `getPayoutStatementPDF` (GET `/api/payout/:id/statement-pdf`, ownership + status wajib "transferred").
+  - `server/routes/payout.routes.js` — route `/:id/statement-pdf` (statis `/balance`,`/my-requests` didaftarkan sebelum wildcard).
+  - `client/src/app/api/[...proxy]/route.ts` — `BINARY_PATHS` tambah `'statement-pdf'` (selain cek content-type `application/pdf`) supaya PDF di-stream apa adanya, tidak di-JSON-encode.
+  - `client/src/app/dashboard/payout/page.tsx` — tombol "Laporan" (unduh PDF) hanya untuk baris status "transferred"; pola aman download (cek res.ok, blob).
+- Pola aman PDF (dari known-bugs PDF corruption): SEMUA query Prisma selesai SEBELUM `doc.pipe(res)`; layout flow-based (`moveDown` + `{ continued:true }` + `{ align:'right' }`, TANPA x,y eksplisit multi-teks); post-pipe dibungkus `try { doc.end() } catch {}`.
+- Keputusan interpretasi (real-money — DI-FLAG untuk konfirmasi founder): `amount` yang diminta = jumlah bruto yang direserve dari saldo; hutang dipotong DARI amount ini (`net = amount - debt`, sesuai aturan #1 "deduct debt FROM the payout"). Reject-with-breakdown terjadi saat `amount < totalDebt` (pencairan tak cukup melunasi hutang). Edge: kalau `amount >= debt` DAN `amount <= available` → diterima walau `amount + debt > available` secara harfiah, karena debt keluar dari dalam amount (tidak ada over-draw). Aman secara ledger; kalau founder ingin tolak kasus itu juga, perlu ganti model jadi "debt on top of amount".
+- Verifikasi E2E (controller nyata ke DB, data test terisolasi lalu dihapus, 22/22 PASS): A) tanpa hutang → debtDeducted=0, net=amount, no order flip; B) hutang 1750 < saldo → auto-deduct, order flip feeSettled=true, PayoutRequest.debtDeducted=1750, net=98250, available turun benar; C) hutang 50000 > pencairan 30000 → tolak 400 + debtBreakdown, tak ada PayoutRequest dibuat; guard amount>available → 400; D) approve→transferred→statement PDF: byte signature `%PDF`, >800 byte, bukan JSON; promotor lain → 403; belum transferred → 400. `node --check` semua file server OK; `npx tsc --noEmit` client EXIT 0. Belum deploy (per instruksi — verifikasi lokal dulu untuk fitur real-money).
+- Tag: #payout #fee-debt #auto-deduct #shared-service #pdf #pdfkit #statement #proxy #binary-pdf #transaction #atomic #real-money #roadmap-2 #roadmap-3
+
+---
+
+## [2026-07-09] KOREKSI interpretasi Payout item #2 — hutang fee = TAMBAHAN di atas nominal, BUKAN potongan dari dalam
+
+- Gejala/konteks: **KOREKSI dari entry tepat di atas ([2026-07-08] Payout item #2 & #3)**, bagian "Keputusan interpretasi (DI-FLAG untuk konfirmasi founder)". Model lama yang diimplementasikan SALAH: hutang dipotong DARI DALAM nominal yang diminta (`net = amount - debt`), dan penolakan terjadi saat `amount < totalDebt`. Founder mengonfirmasi interpretasi KEBALIKANNYA — ini yang benar.
+- Root cause: Ambiguitas aturan "potong hutang saat pencairan". Interpretasi lama menganggap `amount` = bruto yang di-reserve, hutang keluar dari dalamnya (promotor terima lebih kecil). Interpretasi BENAR (founder): promotor menerima PENUH `amount` yang diminta; hutang adalah beban TAMBAHAN yang ditarik terpisah dari saldo pada transaksi yang sama.
+- Aturan BENAR (founder-confirmed 2026-07-09):
+  - Promotor menerima PERSIS `amount` yang diminta — TIDAK ada potongan dari yang diminta.
+  - Syarat terima: `(amount + totalDebt) <= available`. Kalau gagal → **TOLAK SELURUHNYA** (jangan potong sebagian, jangan auto-adjust nominal).
+  - Saat ditolak: kirim `debtBreakdown { totalDebt, availableBalance, requestedAmount, maxAllowedAmount }` dengan `maxAllowedAmount = available - totalDebt`, supaya promotor bisa ajukan ULANG dengan nominal lebih kecil SENDIRI (sistem tidak auto-submit).
+  - Saat diterima & ada hutang: dalam `$transaction` yang sama tetap buat PayoutRequest dgn `amount` PENUH (tidak dikurangi), set `debtDeducted = totalDebt` (audit — uang efektif ditarik dari saldo, bukan dari yang ditransfer), flip order hutang `feeSettled: true`. `netTransfer = amount` (bukan `amount - debt`).
+  - `getAvailableBalance` / `computeBalance` TIDAK berubah — tetap `gross - reserved` (cek hutang murni di dalam validasi `requestPayout`, bukan di saldo yang ditampilkan).
+- File terkait:
+  - `server/controllers/payout.controller.js` — `requestPayout`: cek `amount + totalDebt > available` (dulu `amount < totalDebt`); `netTransfer = amount`. `decorateWithPromotor`: HAPUS field `netAmount = amount - debtDeducted` yang menyesatkan (admin transfer PENUH `amount`; frontend admin memang sudah pakai `p.amount`, bukan `netAmount`). `getPayoutStatementPDF`: sudah menampilkan "Diterima Penuh" + hutang dilunasi terpisah dari saldo.
+  - `server/prisma/schema.prisma` — komentar `PayoutRequest.amount` & `debtDeducted` dikoreksi (dulu "Transfer ke promotor = amount - debtDeducted" → sekarang "transfer = amount penuh; syarat: amount + debtDeducted <= available"). **Hanya komentar** — tidak ada perubahan kolom, tidak perlu `db push`.
+  - `client/src/app/dashboard/payout/page.tsx` — form request menampilkan `debtBreakdown`/`rejectInfo`: saldo tersedia, hutang fee cash, dan "Maksimal bisa diajukan" (`maxAllowedAmount`) saat ditolak.
+- Fix diverifikasi E2E (controller NYATA ke DB, data test terisolasi lalu dihapus, **24/24 PASS**):
+  - A) tanpa hutang → 201, `debtDeducted=0`, `netTransfer=amount` penuh, 1 PayoutRequest, no order flip.
+  - B) hutang 1750, `amount 100000 + 1750 <= available 144750` → 201 ACCEPTED, `netTransfer=100000` PENUH (tidak dikurangi), `debtDeducted=1750`, order box flip `feeSettled=true`, debt jadi 0.
+  - C) hutang 1750, `amount 48000 + 1750 > available 48250` → 400 REJECTED, `debtBreakdown {totalDebt:1750, availableBalance:48250, requestedAmount:48000, maxAllowedAmount:46500}`, TIDAK ada PayoutRequest dibuat, order box TIDAK disentuh (`feeSettled=false`).
+  - D) statement PDF (`GET /api/payout/:id/statement-pdf`) tetap jalan dgn logic baru: signature `%PDF`, 3142 byte, section "sisa hutang fee" = Lunas (0) karena hutang sudah di-settle saat accept.
+  - `node --check` semua file server OK; `npx tsc --noEmit` client EXIT 0. **Belum deploy** (per instruksi — verifikasi lokal dulu untuk fitur real-money; tunggu instruksi deploy eksplisit).
+- Tag: #payout #fee-debt #koreksi #interpretasi #real-money #debt-on-top #reject-wholesale #max-allowed #roadmap-2 #founder-confirmed
