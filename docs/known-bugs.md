@@ -1269,3 +1269,38 @@ File ini adalah log permanen bug yang sudah pernah terjadi di project ini besert
   - `node --check` semua file server OK; `npx tsc --noEmit` client EXIT 0.
 - Deploy: **SUDAH di-deploy ke production 2026-07-09** (commit `101a175`). Urutan aman diikuti: push → verifikasi SHA di `origin/main` (`git ls-remote`) → `deploy.sh` di VPS. `deploy.sh` sukses (git pull 4df3f1c..101a175 fast-forward, npm install, prisma generate, `db push` = "already in sync" karena kolom `debtDeducted` sudah ada, pm2 restart). VPS HEAD after = `101a175` (silent-fail git pull TIDAK kambuh). Smoke test 5 rute payout tanpa token → semua **401** (rute terdaftar, bukan 404). Frontend auto-deploy Vercel dari push.
 - Tag: #payout #fee-debt #koreksi #interpretasi #real-money #debt-on-top #reject-wholesale #max-allowed #roadmap-2 #founder-confirmed #deployed
+
+---
+
+## [2026-07-09] Laporan Pendapatan Platform (Payout & Laporan Keuangan Roadmap #4) — fitur baru, admin only
+
+- Gejala/konteks: (Bukan bug — implementasi fitur baru.) Admin butuh laporan revenue nexEvent dari semua sumber fee + langganan Pro, per periode (bulanan default / rentang custom), dipecah per sumber & per promotor, plus ringkasan hutang fee outstanding.
+- Root cause: n/a (fitur baru).
+- Aturan bisnis (CLAUDE.md, founder-confirmed):
+  - "Confirmed revenue" = uang yang BENAR-BENAR sudah masuk rekening nexEvent, bukan yang masih tercatat/pending:
+    - Fee order ONLINE (`channel:"online"`, `status:"paid"`) → confirmed (Midtrans auto-settle).
+    - Fee order Ticket Box TRANSFER (`channel:"ticket_box"`, `paymentMethod:"transfer"`, `status:"paid"`) → confirmed juga (transfer wajib lewat Midtrans → auto-settle, TIDAK butuh cek feeSettled).
+    - Fee order Ticket Box CASH (`channel:"ticket_box"`, `paymentMethod:"cash"`, `status:"paid"`) → confirmed HANYA jika `feeSettled:true` (hutang sudah dilunasi promotor). Pola sama persis `DEBT_ORDER_WHERE` di fee-debt.service.js, tapi kondisi feeSettled DI-INVERT ke `true`.
+    - Langganan Pro dari `ProTransaction` `status:"paid"`, `type` in [activation, extension].
+  - Breakdown per sumber: ticket-online, ticket-cash-settled, merch, bundling, pro-subscription (pro dipecah lagi activation vs extension). Merch & bundling = confirmed (online + cash-lunas digabung).
+  - Breakdown per promotor (individual) + total hutang outstanding SELURUH promotor + rincian per promotor.
+- Keputusan implementasi:
+  - **Timing pengakuan pendapatan pakai `paidAt`** (bukan createdAt) — revenue diakui saat uang settle. `paidAt` di-set untuk SEMUA record paid (cash box saat dibuat di ticket-box.controller `paidAt: isTransfer ? null : new Date()`; transfer/online + Pro via webhook payment.controller `{ status:'paid', paidAt: new Date() }`). P&L Report & Fee Debt tidak punya presedennya filter-by-period, jadi paidAt dipilih karena paling benar secara semantik "uang di rekening". Rentang tanggal berbasis UTC.
+  - Klasifikasi confirmed di JS dari SATU query paid orders dalam rentang (efisien, sekaligus bangun breakdown per-sumber & per-promotor): `isCashBox = channel==='ticket_box' && paymentMethod==='cash'`; `confirmed = !isCashBox || feeSettled===true`; kalau tidak confirmed → `continue` (itu hutang, bukan revenue). Ticket confirmed non-cash (online + box transfer) → bucket "ticketOnline"; ticket cash-lunas → "ticketCashSettled".
+- File terkait:
+  - `server/services/fee-debt.service.js` — TAMBAH `getAllPromotorsFeeDebt()` (hutang seluruh promotor, group per promotor + total gabungan). Sumber tunggal grouping hutang — dipakai bersama fee-debt.controller & platform-revenue.controller.
+  - `server/controllers/fee-debt.controller.js` — refactor `getFeeDebtByPromoter` pakai `getAllPromotorsFeeDebt()` (response shape `data:[...]` TIDAK berubah — reconciliation UI lama tetap jalan, diverifikasi manual query pattern identik).
+  - `server/controllers/platform-revenue.controller.js` (BARU) — `getPlatformRevenue` (admin only): `resolveRange(q)` (startDate+endDate custom → month+year → default bulan ini, validasi input → 400), agregasi 5 sumber + per-promotor + debt summary.
+  - `server/routes/platform-revenue.routes.js` (BARU) — `GET /revenue` (`protect + requireAdmin`).
+  - `server/src/index.js` — mount `app.use('/api/admin/platform-revenue', platformRevenueRoutes)`.
+  - `client/src/app/dashboard/admin/revenue/page.tsx` (BARU) — halaman dedicated (admin page utama sudah 1309 baris, terlalu besar): period picker (Bulanan default + Rentang Custom), kartu total besar, 5 kartu breakdown per sumber, tabel per-promotor (dengan tfoot total), tabel hutang outstanding. Guard `!user?.isAdmin` → redirect `/dashboard` (mirror admin page).
+  - `client/src/components/dashboard/sidebar.tsx` — nav item admin-only "Pendapatan Platform" (icon `TrendingUp`) → `/dashboard/admin/revenue`.
+- Verifikasi E2E (controller NYATA ke DB, data test pakai tahun **2099** supaya query period hanya lihat data test — 0 record produksi di 2099; data diisolasi & dihapus, **29/29 PASS**):
+  - Q1 (month Juni 2099): ticketOnline 9500 (online 3500 + box-transfer 2000 + P2 4000), ticketCashSettled 1750, merch 1000, bundling 1500, pro 598000 (act 499000 + ext 99000), totalRevenue **611750**. Cash UNSETTLED (5000 & 3000) EXCLUDED dari revenue. `sum(perPromotor.total) === totalRevenue`. Debt per-promotor P1=5000, P2=3000 (global debt.totalOutstanding=8000 = persis data test, tidak ada hutang produksi nyata saat ini).
+  - Q2 (custom 2099-07-01..07-31): hanya record Juli → ticketOnline 99999 + pro 499000 = 598999; record Juni excluded.
+  - Q3 (custom 2099-06-16..06-30): record 06-15 excluded oleh lower-bound → total 0.
+  - Q4: month 13 → 400; custom tanpa endDate → 400.
+  - Q5: tanpa param → 200, default bulan berjalan ("Juli 2026").
+  - `node --check` semua file server OK; `npx tsc --noEmit` client EXIT 0.
+- Belum deploy (per instruksi — verifikasi lokal dulu; tunggu instruksi deploy eksplisit).
+- Tag: #platform-revenue #laporan-keuangan #roadmap-4 #admin #fee-debt #shared-service #pro-subscription #confirmed-revenue #paidAt #date-range

@@ -1,5 +1,5 @@
 const prisma = require('../src/lib/prisma');
-const { DEBT_ORDER_WHERE } = require('../services/fee-debt.service');
+const { DEBT_ORDER_WHERE, getAllPromotorsFeeDebt } = require('../services/fee-debt.service');
 
 // Rekonsiliasi Hutang Fee (Roadmap #4).
 //
@@ -25,39 +25,10 @@ const { DEBT_ORDER_WHERE } = require('../services/fee-debt.service');
 // Agregasi total hutang fee per promotor (ticket_box + cash, paid, belum settle).
 const getFeeDebtByPromoter = async (req, res) => {
   try {
-    const orders = await prisma.ticketOrder.findMany({
-      where: DEBT_ORDER_WHERE,
-      select: {
-        feeAmount: true,
-        event: {
-          select: {
-            promotor_id: true,
-            promotor: { select: { name: true, email: true } },
-          },
-        },
-      },
-    });
-
-    // Group by promotor_id di aplikasi — Prisma groupBy tidak bisa lintas relasi.
-    const map = new Map();
-    for (const o of orders) {
-      const pid = o.event.promotor_id;
-      if (!map.has(pid)) {
-        map.set(pid, {
-          promotorId: pid,
-          promotorName: o.event.promotor?.name || '(tanpa nama)',
-          promotorEmail: o.event.promotor?.email || '',
-          totalDebt: 0,
-          orderCount: 0,
-        });
-      }
-      const entry = map.get(pid);
-      entry.totalDebt += o.feeAmount;
-      entry.orderCount += 1;
-    }
-
-    const data = Array.from(map.values()).sort((a, b) => b.totalDebt - a.totalDebt);
-    return res.json({ success: true, data });
+    // Group-by-promotor logic tinggal di services/fee-debt.service.js (dipakai bersama dengan
+    // platform-revenue.controller item #4) — hindari duplikasi filter/grouping.
+    const { perPromotor } = await getAllPromotorsFeeDebt();
+    return res.json({ success: true, data: perPromotor });
   } catch (err) {
     console.error('[FEE DEBT BY PROMOTER ERROR]', err);
     return res.status(500).json({ success: false, message: 'Server error.' });

@@ -32,6 +32,7 @@ const ticketBoxRoutes     = require('../routes/ticket-box.routes');
 const feeDebtRoutes       = require('../routes/fee-debt.routes');
 const scannerRoutes       = require('../routes/scanner.routes');
 const { payoutRoutes, adminPayoutRoutes } = require('../routes/payout.routes');
+const platformRevenueRoutes = require('../routes/platform-revenue.routes');
 const uploadRoutes        = require('../routes/upload.routes');
 require('./cron/pro-subscription.cron');
 require('./cron/ticket-booking.cron');
@@ -106,6 +107,7 @@ app.use('/api/admin/fee-debt', feeDebtRoutes);
 app.use('/api/scanner',       scannerRoutes);
 app.use('/api/payout',        payoutRoutes);
 app.use('/api/admin/payout',  adminPayoutRoutes);
+app.use('/api/admin/platform-revenue', platformRevenueRoutes);
 app.use('/api/upload',        uploadRoutes);
 
 app.use((req, res) => {

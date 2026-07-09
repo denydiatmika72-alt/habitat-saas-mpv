@@ -14,6 +14,7 @@ import {
   Wallet,
   Ticket,
   Banknote,
+  TrendingUp,
 } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { useUser } from "@/hooks/useUser"
@@ -41,6 +42,7 @@ const nav: NavItem[] = [
   { label: "Pencairan Dana", icon: Banknote, href: "/dashboard/payout" },
   { label: "Laporan P&L", icon: BarChart2, href: "/dashboard/pl-report", badge: "Pro" },
   { label: "Approve User", icon: ShieldCheck, href: "/dashboard/admin", adminOnly: true },
+  { label: "Pendapatan Platform", icon: TrendingUp, href: "/dashboard/admin/revenue", adminOnly: true },
 ]
 
 export function Sidebar() {
