@@ -1304,3 +1304,22 @@ File ini adalah log permanen bug yang sudah pernah terjadi di project ini besert
   - `node --check` semua file server OK; `npx tsc --noEmit` client EXIT 0.
 - Belum deploy (per instruksi — verifikasi lokal dulu; tunggu instruksi deploy eksplisit).
 - Tag: #platform-revenue #laporan-keuangan #roadmap-4 #admin #fee-debt #shared-service #pro-subscription #confirmed-revenue #paidAt #date-range
+
+---
+
+## [2026-07-09] Laporan Pendapatan Platform (Roadmap #4) — deploy production + guard silent-fail deploy.sh (berhasil)
+
+- Gejala/konteks: (Bukan bug — catatan deploy.) Fitur Laporan Pendapatan Platform (commit `e81b4fb`, entry di atas) di-deploy ke production dengan kewaspadaan ekstra terhadap jebakan `deploy.sh` git-pull silent-fail (lihat entry [2026-07-08] "Payout ... jebakan deploy.sh git pull silent-fail"). Deploy BERHASIL & terverifikasi penuh.
+- Root cause: n/a.
+- Pelajaran dari insiden silent-fail yang diterapkan (berhasil mencegah masalah):
+  1. **Pre-check state VPS SEBELUM deploy** — `git status --porcelain` + `git rev-list --left-right --count HEAD...origin/main` di VPS. Hasil: tree bersih dari perubahan tracked (hanya 1 untracked `server/set-admin.js` yang TIDAK ada di commit → tidak memblok fast-forward), posisi `0 ahead / 2 behind`. Konfirmasi fast-forward bersih MUNGKIN sebelum jalankan deploy.sh.
+  2. **Verifikasi SHA remote via `git ls-remote origin -h refs/heads/main`** (bukan cuma output push) → `e81b4fb` cocok dengan local HEAD sebelum lanjut ke VPS.
+  3. **Tonton SELURUH output deploy.sh** sampai `=== Deploy selesai ===` + pm2 table. Step `[1/5] git pull` menampilkan `Updating 101a175..e81b4fb Fast-forward` TANPA error (inilah titik yang dulu gagal diam-diam).
+  4. **Bandingkan `git rev-parse HEAD` VPS dengan SHA yang dipush** — VPS HEAD after = `e81b4fb259030ad07a30bea0c15808652921cc92` = pushed SHA (COCOK, bukan sekadar "deploy sukses").
+- File terkait: `deploy.sh` (VPS), `server/src/index.js` (route mount), semua file fitur di entry sebelumnya.
+- Fix/Verifikasi (semua PASS):
+  - `deploy.sh`: git pull fast-forward `101a175..e81b4fb` (3 file baru dibuat), npm install "up to date", prisma generate OK, `db push` = "already in sync" (fitur ini TIDAK tambah kolom), pm2 restart online. DEPLOY_EXIT=0.
+  - Smoke test HTTP (tanpa SSH, andal): `GET /api/admin/platform-revenue/revenue` tanpa token → **401** (rute terdaftar, BUKAN 404 = kode baru benar-benar live). Kontrol `GET /api/payout/balance` → **401** (server hidup & serving kode live). Sanity rute ngawur `/api/admin/platform-revenue/nope` → **404** (membuktikan server BISA bedakan 404 vs 401, jadi 401 di atas bermakna).
+  - PM2 stabil: 2 snapshot jeda 6 detik → status `online`, `restarts` tetap 77 (tidak crash-loop), uptime naik 26s→33s, unstable restarts 0.
+  - Frontend Vercel auto-deploy: `https://www.nexeventapp.tech/dashboard/admin/revenue` → **200** (halaman nyata, bukan 404); kontrol `/dashboard/admin` → 200.
+- Tag: #platform-revenue #deploy #production #deploy-sh #silent-fail-guard #git-ls-remote #401-not-404 #pm2-stability #roadmap-4 #deployed
