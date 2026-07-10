@@ -159,7 +159,7 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ pr
 }
 
 // Paths that return binary (PDF) — must NOT be JSON-encoded
-const BINARY_PATHS = ['export-pdf', 'generate-pdf', 'statement-pdf'];
+const BINARY_PATHS = ['export-pdf', 'generate-pdf', 'statement-pdf', 'audience-report'];
 
 export async function GET(req: NextRequest, { params }: { params: Promise<{ proxy: string[] }> }) {
   const { proxy } = await params;

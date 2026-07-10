@@ -486,7 +486,7 @@ Keputusan final:
 - Gunakan library pdfkit yang sudah dipakai untuk Invoice PDF dan PO PDF (lihat section
   "PDF Generation")
 
-### 4. Laporan Pendapatan Platform — untuk Admin (belum dibangun)
+### 4. Laporan Pendapatan Platform — untuk Admin (✅ SELESAI — code-complete, deployed 2026-07-09)
 Laporan revenue nexEvent dari seluruh sumber fee + langganan Pro.
 
 Keputusan final:
@@ -501,7 +501,7 @@ Keputusan final:
 - Tampilkan juga total hutang fee KESELURUHAN (semua promotor digabung) DAN rincian hutang
   PER promotor — reuse data dari Fee Debt Reconciliation yang sudah ada
 
-### 5. Data Audiens / Pembeli Tiket — untuk Promotor (belum dibangun)
+### 5. Data Audiens / Pembeli Tiket — untuk Promotor (✅ SELESAI — code-complete, pending deploy) — ITEM TERAKHIR, ROADMAP INI SELESAI SEMUA
 Data demografis pembeli untuk bantu promotor pitching ke sponsor.
 
 Keputusan final:
@@ -540,8 +540,9 @@ Keputusan final:
 11. 🔴 URGENT: Midtrans Production (menunggu approval KYC — sistem masih Sandbox)
 12. Storefront advanced features → lihat section "Storefront Feature Roadmap"
     (Bundling paket kurasi, edit/pindah stok, box office offline, hutang fee, scanner tiket)
-13. Payout & Laporan Keuangan lanjutan → lihat section "Payout & Laporan Keuangan Roadmap"
-    (potong hutang fee otomatis, laporan pencairan PDF, laporan pendapatan platform, data audiens)
+13. ✅ Payout & Laporan Keuangan lanjutan → SELESAI SEMUA (#1–#5). Lihat section "Payout & Laporan Keuangan Roadmap"
+    (potong hutang fee otomatis, laporan pencairan PDF, laporan pendapatan platform, data audiens).
+    Catatan: #5 Data Audiens code-complete & terverifikasi lokal, pending deploy.
 14. Ticket Sales Manual Input (untuk promotor yang pakai platform lain)
 15. Event Summary Report (kirim via email saat event selesai)
 16. CRON Job booking timeout (sudah ada — verifikasi)

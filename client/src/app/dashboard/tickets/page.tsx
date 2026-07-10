@@ -2,7 +2,7 @@
 
 import { useEffect, useState, useCallback } from "react"
 import Link from "next/link"
-import { Lock, Ticket as TicketIcon, Plus, Trash2, Pencil, Copy, Check, ExternalLink, Upload, Package } from "lucide-react"
+import { Lock, Ticket as TicketIcon, Plus, Trash2, Pencil, Copy, Check, ExternalLink, Upload, Package, Download } from "lucide-react"
 import { useUser } from "@/hooks/useUser"
 import { formatIDRInput, parseIDRInput } from "@/lib/formatNumber"
 
@@ -177,6 +177,36 @@ export default function TicketsPage() {
   const [ticketTypes, setTicketTypes] = useState<TicketType[]>([])
   const [orders, setOrders] = useState<Order[]>([])
   const [loadingDetail, setLoadingDetail] = useState(false)
+  const [downloadingAudience, setDownloadingAudience] = useState(false)
+
+  // Unduh Data Audiens event terpilih (Roadmap #5). Pola aman download PDF (lihat known-bugs.md).
+  const handleDownloadEventAudience = async () => {
+    if (!selectedEventId) return
+    setDownloadingAudience(true)
+    try {
+      const res = await fetch(`/api/tickets/audience-report/event/${selectedEventId}`, { headers: authHeaders() })
+      if (!res.ok) {
+        let message = `Server error (${res.status})`
+        try { const e = await res.json(); message = (e as { message?: string }).message || message } catch { message = res.statusText || message }
+        alert("Gagal mengunduh data audiens: " + message)
+        return
+      }
+      const blob = await res.blob()
+      if (blob.size < 100) { alert("Laporan kosong — coba lagi."); return }
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement("a")
+      a.href = url
+      a.download = `Data-Audiens-${selectedEventId}.pdf`
+      document.body.appendChild(a)
+      a.click()
+      document.body.removeChild(a)
+      setTimeout(() => URL.revokeObjectURL(url), 1000)
+    } catch (e) {
+      alert("Gagal mengunduh data audiens: " + (e instanceof Error ? e.message : "Unknown error"))
+    } finally {
+      setDownloadingAudience(false)
+    }
+  }
 
   const [merchItems, setMerchItems] = useState<MerchItem[]>([])
   const [newMerchName, setNewMerchName] = useState("")
@@ -791,18 +821,30 @@ export default function TicketsPage() {
         </div>
       </div>
 
-      <div>
-        <label className="mb-1.5 block text-sm font-medium text-slate-700">Pilih Event</label>
-        <select
-          value={selectedEventId}
-          onChange={(e) => setSelectedEventId(e.target.value)}
-          className="max-w-sm truncate rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-700 outline-none transition-colors focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500/30"
-        >
-          <option value="">-- Pilih event --</option>
-          {events.map((ev) => (
-            <option key={ev.id} value={ev.id}>{ev.title}</option>
-          ))}
-        </select>
+      <div className="flex flex-wrap items-end gap-3">
+        <div>
+          <label className="mb-1.5 block text-sm font-medium text-slate-700">Pilih Event</label>
+          <select
+            value={selectedEventId}
+            onChange={(e) => setSelectedEventId(e.target.value)}
+            className="max-w-sm truncate rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-700 outline-none transition-colors focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500/30"
+          >
+            <option value="">-- Pilih event --</option>
+            {events.map((ev) => (
+              <option key={ev.id} value={ev.id}>{ev.title}</option>
+            ))}
+          </select>
+        </div>
+        {selectedEventId && (
+          <button
+            onClick={handleDownloadEventAudience}
+            disabled={downloadingAudience}
+            className="flex items-center gap-2 rounded-lg border border-emerald-200 bg-emerald-50 px-3.5 py-2 text-sm font-semibold text-emerald-700 transition-colors hover:bg-emerald-100 disabled:opacity-50"
+          >
+            <Download className="size-4" />
+            {downloadingAudience ? "Menyiapkan..." : "Download Data Audience"}
+          </button>
+        )}
       </div>
 
       {!selectedEventId && (

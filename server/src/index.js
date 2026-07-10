@@ -33,6 +33,7 @@ const feeDebtRoutes       = require('../routes/fee-debt.routes');
 const scannerRoutes       = require('../routes/scanner.routes');
 const { payoutRoutes, adminPayoutRoutes } = require('../routes/payout.routes');
 const platformRevenueRoutes = require('../routes/platform-revenue.routes');
+const audienceReportRoutes = require('../routes/audience-report.routes');
 const uploadRoutes        = require('../routes/upload.routes');
 require('./cron/pro-subscription.cron');
 require('./cron/ticket-booking.cron');
@@ -99,6 +100,8 @@ app.use('/api/pl-report',     plReportRoutes);
 app.use('/api/other-income',  otherIncomeRoutes);
 app.use('/api/payments',      paymentRoutes);
 app.use('/api/storefront',    storefrontRoutes);
+// Mount SEBELUM '/api/tickets' agar prefix '/api/tickets/audience-report' dicek lebih dulu (hindari ambiguitas).
+app.use('/api/tickets/audience-report', audienceReportRoutes);
 app.use('/api/tickets',       ticketRoutes);
 app.use('/api/merch',         merchRoutes);
 app.use('/api/bundles',       bundleRoutes);

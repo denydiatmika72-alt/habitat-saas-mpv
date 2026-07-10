@@ -1323,3 +1323,72 @@ File ini adalah log permanen bug yang sudah pernah terjadi di project ini besert
   - PM2 stabil: 2 snapshot jeda 6 detik → status `online`, `restarts` tetap 77 (tidak crash-loop), uptime naik 26s→33s, unstable restarts 0.
   - Frontend Vercel auto-deploy: `https://www.nexeventapp.tech/dashboard/admin/revenue` → **200** (halaman nyata, bukan 404); kontrol `/dashboard/admin` → 200.
 - Tag: #platform-revenue #deploy #production #deploy-sh #silent-fail-guard #git-ls-remote #401-not-404 #pm2-stability #roadmap-4 #deployed
+
+---
+
+## [2026-07-09] Data Audiens / Pembeli Tiket (Roadmap #5) — fitur baru + PENUTUP "Payout & Laporan Keuangan Roadmap"
+
+- Gejala/konteks: (Bukan bug — implementasi fitur baru.) Item TERAKHIR dari "Payout & Laporan Keuangan Roadmap". Promotor unduh 1 PDF gabungan berisi (1) dashboard visual (sebaran umur + gender) + (2) tabel data mentah pembeli (nama, NIK, tgl beli, jenis tiket) sebagai bukti otentik untuk pitching sponsor. Dua tipe report: (A) per-event, (B) semua-event digabung (TOTAL, bukan per-event breakdown). Umur & gender diturunkan otomatis dari NIK — TANPA ubah form beli tiket.
+- Root cause: n/a (fitur baru).
+- Investigasi kunci (STEP 1):
+  - **NIK disimpan 1 per ORDER** (`TicketOrder.buyerNik`), BUKAN per `Ticket` (model `Ticket` cuma punya `attendeeName`, tanpa NIK). Konsekuensi: "audiens" dihitung per ORDER pembeli yang mengandung tiket, bukan per tiket terjual.
+  - `orderType` punya **4 nilai**: `'ticket'`, `'mixed'` (tiket+merch terpisah), `'bundling'`, `'merch'` (lihat storefront.controller). NIK valid 16-digit DIJAMIN hanya kalau order mengandung tiket (`hasTickets` gate anti-calo). Order `merch`-only simpan `buyerNik = ''`.
+- Keputusan implementasi:
+  - Demografi diambil dari order `status:'paid'` dengan `orderType in ['ticket','mixed','bundling']` (merch-only difilter di level QUERY). Entri dengan NIK unparseable (mis. merch-only bundle tanpa tiket / data korup) DI-SKIP dari demografi (dihitung `excluded`), TIDAK bikin report crash. Catatan: `excluded` hanya menghitung order yang TER-FETCH tapi NIK-nya korup — merch-only tidak masuk hitungan itu karena sudah difilter sebelum fetch.
+  - Parser NIK dibuat & di-unit-test TERPISAH dulu sebelum integrasi (31/31 pass): ekstrak DDMMYY (digit 7-12), gender (DD>40 → perempuan, day = DD-40; else laki-laki), infer abad (2000+YY, kalau > tahun berjalan → 1900+YY), validasi tanggal real (tolak 31 Feb dst), hitung umur relatif `referenceDate` (param opsional utk test deterministik). Input malformed → `{ valid:false, reason }`, TIDAK PERNAH throw.
+- File terkait:
+  - `server/services/nik-parser.service.js` (BARU) — `parseNik(nik, refDate?)`, `ageBucket(age)`, `AGE_BUCKETS` (`<18/18-24/25-34/35-44/45+`). Ditaruh di `services/` (proyek tak punya `utils/`; konvensi shared helper = services/).
+  - `server/controllers/audience-report.controller.js` (BARU) — `getEventAudienceReport` (ownership via `findFirst {id, promotor_id}` → 404 kalau bukan milik), `getAllEventsAudienceReport` (semua event promotor, TOTAL gabungan), plus `buildAudienceData`/`fetchAudienceOrders` (diexport utk test). PDF pakai POLA AMAN (semua query sebelum `doc.pipe`; teks flow `moveDown`+`{continued}`+`{align:'right'}`; bar chart & sel tabel pakai koordinat eksplisit single-call `doc.text(v,x,y,{width,lineBreak:false,ellipsis:true})` + `doc.rect(...).fill()`; pagination `if (doc.y>780) addPage()+drawHeader`; post-pipe `try{doc.end()}catch{}`). Dashboard visual = bar sederhana (rect), sengaja hindari chart kompleks (anti-korupsi).
+  - `server/routes/audience-report.routes.js` (BARU) — `GET /all-events` (sebelum `/event/:eventId`), `GET /event/:eventId`, dua-duanya `protect` (promotor-only, bukan admin).
+  - `server/src/index.js` — mount `app.use('/api/tickets/audience-report', audienceReportRoutes)` DI ATAS `/api/tickets` (hindari ambiguitas prefix).
+  - `client/src/app/api/[...proxy]/route.ts` — `BINARY_PATHS` tambah `'audience-report'` (stream PDF apa adanya).
+  - `client/src/app/dashboard/tickets/page.tsx` — tombol "Download Data Audience" di samping selector event (per-event).
+  - `client/src/app/dashboard/page.tsx` — tombol "Data Audience (Semua Event)" di toolbar header (menggantikan placeholder "Laporan Global"). Dua-duanya pakai pola aman download PDF (cek res.ok → blob → anchor click).
+- Verifikasi (semua PASS):
+  - Parser NIK unit test isolasi: **31/31** (male, female +40, century inference 1930, umur, bucket, + semua input invalid: kosong/pendek/17 digit/non-numeric/null/undefined/number-type/bulan 13/hari 32/Feb 30/female DD=40, no-throw).
+  - E2E controller NYATA ke DB (data test terisolasi & dihapus, **31/31**): 1 promotor + 2 event; E1 = 4 valid (2L/2P; bucket 25-34=2, <18=1, 45+=1) + 1 merch-only (excluded, tak muncul di raw rows) + 1 tiket NIK korup (excluded=1); E2 = 2 valid (1L 45+, 1P 18-24). All-events = TOTAL persis E1+E2 (total 6, 3L/3P, tiap bucket = jumlah per-event), raw rows 6 mencakup buyer dari KEDUA event + kolom eventTitle. PDF per-event & all-events: signature `%PDF`, >1KB, content-type application/pdf, bukan JSON. Ownership: promotor lain akses event bukan miliknya → **404**. Promotor tanpa event → PDF valid (0 audiens).
+  - `node --check` semua file server OK; `npx tsc --noEmit` client EXIT 0.
+- STATUS ROADMAP: Dengan selesainya item #5 ini, **seluruh "Payout & Laporan Keuangan Roadmap" (item #1–#5) SELESAI**: #1 Payout, #2 potong hutang fee otomatis, #3 Laporan Pencairan PDF, #4 Laporan Pendapatan Platform, #5 Data Audiens.
+- Belum deploy (per instruksi — verifikasi lokal dulu untuk fitur sensitif; tunggu instruksi deploy eksplisit).
+- Tag: #audience-report #data-audiens #nik-parser #demografi #roadmap-5 #roadmap-complete #pdfkit #pdf-safe-pattern #ownership #promotor #privacy
+
+---
+
+## [2026-07-10] Data Audiens — REVISI format tabel mentah: 1 baris per TIKET (bukan per order)
+
+- Gejala/konteks: (Bukan bug — perubahan format diminta founder sebelum deploy, mengubah entry [2026-07-09] "Data Audiens".) Tabel data mentah SEMULA 1 baris per ORDER (1 NIK = 1 baris, quantity tersirat). Founder minta **1 baris per TIKET**: pembeli yang beli 4 tiket dalam 1 transaksi → **4 baris berulang** (NIK & nama sama). Alasan founder: jumlah baris tabel jadi otomatis SAMA dengan total tiket terjual → laporan langsung auditable terhadap angka penjualan tanpa penjumlahan terpisah.
+- Root cause: n/a (perubahan format).
+- Investigasi jalur tiket (WAJIB untuk join yang benar):
+  - `Ticket` tiket individual di-generate 2 jalur: (1) tiket langsung → `generateTicketsForOrderItems` (services/ticket.service.js) set `orderItemId` + `ticketTypeId`; (2) tiket dalam paket bundling → payment.controller webhook set `bundleOrderItemId` + `ticketTypeId`. **`Ticket.ticketTypeId` di-set di KEDUA jalur** → nama jenis tiket per-tiket selalu bisa diambil dari relasi `ticketType` (termasuk tiket paket, yang jenisnya bisa beda dari label paket).
+  - Join tiket→order: `Ticket.orderItem.order` (TicketOrderItem) ATAU `Ticket.bundleOrderItem.order` (BundleOrderItem). Ticket Box offline juga pakai `generateTicketsForOrderItems` → ikut terhitung.
+- Fix:
+  - `server/controllers/audience-report.controller.js`:
+    - `fetchAudienceTickets(orderWhere)` (BARU): query `prisma.ticket` dengan `OR: [{ orderItem: { order: orderMatch } }, { bundleOrderItem: { order: orderMatch } }]`, `orderMatch` = `{ status:'paid', orderType in ['ticket','mixed','bundling'], ...orderWhere }` (SAMA dgn fetchAudienceOrders → himpunan konsisten). Return `{ orderId, ticketTypeName }` per tiket.
+    - `buildAudienceData` sekarang return `validOrderMap` (orderId → info pembeli parsed) alih-alih `rows`; dashboard stats (buckets/male/female/total/excluded) TIDAK berubah (tetap per-order/per-buyer).
+    - `buildTicketRows(tickets, validOrderMap)` (BARU): 1 baris per tiket, ambil info pembeli dari validOrderMap (skip tiket dari order ber-NIK invalid → konsisten dgn dashboard). Diurut by (purchaseDate, nik, ticketType) agar baris 1 pembeli berdampingan.
+    - Kedua controller fetch orders + tickets, `data.rows = buildTicketRows(...)`. Ringkasan PDF tambah baris "Total tiket terjual (baris data mentah)" + catatan "1 BARIS = 1 TIKET".
+  - Tidak ada perubahan schema, route, frontend, atau proxy — hanya isi controller.
+- **Pertanyaan Step 3 (dashboard per-buyer vs per-tiket) — ASUMSI & TEMUAN (mohon dikonfirmasi founder):**
+  - Founder secara eksplisit hanya menyebut **TABEL DATA MENTAH** yang jadi per-tiket. Tidak ada kata yang menyiratkan chart umur/gender ikut berubah.
+  - **Keputusan: dashboard (sebaran umur + gender + "Total audiens") DIPERTAHANKAN per-BUYER** — 1 pembeli dengan 4 tiket tetap dihitung 1 orang di bucket umurnya. Alasan: demografi audiens = jumlah ORANG, bukan jumlah tiket; kalau per-tiket, 1 orang beli banyak tiket akan menggelembungkan bucket-nya & menyesatkan sponsor soal komposisi audiens.
+  - Nuansa yang di-flag: "per-buyer" di kode = per **ORDER** ber-NIK valid (BUKAN dedup ketat per NIK unik). Kalau 1 NIK punya 2 order terpisah, terhitung 2 di dashboard. Perilaku ini SAMA dgn implementasi awal (tidak diubah). Kalau founder mau dedup ketat per NIK unik, itu perubahan terpisah.
+  - Untuk transparansi, PDF kini menampilkan DUA angka berdampingan: "Total audiens (pembeli unik / NIK)" = per-buyer, dan "Total tiket terjual" = jumlah baris tabel. Jadi kalau founder ternyata mau dashboard per-tiket juga, gampang di-switch.
+- Verifikasi (data test bikin Ticket ASLI via 2 jalur; terisolasi & dihapus, **25/25 PASS**): order Andi beli 3 tiket → **3 baris berulang** NIK/nama sama; Coki (mixed, 2 jenis tiket) → 2 baris Reguler+VIP; Dewi (bundle, via BundleOrderItem) → 2 baris Reguler; BadNik (NIK invalid) → 0 baris + excluded=1; MerchOnly → 0 baris; **jumlah baris (8) == total tiket DB (9) − 1 tiket BadNik**; dashboard TETAP per-buyer (E1: 4 orang 2L/2P, bucket sama); all-events rows=10=E1(8)+E2(2), bawa eventTitle 2 event; PDF `%PDF` valid; ownership P2→P1 = 404. `node --check` OK; `npx tsc --noEmit` client EXIT 0.
+- Belum deploy (per instruksi — tunggu instruksi deploy eksplisit).
+- Tag: #audience-report #data-audiens #per-ticket #row-expansion #revisi #roadmap-5 #ticket-join #bundle #mixed #dashboard-per-buyer #flag-for-confirmation
+
+---
+
+## [2026-07-10] Data Audiens — KEPUTUSAN FINAL: dashboard ikut PER-TIKET (satu sumber dgn tabel mentah)
+
+- Gejala/konteks: (Bukan bug — keputusan final founder atas pertanyaan yang di-flag di entry sebelumnya "REVISI format tabel mentah".) Entry sebelumnya mempertahankan dashboard (sebaran umur + gender) tetap **per-buyer** sambil tabel mentah **per-tiket**, dan menampilkan DUA angka total ("Total audiens (pembeli unik / NIK)" + "Total tiket terjual"). Founder MENOLAK pendekatan itu dengan alasan KREDIBILITAS: kalau dashboard & tabel mentah pakai unit hitung berbeda, sponsor yang cross-check manual akan lihat angka tidak konsisten & bisa curiga dashboard "dikarang biar terlihat bagus". 
+- Keputusan final: dashboard (sebaran umur + gender + total) HARUS dihitung **PER-TIKET juga**, dari **array `buildTicketRows()` yang SAMA PERSIS** dengan pengisi tabel mentah — bukan agregasi per-buyer/per-order terpisah. Pembeli 1 NIK dengan 4 tiket kini menyumbang **4** ke bucket umur/gender-nya (bukan 1). Konsistensi dashboard↔tabel kini dijamin **STRUKTURAL** (satu sumber array), bukan kebetulan cocok.
+- Fix (`server/controllers/audience-report.controller.js` — hanya isi controller, tanpa schema/route/frontend):
+  - `buildAudienceData(orders)` TIDAK lagi menghitung stats dashboard — sekarang cuma return `{ excluded, validOrderMap }` (parse NIK sekali per order, umur/gender diteruskan ke tiap baris tiket lewat validOrderMap → tak ada parse kedua yang bisa menyimpang).
+  - `computeDashboardStats(rows)` (BARU, diexport): agregasi umur-bucket + gender + total dari array `rows` (output `buildTicketRows`). `total = rows.length` → identik dengan jumlah baris tabel; `Σ bucket === rows.length` dijamin.
+  - Kedua controller: `const { excluded, validOrderMap } = buildAudienceData(orders); const rows = buildTicketRows(tickets, validOrderMap); const dash = computeDashboardStats(rows);` — dashboard & tabel makan array `rows` yang SAMA (satu `buildTicketRows` per request), mencegah drift di masa depan.
+  - PDF: ringkasan dual-number DIHAPUS → satu baris "Total tiket terjual". Label bar umur & gender diubah dari "N orang" → "N tiket" (akurat karena unit sekarang per-tiket). Header comment file diperbarui: dari "DUA level penghitungan" jadi "SATU level — PER-TIKET".
+- Verifikasi (E2E DB, data terisolasi & dihapus, **30/30 PASS**): 2 event 1 promotor; E1 = Andi(3 tiket male 25-34) + Budi(1 <18) + Citra(mixed 2 tiket female 25-34) + Dewi(bundle 2 tiket female 45+) + BadNik(NIK invalid, excluded=1) + MerchOnly(tak difetch). Core check: **Andi 1 pembeli 3 tiket → menyumbang 3 (bukan 1) ke bucket 25-34, sehingga bucket 25-34 = 5 (Andi 3 + Citra 2, PER-TIKET bukan per-buyer 2)**, bucket 45+ = 2 (Dewi 2 tiket, per-tiket bukan 1); **Σ semua bucket (8) === jumlah baris tabel (8) === total (8) === male+female**; re-count bucket independen dari baris tabel === dashboard buckets (simulasi cross-check sponsor). All-events gabungan rows=10 (E1 8 + E2 2), bucket 25-34=6, Σ=10. PDF per-event & all-events `%PDF` >1KB; ownership P2→E1 = 404; promotor tanpa event → PDF valid 0 audiens. `node --check` controller OK; `npx tsc --noEmit` client EXIT 0 (client cuma stream blob PDF, tak ada type dual-summary).
+- STATUS ROADMAP: keputusan terakhir yang tertunda untuk **Roadmap #5 (Data Audiens) SELESAI**. Dengan ini **seluruh "Payout & Laporan Keuangan Roadmap" (item #1–#5) FULLY IMPLEMENTED & TERVERIFIKASI lokal** — hanya menunggu instruksi deploy eksplisit.
+- Belum deploy (per instruksi — tunggu instruksi deploy eksplisit).
+- Tag: #audience-report #data-audiens #per-ticket #dashboard-per-ticket #single-source #kredibilitas #cross-check #roadmap-5 #roadmap-complete #final-decision
