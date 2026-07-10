@@ -1390,5 +1390,29 @@ File ini adalah log permanen bug yang sudah pernah terjadi di project ini besert
   - PDF: ringkasan dual-number DIHAPUS → satu baris "Total tiket terjual". Label bar umur & gender diubah dari "N orang" → "N tiket" (akurat karena unit sekarang per-tiket). Header comment file diperbarui: dari "DUA level penghitungan" jadi "SATU level — PER-TIKET".
 - Verifikasi (E2E DB, data terisolasi & dihapus, **30/30 PASS**): 2 event 1 promotor; E1 = Andi(3 tiket male 25-34) + Budi(1 <18) + Citra(mixed 2 tiket female 25-34) + Dewi(bundle 2 tiket female 45+) + BadNik(NIK invalid, excluded=1) + MerchOnly(tak difetch). Core check: **Andi 1 pembeli 3 tiket → menyumbang 3 (bukan 1) ke bucket 25-34, sehingga bucket 25-34 = 5 (Andi 3 + Citra 2, PER-TIKET bukan per-buyer 2)**, bucket 45+ = 2 (Dewi 2 tiket, per-tiket bukan 1); **Σ semua bucket (8) === jumlah baris tabel (8) === total (8) === male+female**; re-count bucket independen dari baris tabel === dashboard buckets (simulasi cross-check sponsor). All-events gabungan rows=10 (E1 8 + E2 2), bucket 25-34=6, Σ=10. PDF per-event & all-events `%PDF` >1KB; ownership P2→E1 = 404; promotor tanpa event → PDF valid 0 audiens. `node --check` controller OK; `npx tsc --noEmit` client EXIT 0 (client cuma stream blob PDF, tak ada type dual-summary).
 - STATUS ROADMAP: keputusan terakhir yang tertunda untuk **Roadmap #5 (Data Audiens) SELESAI**. Dengan ini **seluruh "Payout & Laporan Keuangan Roadmap" (item #1–#5) FULLY IMPLEMENTED & TERVERIFIKASI lokal** — hanya menunggu instruksi deploy eksplisit.
-- Belum deploy (per instruksi — tunggu instruksi deploy eksplisit).
+- Belum deploy (per instruksi — tunggu instruksi deploy eksplisit). → **SUDAH DEPLOY di commit `21a125a`, lihat entry milestone di bawah.**
 - Tag: #audience-report #data-audiens #per-ticket #dashboard-per-ticket #single-source #kredibilitas #cross-check #roadmap-5 #roadmap-complete #final-decision
+
+---
+
+## [2026-07-10] MILESTONE: "Payout & Laporan Keuangan Roadmap" (#1–#5) SELESAI & DEPLOYED — deploy final Data Audiens
+
+- Gejala/konteks: (Bukan bug — catatan deploy + milestone.) Deploy production TERAKHIR untuk seluruh "Payout & Laporan Keuangan Roadmap". Commit `21a125a` membawa fitur Data Audiens/Pembeli Tiket (Roadmap #5) LENGKAP + koreksi final dashboard per-tiket. Dengan ini kelima item roadmap keuangan **implemented, verified, DAN deployed ke production**.
+- Rekap 5 item (histori detail ada di entry masing-masing):
+  1. **Payout / Pencairan Dana** — commit `4df3f1c`, deployed (lihat entry [2026-07-08] "Payout ... jebakan deploy.sh git pull silent-fail").
+  2. **Potong Otomatis Hutang Fee saat Pencairan** — commit `101a175`, deployed (lihat entry [2026-07-09] "Payout debt-model correction").
+  3. **Laporan Pencairan (Payout Statement) PDF** — commit `101a175` (sepaket dgn #2), deployed.
+  4. **Laporan Pendapatan Platform (Admin)** — commit `e81b4fb`, deployed (lihat entry [2026-07-09] "Laporan Pendapatan Platform (Roadmap #4)").
+  5. **Data Audiens / Pembeli Tiket (Promotor)** — commit `21a125a` (deploy ini), deployed. Histori: entry [2026-07-09] "Data Audiens fitur baru", [2026-07-10] "REVISI 1 baris per TIKET", [2026-07-10] "KEPUTUSAN FINAL dashboard per-tiket".
+- Deploy dijalankan dengan guard silent-fail (lihat pelajaran entry [2026-07-08] & [2026-07-09]) — SEMUA langkah dibuktikan dgn bukti konkret, bukan sekadar "deploy.sh tak ada teks merah":
+  1. **push → verify SHA**: `git ls-remote origin -h refs/heads/main` = `21a125a2d4b3f8a66ebc8a578e47db32020f0450` == local HEAD (bukan sekadar percaya output `git push`).
+  2. **Pre-check VPS**: `git status --porcelain` hanya untracked `server/set-admin.js` (tak blok FF), `rev-list` = 0 ahead / 2 behind → FF bersih mungkin.
+  3. **deploy.sh ditonton penuh**: step `[1/5] git pull` = `Updating e81b4fb..21a125a Fast-forward` TANPA error (inilah titik yang dulu gagal senyap). Semua 5 step jalan, `=== Deploy selesai ===`, DEPLOY_EXIT=0.
+  4. **VPS HEAD after** = `git rev-parse HEAD` = `21a125a...` == pushed SHA (konfirmasi kode baru benar-benar landing).
+  5. **Smoke test HTTP (tanpa SSH)** di `http://145.79.12.170:3001`: `GET /api/tickets/audience-report/all-events` → **401**; `GET /api/tickets/audience-report/event/:id` → **401** (body = JSON "Token tidak ditemukan", BUKAN "Route tidak ditemukan"); control `GET /api/payout/balance` → **401** (server serving live code); negatif `GET /api/tickets/audience-report/bogus` → **404** (membuktikan bukan blanket-401, route spesifik memang resolve). **401-not-404 = LOLOS.**
+  6. **PM2 stabil**: 2x `pm2 describe nexevent-api` selang 7s → status `online`, restarts tetap `78` (tak naik → tak crash-loop), uptime naik 37s→45s, unstable restarts 0.
+  7. **Frontend Vercel**: production deployment `dpl_nsjS4gN...` state `READY`, commit SHA `21a125a...` (match), tombol "Download Data Audience" (per-event di `/dashboard/tickets` + "Semua Event" di `/dashboard`) ikut ter-build. `https://nexeventapp.tech` → 308 apex→www → final **HTTP 200** (`/` dan `/dashboard/tickets`).
+- File terkait: `deploy.sh` (VPS); commit `21a125a` (9 file: audience-report controller/routes + nik-parser service baru, index.js mount, proxy BINARY_PATHS, 2 dashboard page tombol, CLAUDE.md, docs).
+- Pelajaran (dipertahankan): guard silent-fail deploy.sh terbukti efektif untuk deploy ke-3 kalinya berturut — selalu (a) verify SHA via ls-remote, (b) tonton step `[1/5] git pull` FF bersih, (c) konfirmasi VPS `rev-parse HEAD` == pushed SHA, (d) smoke test fitur baru 401-not-404 + control endpoint + negatif 404, (e) PM2 restarts tidak naik.
+- Deployed ke production 2026-07-10 (commit `21a125a`). Midtrans masih Sandbox (item URGENT terpisah, di luar roadmap ini).
+- Tag: #milestone #payout #laporan-keuangan #roadmap-complete #roadmap-1-5 #deploy #production #deploy-sh #silent-fail-guard #401-not-404 #pm2-stability #vercel-ready #data-audiens #deployed

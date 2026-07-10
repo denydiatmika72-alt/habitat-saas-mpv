@@ -434,12 +434,17 @@ Yang BELUM diputuskan:
 
 ## Payout & Laporan Keuangan Roadmap (Urutan Pengerjaan)
 
+> ✅✅ **ROADMAP SELESAI SEPENUHNYA (item #1–#5) — IMPLEMENTED, VERIFIED, DEPLOYED KE PRODUCTION per 2026-07-10.**
+> Deploy final (Data Audiens #5 + koreksi dashboard per-tiket) di commit `21a125a`, VPS HEAD terverifikasi,
+> smoke test endpoint 401-not-404 lolos, PM2 online stabil, Vercel production READY. Lihat entry milestone
+> di `docs/known-bugs.md` [2026-07-10] untuk ringkasan konsolidasi + referensi histori tiap item.
+
 Rangkaian fitur keuangan lanjutan: pencairan dana promotor + laporan keuangan
 untuk promotor dan admin. Dikerjakan SATU PER SATU sesuai urutan di bawah
 (ada ketergantungan data & logic antar fitur). Prinsip sama: selesai tuntas per
 fitur, bukan banyak yang setengah jadi.
 
-### 1. Payout / Pencairan Dana (✅ SELESAI — code-complete, deployed, tested by founder)
+### 1. Payout / Pencairan Dana (✅ SELESAI — deployed + tested by founder)
 Promotor menarik hasil penjualan ke rekening bank sendiri, dicairkan manual oleh admin.
 
 Keputusan final:
@@ -459,7 +464,7 @@ Status: sudah di-deploy ke production dan sudah dites langsung oleh founder (app
 tandai transfer berhasil). Perlu verifikasi ulang status endpoint di sesi berikutnya untuk
 memastikan seluruh rute API aktif di production.
 
-### 2. Potong Otomatis Hutang Fee saat Pencairan (belum dibangun)
+### 2. Potong Otomatis Hutang Fee saat Pencairan (✅ SELESAI — deployed, commit 101a175)
 Integrasi payout dengan Sistem Hutang Fee (Rekonsiliasi) — lihat Storefront Roadmap #4.
 
 Keputusan final:
@@ -474,7 +479,7 @@ Keputusan final:
 - Ini mengubah alur `requestPayout` yang sudah ada di payout.controller.js — perlu
   terintegrasi dengan fee-debt.controller.js yang sudah ada
 
-### 3. Laporan Pencairan (Payout Statement) — download promotor (belum dibangun)
+### 3. Laporan Pencairan (Payout Statement) — download promotor (✅ SELESAI — deployed, commit 101a175)
 Bukti resmi pencairan yang bisa diunduh promotor setelah transfer selesai.
 
 Keputusan final:
@@ -486,7 +491,7 @@ Keputusan final:
 - Gunakan library pdfkit yang sudah dipakai untuk Invoice PDF dan PO PDF (lihat section
   "PDF Generation")
 
-### 4. Laporan Pendapatan Platform — untuk Admin (✅ SELESAI — code-complete, deployed 2026-07-09)
+### 4. Laporan Pendapatan Platform — untuk Admin (✅ SELESAI — deployed 2026-07-09, commit e81b4fb)
 Laporan revenue nexEvent dari seluruh sumber fee + langganan Pro.
 
 Keputusan final:
@@ -501,7 +506,7 @@ Keputusan final:
 - Tampilkan juga total hutang fee KESELURUHAN (semua promotor digabung) DAN rincian hutang
   PER promotor — reuse data dari Fee Debt Reconciliation yang sudah ada
 
-### 5. Data Audiens / Pembeli Tiket — untuk Promotor (✅ SELESAI — code-complete, pending deploy) — ITEM TERAKHIR, ROADMAP INI SELESAI SEMUA
+### 5. Data Audiens / Pembeli Tiket — untuk Promotor (✅ SELESAI — deployed 2026-07-10, commit 21a125a) — ITEM TERAKHIR, ROADMAP INI SELESAI SEMUA
 Data demografis pembeli untuk bantu promotor pitching ke sponsor.
 
 Keputusan final:
@@ -540,9 +545,10 @@ Keputusan final:
 11. 🔴 URGENT: Midtrans Production (menunggu approval KYC — sistem masih Sandbox)
 12. Storefront advanced features → lihat section "Storefront Feature Roadmap"
     (Bundling paket kurasi, edit/pindah stok, box office offline, hutang fee, scanner tiket)
-13. ✅ Payout & Laporan Keuangan lanjutan → SELESAI SEMUA (#1–#5). Lihat section "Payout & Laporan Keuangan Roadmap"
-    (potong hutang fee otomatis, laporan pencairan PDF, laporan pendapatan platform, data audiens).
-    Catatan: #5 Data Audiens code-complete & terverifikasi lokal, pending deploy.
+13. ✅ Payout & Laporan Keuangan lanjutan → SELESAI SEMUA (#1–#5), DEPLOYED KE PRODUCTION 2026-07-10.
+    Lihat section "Payout & Laporan Keuangan Roadmap" (potong hutang fee otomatis, laporan pencairan PDF,
+    laporan pendapatan platform, data audiens). Item terakhir (#5 Data Audiens, commit 21a125a) sudah
+    deployed & terverifikasi di production (smoke test 401-not-404 lolos, PM2 stabil, Vercel READY).
 14. Ticket Sales Manual Input (untuk promotor yang pakai platform lain)
 15. Event Summary Report (kirim via email saat event selesai)
 16. CRON Job booking timeout (sudah ada — verifikasi)
