@@ -179,6 +179,12 @@ Siklus ini berulang setiap hari event berlangsung.
    - Tabel `petty_cash_transactions`: semua transaksi kas lapangan crew
    - P&L Report menggabungkan keduanya, tapi dari tabel yang berbeda
 
+5. **PEMASUKAN P&L Report = 3 sumber TERPISAH (deployed 2026-07-11, commit `edca24d`)**
+   - **Tiket & Merchandise (nexEvent)**: `SUM(TicketOrder.totalAmount - feeAmount)` untuk order `status:"paid"` di event tsb (net setelah fee platform — pola SAMA dgn `payout.getAvailableBalance`). SEBELUM fix ini, revenue tiket nexEvent TIDAK ikut di P&L sama sekali (bug kritis — laba tampil terlalu kecil).
+   - **Sponsor Deal**: hanya deal `Disetujui` dengan invoice `DP Terbayar`/`Lunas`.
+   - **Pemasukan Lain** (`OtherIncome`): berkategori `merchandise` / `donasi` / `tiket_platform_lain` (+ field `platform`, mis. LOKET/Tix.id) / `lainnya`. Record lama tanpa kategori diperlakukan `lainnya`.
+   - **ANTI DOUBLE-COUNT**: "Tiket & Merchandise (nexEvent)" (dari `TicketOrder`, otomatis) vs "Tiket Platform Lain" (entri `OtherIncome`, input manual platform eksternal) adalah DUA sumber BERBEDA — jangan pernah dijumlahkan jadi satu / dianggap sama.
+
 ### Arsitektur Tabel yang Direncanakan
 
 ```
