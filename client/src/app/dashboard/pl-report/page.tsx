@@ -30,8 +30,13 @@ type PLData = {
     isProfit: boolean
   }
   income: {
+    nexeventSales: { total: number; orderCount: number; note: string }
     sponsor: { total: number; items: { sponsorName: string; tier: string; totalValue: number }[] }
-    other: { total: number; items: { id: string; description: string; amount: number; date: string }[] }
+    other: {
+      total: number
+      byCategory: { category: string; label: string; total: number }[]
+      items: { id: string; description: string; amount: number; date: string; category: string; categoryLabel: string; platform: string | null }[]
+    }
   }
   expense: {
     promotor: { total: number; byCategory: { category: string; total: number }[]; items: { description: string; amount: number; category: string; date: string }[] }
@@ -47,6 +52,16 @@ const authHeaders = () => ({ Authorization: `Bearer ${getToken()}`, "Content-Typ
 
 const PIE_COLORS = ["#065f46", "#059669", "#34d399", "#6ee7b7", "#a7f3d0", "#d1fae5", "#0e7490", "#0891b2", "#38bdf8", "#7dd3fc"]
 
+// Jenis Pemasukan Lain (value DB → label). "tiket_platform_lain" = tiket platform EKSTERNAL input manual.
+const OI_CATEGORIES = [
+  { value: "merchandise", label: "Merchandise" },
+  { value: "donasi", label: "Donasi/Sumbangan" },
+  { value: "tiket_platform_lain", label: "Tiket Platform Lain" },
+  { value: "lainnya", label: "Lainnya" },
+]
+// Platform tiket eksternal (selaras dgn konsep "Ticket Sales Manual Input" di CLAUDE.md).
+const EXTERNAL_PLATFORMS = ["LOKET", "Tix.id", "BookMyShow", "Dewatiket", "Artatix", "Goers", "Eratix", "Snaptix", "TipTip", "Eventbrite", "Lainnya"]
+
 // ── Component ─────────────────────────────────────────────────────────────────
 export default function PLReportPage() {
   const { isPro, loading: userLoading } = useUser()
@@ -60,6 +75,8 @@ export default function PLReportPage() {
   // Other income form
   const [oiDescription, setOiDescription] = useState("")
   const [oiAmount, setOiAmount] = useState("")
+  const [oiCategory, setOiCategory] = useState("merchandise")
+  const [oiPlatform, setOiPlatform] = useState("LOKET")
   const [oiSubmitting, setOiSubmitting] = useState(false)
 
   // Collapsible sections
@@ -125,12 +142,14 @@ export default function PLReportPage() {
     e.preventDefault()
     const amt = parseFloat(oiAmount.replace(/[^0-9]/g, ""))
     if (!oiDescription || isNaN(amt) || amt <= 0) return
+    // Platform hanya dikirim untuk kategori tiket platform lain.
+    const platform = oiCategory === "tiket_platform_lain" ? oiPlatform : undefined
     setOiSubmitting(true)
     try {
       const res = await fetch("/api/other-income", {
         method: "POST",
         headers: authHeaders(),
-        body: JSON.stringify({ eventId: selectedEventId, description: oiDescription, amount: amt }),
+        body: JSON.stringify({ eventId: selectedEventId, description: oiDescription, amount: amt, category: oiCategory, platform }),
       })
       const data = await res.json()
       if (data.success) {
@@ -300,6 +319,32 @@ export default function PLReportPage() {
             </div>
           </div>
 
+          {/* Sumber Pemasukan — rincian per sumber (tiket nexEvent DISTINCT dari lainnya) */}
+          <div className="rounded-xl border border-slate-200 bg-white p-5">
+            <p className="mb-4 text-sm font-semibold text-slate-900">Sumber Pemasukan</p>
+            <div className="grid gap-3 sm:grid-cols-3">
+              <div className="rounded-xl border border-emerald-100 bg-emerald-50/50 p-4">
+                <p className="text-xs font-medium text-emerald-800">Tiket &amp; Merchandise (nexEvent)</p>
+                <p className="mt-1 text-base font-bold text-emerald-800">{IDR.format(plData.income.nexeventSales.total)}</p>
+                <p className="mt-0.5 text-[11px] text-emerald-700/70">{plData.income.nexeventSales.orderCount} transaksi · net setelah fee platform</p>
+              </div>
+              <div className="rounded-xl border border-slate-200 bg-slate-50/60 p-4">
+                <p className="text-xs font-medium text-slate-600">Sponsor Deal</p>
+                <p className="mt-1 text-base font-bold text-slate-900">{IDR.format(plData.income.sponsor.total)}</p>
+                <p className="mt-0.5 text-[11px] text-slate-400">{plData.income.sponsor.items.length} deal (DP/Lunas)</p>
+              </div>
+              <div className="rounded-xl border border-slate-200 bg-slate-50/60 p-4">
+                <p className="text-xs font-medium text-slate-600">Pemasukan Lain</p>
+                <p className="mt-1 text-base font-bold text-slate-900">{IDR.format(plData.income.other.total)}</p>
+                {plData.income.other.byCategory.length > 0 && (
+                  <p className="mt-0.5 text-[11px] text-slate-400">
+                    {plData.income.other.byCategory.map((c) => c.label).join(" · ")}
+                  </p>
+                )}
+              </div>
+            </div>
+          </div>
+
           {/* Charts */}
           <div className="grid gap-4 lg:grid-cols-2">
             {/* Donut — expense breakdown */}
@@ -341,13 +386,34 @@ export default function PLReportPage() {
 
           {/* Other Income Form */}
           <div className="rounded-xl border border-slate-200 bg-white p-5">
-            <p className="mb-4 text-sm font-semibold text-slate-900">Pemasukan Lain</p>
+            <p className="mb-1 text-sm font-semibold text-slate-900">Pemasukan Lain</p>
+            <p className="mb-4 text-xs text-slate-500">Catat merchandise, donasi, atau tiket dari platform lain (mis. LOKET/Tix.id). Penjualan tiket via nexEvent sudah dihitung otomatis di atas.</p>
             <form onSubmit={handleAddOtherIncome} className="mb-4 flex flex-wrap gap-3">
+              <select
+                value={oiCategory}
+                onChange={(e) => setOiCategory(e.target.value)}
+                className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 focus:border-emerald-500 focus:outline-none focus:ring-1 focus:ring-emerald-500/30 sm:w-52"
+              >
+                {OI_CATEGORIES.map((c) => (
+                  <option key={c.value} value={c.value}>{c.label}</option>
+                ))}
+              </select>
+              {oiCategory === "tiket_platform_lain" && (
+                <select
+                  value={oiPlatform}
+                  onChange={(e) => setOiPlatform(e.target.value)}
+                  className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 focus:border-emerald-500 focus:outline-none focus:ring-1 focus:ring-emerald-500/30 sm:w-44"
+                >
+                  {EXTERNAL_PLATFORMS.map((p) => (
+                    <option key={p} value={p}>{p}</option>
+                  ))}
+                </select>
+              )}
               <input
                 type="text"
                 value={oiDescription}
                 onChange={(e) => setOiDescription(e.target.value)}
-                placeholder="Deskripsi (mis: Tiket VIP, Merchandise)"
+                placeholder="Deskripsi (mis: Kaos band, Donasi komunitas)"
                 className="min-w-[200px] flex-1 rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 placeholder:text-slate-400 focus:border-emerald-500 focus:outline-none focus:ring-1 focus:ring-emerald-500/30"
               />
               <input
@@ -373,7 +439,14 @@ export default function PLReportPage() {
                 {plData.income.other.items.map((item) => (
                   <li key={item.id} className="flex items-center justify-between py-2.5">
                     <div>
-                      <p className="text-sm font-medium text-slate-900">{item.description}</p>
+                      <div className="flex flex-wrap items-center gap-2">
+                        <p className="text-sm font-medium text-slate-900">{item.description}</p>
+                        <span className={`rounded-full px-2 py-0.5 text-[10px] font-semibold ${item.category === "tiket_platform_lain" ? "bg-sky-100 text-sky-700" : "bg-slate-100 text-slate-600"}`}>
+                          {item.category === "tiket_platform_lain" && item.platform
+                            ? `Tiket Platform Lain — ${item.platform}`
+                            : item.categoryLabel}
+                        </span>
+                      </div>
                       <p className="text-xs text-slate-400">{new Date(item.date).toLocaleDateString("id-ID")}</p>
                     </div>
                     <div className="flex items-center gap-3">

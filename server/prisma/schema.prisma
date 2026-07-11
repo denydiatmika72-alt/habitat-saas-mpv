@@ -620,6 +620,11 @@ model OtherIncome {
   userId      String   @map("user_id")
   description String
   amount      Float
+  // Kategori pemasukan lain (nullable — record lama diperlakukan sebagai "lainnya" di laporan).
+  // Nilai: "merchandise" | "donasi" | "tiket_platform_lain" | "lainnya"
+  category    String?
+  // Hanya diisi saat category = "tiket_platform_lain" (mis. "LOKET", "Tix.id"). Null selain itu.
+  platform    String?
   date        DateTime @default(now())
   createdAt   DateTime @default(now()) @map("created_at")
 

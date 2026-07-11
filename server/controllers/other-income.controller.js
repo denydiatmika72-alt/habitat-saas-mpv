@@ -17,10 +17,14 @@ const getOtherIncomes = async (req, res) => {
   }
 }
 
+// Kategori valid untuk Pemasukan Lain. "tiket_platform_lain" = penjualan tiket di platform
+// EKSTERNAL (LOKET/Tix.id/dll) yang diinput manual — BUKAN penjualan tiket nexEvent sendiri.
+const VALID_OI_CATEGORIES = ['merchandise', 'donasi', 'tiket_platform_lain', 'lainnya']
+
 const createOtherIncome = async (req, res) => {
   try {
     const userId = req.user.id
-    const { eventId, description, amount, date } = req.body
+    const { eventId, description, amount, date, category, platform } = req.body
 
     if (!eventId || !description || !amount) {
       return res.status(400).json({ success: false, message: 'eventId, description, dan amount diperlukan.' })
@@ -30,12 +34,25 @@ const createOtherIncome = async (req, res) => {
       return res.status(400).json({ success: false, message: 'Amount harus lebih dari 0.' })
     }
 
+    // Kategori opsional; default "lainnya" kalau tidak dikirim. Tolak nilai tak dikenal.
+    const cat = category ? String(category) : 'lainnya'
+    if (!VALID_OI_CATEGORIES.includes(cat)) {
+      return res.status(400).json({ success: false, message: 'Kategori pemasukan tidak valid.' })
+    }
+    // Platform HANYA relevan untuk tiket platform lain — abaikan (null) untuk kategori lain agar bersih.
+    const plat = cat === 'tiket_platform_lain' ? (platform ? String(platform) : null) : null
+    if (cat === 'tiket_platform_lain' && !plat) {
+      return res.status(400).json({ success: false, message: 'Platform wajib dipilih untuk kategori Tiket Platform Lain.' })
+    }
+
     const item = await prisma.otherIncome.create({
       data: {
         eventId,
         userId,
         description,
         amount: amt,
+        category: cat,
+        platform: plat,
         date: date ? new Date(date) : new Date(),
       },
     })

@@ -549,7 +549,7 @@ Keputusan final:
     Lihat section "Payout & Laporan Keuangan Roadmap" (potong hutang fee otomatis, laporan pencairan PDF,
     laporan pendapatan platform, data audiens). Item terakhir (#5 Data Audiens, commit 21a125a) sudah
     deployed & terverifikasi di production (smoke test 401-not-404 lolos, PM2 stabil, Vercel READY).
-14. Ticket Sales Manual Input (untuk promotor yang pakai platform lain)
+14. ✅ Ticket Sales Manual Input (untuk promotor yang pakai platform lain)
 15. Event Summary Report (kirim via email saat event selesai)
 16. CRON Job booking timeout (sudah ada — verifikasi)
 
