@@ -48,10 +48,22 @@ Semua route file import `{ verifyToken }`.
 ## Fitur Utama
 
 - **Events & RAB**: Buat event, kelola anggaran (RAB)
-- **Sponsor Management**: Generate invite code → sponsor daftar di portal → buat deal
+- **RAB Builder** (fitur inti tier Starter/gratis): Rencana Anggaran Biaya per event — kategori → item (qty × harga satuan), auto-hitung `totalEstimatedCost` + Dana Cadangan (default 20%). Backend `/api/budgets/*` + `budget.controller.js` (model `Budget`/`BudgetCategory`/`BudgetItem`). Halaman `/dashboard/rab/[id]`. **Export PDF = client-side browser print** (`window.print()` pada view `@media print`), BUKAN endpoint backend — lihat section "PDF Generation" + entry known-bugs 2026-07-12.
+- **Purchase Order (PO)**: Buat PO per event (item, qty, harga; total dihitung ulang server-side), status `draft/sent/paid`, export PDF via **pdfkit server-side**. Bisa **import item dari RAB** (`PurchaseOrderItem.sourceRabItemId` menautkan ke `BudgetItem`; ambil via `GET /api/events/:eventId/rab-items`). Backend `/api/po/*` + `purchaseOrder.controller.js` (model `PurchaseOrder`/`PurchaseOrderItem`).
+- **Sponsor Management**: Generate invite code → sponsor daftar di portal → buat deal. Config sponsor (benefits/packages/thresholds catalog) via `/api/sponsor/{benefits,packages,thresholds}`; harga paket diambil dari threshold tier bernama sama.
+- **Promoter Settings** (`/api/settings/promoter`): satu settings per EO (upsert by `userId`) — `companyName`/`logoUrl` + rekening bank (`bankName`/`bankAccount`/`accountHolder`). Rekening ini di-REUSE untuk "Transfer Ke" di Invoice PDF sponsor DAN rekening tujuan Payout (tidak ada field bank duplikat di `User`).
 - **Invoice**: Generate invoice PDF dari deal sponsor, update status (Belum Dibayar / DP Terbayar / Lunas)
 - **Document Table** (`/dashboard`): Tab "Invoice" menampilkan **semua invoice langsung** (bukan filter per event), karena deal historis punya `eventId = null`
 - **Plan/Tier System**: Field `plan` di tabel `users`. Values: `"starter"` (default) atau `"pro"`. Hook `useUser.ts` expose `{ user, loading, isPro }` untuk feature gating di frontend. `user_plan` disimpan di localStorage setelah login.
+
+## Arsitektur 2-Lapis Publish (Homepage Discovery vs Storefront) — SENGAJA, bukan duplikasi
+
+Event punya DUA mekanisme "publish" terpisah yang melayani dua lapis berbeda (dikonfirmasi founder — JANGAN gabungkan/hapus salah satu mengira redundan):
+
+1. **Lapis 1 — Homepage Discovery**: `Event.is_published` + `PATCH /api/events/:id/publish` + `GET /api/events/public` (+`/search`). Menggerakkan halaman publik `nexeventapp.tech` (`client/src/app/page.tsx`) — permukaan penemuan/landing tempat promotor/sponsor menemukan jalan ke login, dan pengunjung kasual browsing event mendatang TANPA akun. Data minimal (judul/lokasi/tanggal/kapasitas).
+2. **Lapis 2 — Ticket Storefront**: `Event.storefrontStatus` + halaman `/event/[slug]`. Storefront jual-tiket sesungguhnya per event (banner, tiket, merch, bundling, checkout), diatur flow approval admin.
+
+Alur: **homepage discovery → storefront event → checkout.** `is_published` dan `storefrontStatus` adalah dua field berbeda untuk dua tujuan berbeda. (Lihat entry known-bugs 2026-07-12 "Public Events Discovery API".)
 
 ## Alur: Invite Code → Deal → Invoice → Document Table
 
@@ -134,8 +146,9 @@ Lihat **`docs/known-bugs.md`** untuk daftar lengkap bug yang sudah pernah terjad
 
 ## PDF Generation
 
-- Library: `pdfkit` v0.19.1
-- Dipakai untuk: Invoice PDF dan PO (Purchase Order) PDF
+- Library: `pdfkit` v0.19.1 (SERVER-SIDE)
+- Dipakai `pdfkit` untuk: Invoice PDF, PO (Purchase Order) PDF, P&L Report PDF, Payout Statement PDF, Audience Report PDF, Event Summary PDF
+- **PENGECUALIAN — RAB PDF bukan pdfkit**: "Export/Cetak Proposal PDF" di halaman RAB (`/dashboard/rab/[id]`) dibuat **client-side** via `window.print()` pada view `@media print` (bukan endpoint backend). Tidak ada `/api/budgets/export-pdf` — jangan cari/bangun. User "Save as PDF" lewat dialog print browser.
 
 ## Database Connection (SSL)
 
@@ -223,7 +236,7 @@ Seluruh sistem ini SUDAH live — jangan bangun ulang. Yang sudah ada:
 ## Pricing & Subscription Model
 
 ### Tier Structure
-- **Starter** (Gratis): RAB Builder + Export RAB PDF only. 1 event aktif.
+- **Starter** (Gratis): RAB Builder + Export RAB PDF (via cetak browser `window.print()`, bukan endpoint backend) only. 1 event aktif.
 - **Pro Per-Event** (Rp 499.000): Semua fitur, 1 event, aktif 90 hari sejak bayar.
 - **Perpanjangan** (Rp 99.000): Tambah +30 hari per perpanjangan.
 - Growth Plan: DITUNDA — belum diluncurkan untuk MVP.

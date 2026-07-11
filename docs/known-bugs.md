@@ -1508,3 +1508,120 @@ File ini adalah log permanen bug yang sudah pernah terjadi di project ini besert
   5. Investigasi Tenant Booth Booking: grep `booth|tenant` seluruh repo → backend `server/` NOL match; hanya ada tab "Tenant" ber-label "Coming Soon" di `/dashboard/invoice` (placeholder murni) + spec di MASTER-PRD.md. Kesimpulan: TIDAK PERNAH dibangun. Ditambah catatan jujur di Next Priority (founder perlu putuskan revive/deprioritaskan).
 - Tidak disentuh (memang akurat/pending benar): Growth Plan DITUNDA; "penekan promotor nakal BELUM DIPUTUSKAN" (mekanisme enforcement fee-debt masih open, walau rekonsiliasi+auto-deduct sudah live).
 - Tag: #docs #claude-md #maintenance #sync #no-code-change #petty-cash #storefront #scanner #event-summary #tenant-booth #prd
+
+---
+
+## [2026-07-12] AUDIT RETROAKTIF — RAB / Budget System (fitur inti Starter, tanpa entry sejak awal)
+
+- Gejala/konteks: (Audit retroaktif — fitur ini dibangun SEBELUM known-bugs.md dipakai konsisten; entry ini ditulis saat audit menyeluruh kesenjangan dokumentasi, BUKAN saat implementasi asli. Tanggal implementasi asli perkiraan dari git log: `budget.controller.js` diperkenalkan 2026-06-21 commit `99aebb0` "Inisiasi MVP Habitat", terakhir disentuh 2026-06-25 `7743f31`.) RAB (Rencana Anggaran Biaya) Builder adalah SATU-SATUNYA fitur yang didapat tier Starter gratis (lihat Pricing di CLAUDE.md), tapi sampai audit ini tidak punya entry implementasi sama sekali — hanya disebut sambil lalu di entry Expense Tracker (dropdown kategori baca `budget_categories`).
+- Root cause: N/A (bukan bug — dokumentasi retroaktif fitur yang sudah live & bekerja).
+- File terkait:
+  - `server/controllers/budget.controller.js` — 8 handler + helper `recalculateBudget`
+  - `server/routes/budget.routes.js` — mount `/api/budgets` (route spesifik di atas wildcard `/:eventId`)
+  - `server/routes/event.routes.js` — `GET /:eventId/rab-items` (dilayani `budget.controller.getRabItemsByEvent`)
+  - `server/prisma/schema.prisma` — model `Budget`, `BudgetCategory`, `BudgetItem`
+  - `client/src/app/dashboard/rab/[id]/page.tsx` — halaman RAB Builder + area cetak
+- Fix/Implementasi (apa yang SUDAH ADA & bekerja):
+  - `POST /api/budgets/initialize` — buat record `Budget` untuk sebuah event bila belum ada; kalau sudah ada return **409** (`{ message: 'Budget sudah ada', data: existing }`) agar client tidak panik.
+  - `GET /api/budgets/:eventId` — return pohon RAB lengkap (`Budget → categories → items`); 404 kalau RAB belum dibuat.
+  - `POST /api/budgets/categories` (butuh `budgetId`+`name`), `PUT /api/budgets/categories/:categoryId` (rename), `DELETE /api/budgets/categories/:categoryId` — CRUD kategori. P2025 → 404.
+  - `POST /api/budgets/categories/:categoryId/items` (butuh `name`; `qty`/`hargaSatuan`/`estimatedCost` opsional) + `DELETE /api/budgets/items/:itemId` — CRUD item. Keduanya memanggil `recalculateBudget(budgetId)` yang menghitung ulang `totalEstimatedCost` (= Σ item.estimatedCost) dan `contingencyFundAmount` (= total × `contingencyFundPercentage`, default **20%**).
+  - `GET /api/events/:eventId/rab-items` — meratakan (flatten) semua item RAB event jadi list `{ id, name, qty, hargaSatuan, estimatedCost, categoryName }`. Dipakai fitur "Import dari RAB" saat buat Purchase Order (lihat entry PO). 404 kalau RAB belum ada.
+  - Semua route pakai `verifyToken`.
+- **PENTING — "Export RAB PDF" bekerja CLIENT-SIDE, bukan endpoint backend** (temuan Part A audit): TIDAK ada endpoint `/api/budgets/export-pdf` atau sejenis. Tombol "Cetak Proposal PDF" di `rab/[id]/page.tsx` memanggil `window.print()` pada view khusus cetak (`<div className="hidden print:block">` + CSS `@media print` A4 portrait). User "Save as PDF" lewat dialog print browser. View cetak berisi header event, Grand Total, tabel per-kategori (item + subtotal), Dana Cadangan (%), Grand Total, dan blok tanda tangan (Dibuat/Diperiksa/Disetujui). Jadi klaim CLAUDE.md "Export RAB PDF" BENAR secara hasil (user memang dapat PDF) tapi mekanismenya print-to-PDF browser — beda total dari Invoice/PO/laporan lain yang pakai pdfkit server-side. Jangan cari/ bangun endpoint RAB PDF; sudah ada solusinya di client.
+- Tag: #audit-retroaktif #rab #budget #starter-tier #prisma #schema #pdf-client-side #window-print
+
+---
+
+## [2026-07-12] AUDIT RETROAKTIF — Purchase Order (PO) System (tanpa entry sejak awal)
+
+- Gejala/konteks: (Audit retroaktif — dibangun sebelum known-bugs.md konsisten dipakai; entry ditulis saat audit, bukan saat implementasi. Tanggal asli perkiraan git log: `purchaseOrder.controller.js` + `purchaseOrder.routes.js` diperkenalkan 2026-06-25 commit `7743f31` "fix: add pdfkit dependency and pending changes".) Sistem PO sepenuhnya tidak terdokumentasi di known-bugs.md (0 match untuk `po`/`purchase`/`PurchaseOrder`); CLAUDE.md cuma menyebut "PO PDF" sekali di section PDF Generation tanpa detail fitur.
+- Root cause: N/A (bukan bug — dokumentasi retroaktif fitur yang sudah live).
+- File terkait:
+  - `server/controllers/purchaseOrder.controller.js` — 8 handler + `buildPOPdf` (pdfkit)
+  - `server/routes/purchaseOrder.routes.js` — mount `/api/po`
+  - `server/prisma/schema.prisma` — model `PurchaseOrder`, `PurchaseOrderItem`
+- Fix/Implementasi (apa yang SUDAH ADA & bekerja):
+  - `POST /api/po` — createPO: wajib `eventId`+`title`+minimal 1 item; validasi tiap item (`name` non-kosong, `qty`>0, `unitPrice`>0). **Total dihitung ulang di backend** (`totalPrice = qty × unitPrice`, `totalAmount = Σ`) — TIDAK percaya angka dari client. Buat PO + nested items dalam satu `create`.
+  - `GET /api/po?eventId=xxx` — getPOsByEvent: filter by `eventId`; tanpa `eventId` → semua PO milik user (`event.promotor_id = req.user.id`). Include items + event `{id,title}`.
+  - `GET /api/po/:id` — getPOById (include items). 404 kalau tidak ada.
+  - `PUT /api/po/:id` — updatePO: bisa ubah `title`/`notes`/`status`; status divalidasi whitelist `['draft','sent','paid']`. P2025 → 404.
+  - `DELETE /api/po/:id` — deletePO. P2025 → 404.
+  - `POST /api/po/:id/items` — addPOItem: tambah 1 item, lalu **recalculate `totalAmount`** dari semua item.
+  - `DELETE /api/po/:id/items/:itemId` — deletePOItem: hapus item, lalu recalculate `totalAmount`.
+  - `GET /api/po/:id/pdf` — generatePurchaseOrderPdf: **pakai pdfkit SERVER-SIDE** (beda dari RAB yang client-side print). Pola aman: tulis PDF ke file temp di `public/purchase-orders/` dulu, baru `createReadStream().pipe(res)`, lalu `fs.unlink` setelah selesai (hindari pipe langsung ke res). Layout A4: header + nomor `PO-{id8}` + info dokumen + tabel item + TOTAL + blok tanda tangan (Dibuat/Disetujui) + footer.
+  - Semua route pakai `verifyToken`.
+- **Integrasi dengan RAB**: `PurchaseOrderItem.sourceRabItemId` (nullable) menautkan item PO ke `BudgetItem` asalnya — mendukung fitur "Import dari RAB" (client ambil item via `GET /api/events/:eventId/rab-items`, lihat entry RAB, lalu kirim `sourceRabItemId` saat createPO/addPOItem).
+- Tag: #audit-retroaktif #purchase-order #po #pdfkit #pdf-server-side #rab-import #prisma #schema
+
+---
+
+## [2026-07-12] AUDIT RETROAKTIF — Public Events Discovery API + arsitektur 2-lapis publish (homepage vs storefront)
+
+- Gejala/konteks: (Audit retroaktif — dibangun sebelum known-bugs.md konsisten; entry ditulis saat audit. Tanggal asli perkiraan git log: `publicEvents.controller.js` + homepage + toggle publish diperkenalkan 2026-06-26 commit `7d5a5c1` "feat: nexEvent homepage, public events API, publish toggle"; base event CRUD 2026-06-21 `99aebb0`.) API event publik tidak terdokumentasi di known-bugs.md (0 match) dan silent total di CLAUDE.md. Audit Phase 1 sempat menandai `is_published` vs `storefrontStatus` sebagai kemungkinan "sistem paralel/legacy yang perlu dibereskan" — **founder mengonfirmasi KEDUANYA SENGAJA, bukan duplikasi.**
+- Root cause: N/A (bukan bug — dokumentasi retroaktif + klarifikasi arsitektur yang dikonfirmasi founder).
+- **ARSITEKTUR 2-LAPIS PUBLISH (KONFIRMASI FOUNDER — WAJIB DIPAHAMI, JANGAN DIANGGAP REDUNDAN):**
+  - **Lapis 1 — Homepage Discovery** (`Event.is_published` + `PATCH /api/events/:id/publish` + `GET /api/events/public` + `/search`): halaman publik `nexeventapp.tech` (`client/src/app/page.tsx`). Permukaan penemuan/landing — tempat promotor/sponsor menemukan jalan ke login, DAN tempat pengunjung kasual browsing event mendatang TANPA akun sebelum memutuskan beli tiket. Data minimal (id/title/location/date/capacity; `ticket_types` sengaja `[]`).
+  - **Lapis 2 — Ticket Storefront** (`Event.storefrontStatus` + halaman `/event/[slug]`): storefront jual-tiket sesungguhnya, per-event, jauh lebih detail (banner, tiket, merch, bundling, checkout). Diatur flow approval admin (draft → pending → approved).
+  - Alurnya: **homepage discovery → storefront event individual → checkout.** Dua field publish melayani dua lapis berbeda dengan sengaja. JANGAN gabungkan/hapus salah satu mengira redundan.
+- File terkait:
+  - `server/controllers/publicEvents.controller.js` — `getPublishedEvents`, `searchPublishedEvents`
+  - `server/routes/publicEvents.routes.js` — mount `/api/events/public` (PUBLIC, tanpa auth)
+  - `server/controllers/event.controller.js` — `createEvent`, `getEvents`, `getEventById`, `deleteEvent`, `togglePublish`
+  - `server/routes/event.routes.js` — mount `/api/events` (verifyToken)
+  - `client/src/app/page.tsx` — homepage yang memanggil kedua endpoint public
+- Fix/Implementasi (apa yang SUDAH ADA & bekerja):
+  - `GET /api/events/public` (PUBLIC) — list event `is_published:true`, urut `event_date asc`, field terpilih + `ticket_types:[]`.
+  - `GET /api/events/public/search?q=&city=&date=` (PUBLIC) — filter judul (`contains`, insensitive), kota (`location contains`), tanggal (range 1 hari).
+  - `POST /api/events` (verifyToken) — createEvent: validasi semua field wajib, auto-generate `slug` dari title via `slugify` locale `id` (fallback `${slug}-${Date.now()}` kalau duplikat).
+  - `GET /api/events` (verifyToken) — getEvents: hanya event milik `req.user.id`, urut `createdAt desc`.
+  - `GET /api/events/:id` (verifyToken) — getEventById: ownership-scoped (`id` + `promotor_id`); 404 kalau bukan milik user.
+  - `DELETE /api/events/:id` (verifyToken) — deleteEvent: ownership-scoped, 404 kalau bukan milik user.
+  - `PATCH /api/events/:id/publish` (verifyToken) — togglePublish: set `is_published` (Boolean dari body), ownership-scoped. Ini toggle Lapis 1 (homepage) — BUKAN storefront approval.
+- Tag: #audit-retroaktif #public-events #homepage #is-published #storefront #two-layer-publish #event-crud #arsitektur
+
+---
+
+## [2026-07-12] AUDIT RETROAKTIF — Sponsor Config CRUD (benefits/packages/thresholds/invite-code) tanpa entry implementasi
+
+- Gejala/konteks: (Audit retroaktif — dibangun sebelum known-bugs.md konsisten; entry ditulis saat audit. Tanggal asli perkiraan git log: `sponsor.controller.js` diperkenalkan 2026-06-22 commit `62b4912` "feat: add full sponsor & partner management feature".) Sistem sponsor punya BANYAK entry bug-fix (login, kredensial email, deliverables auto-generate, dropdown status invoice) TAPI tidak ada entry implementasi untuk config CRUD fondasinya — known-bugs.md line ~584 sendiri menyebut sistem ini "sudah ada sejak awal". Endpoint benefits/packages/thresholds tidak pernah didokumentasikan.
+- Root cause: N/A (bukan bug — dokumentasi retroaktif fitur yang sudah live; melengkapi entry bug-fix sponsor yang sudah ada, bukan menggantinya).
+- File terkait:
+  - `server/controllers/sponsor.controller.js` — endpoint config (di luar deal/deliverable/account yang sudah punya entry bug-fix)
+  - `server/routes/sponsor.routes.js` — mount `/api/sponsor`
+  - `server/prisma/schema.prisma` — model `SponsorBenefit`, `SponsorPackage`, `SponsorPackageBenefit`, `SponsorThreshold`, `InviteCode`
+- Fix/Implementasi (apa yang SUDAH ADA & bekerja):
+  - **Invite codes** (model `InviteCode`): `POST /api/sponsor/codes` (verifyToken) — generateCode: coba maks 5x cari kode unik, simpan dgn `createdBy`+`eventId?`+`isActive:true`. `POST /api/sponsor/codes/validate` (PUBLIC) — validateInviteCode: cari kode `isActive:true`, lalu **langsung set `isActive:false`+`usedAt`** (sekali pakai) dan return `eventId` supaya deal sponsor terikat ke event yang benar.
+  - **Benefits** (model `SponsorBenefit`): `GET /api/sponsor/benefits` (PUBLIC — portal baca) urut `createdAt asc`. `POST /api/sponsor/benefits` (verifyToken) — wajib `name`+`category`+`price`; `maxQty` default 1. `DELETE /api/sponsor/benefits/:id` (verifyToken). Field `maxQty`/`usedQty`/`heldQty` mendukung kuota benefit.
+  - **Packages** (model `SponsorPackage` + join `SponsorPackageBenefit`): `GET /api/sponsor/packages` (PUBLIC) include benefits. `POST /api/sponsor/packages` (verifyToken) — createPackage: validasi tiap benefit qty ≤ `maxQty` benefit tsb (400 kalau lewat); **harga paket diambil dari `SponsorThreshold` tier bernama sama** (`tierName === package.name`), fallback ke `price` body kalau tak ada threshold. `DELETE /api/sponsor/packages/:id` (verifyToken).
+  - **Thresholds** (model `SponsorThreshold`): `GET /api/sponsor/thresholds` (PUBLIC) urut `minPrice asc`. `POST /api/sponsor/thresholds` (verifyToken) — saveThresholds: terima array `[{tierName, minPrice}]`, **upsert per `tierName`** (unique). Mendefinisikan harga minimum tiap tier sponsor → dipakai createPackage untuk harga & (di tempat lain) klasifikasi tier deal.
+  - Catatan: endpoint sponsor LAIN (`getDeals`, `createDeal`, `updateDealStatus`, `createAccount`, `verifyAccount`, `resendCredential`, `getDeliverables`, `createDeliverable`, `updateDeliverable`) sudah tercakup entry bug-fix sponsor 2026-06-30 s/d 2026-07-01 — TIDAK diulang di sini.
+- Tag: #audit-retroaktif #sponsor #invite-code #benefits #packages #thresholds #prisma #schema
+
+---
+
+## [2026-07-12] AUDIT RETROAKTIF — PromoterSettings (GET/POST /api/settings/promoter)
+
+- Gejala/konteks: (Audit retroaktif — dibangun sebelum known-bugs.md konsisten; entry ditulis saat audit. Tanggal asli perkiraan git log: `settings.controller.js` diperkenalkan 2026-06-23 commit `e0b8b23` "feat: add invoice & settings endpoints + fix proxy error handling".) Model `PromoterSettings` & endpointnya hanya disebut sebagai "reuse" di entry Payout (rekening bank promotor), tidak pernah punya entry standalone.
+- Root cause: N/A (bukan bug — dokumentasi retroaktif fitur yang sudah live).
+- File terkait:
+  - `server/controllers/settings.controller.js` — `getPromoterSettings`, `savePromoterSettings`
+  - `server/routes/settings.routes.js` — mount `/api/settings`
+  - `server/prisma/schema.prisma` — model `PromoterSettings` (unique `userId`)
+- Fix/Implementasi (apa yang SUDAH ADA & bekerja):
+  - `GET /api/settings/promoter` (verifyToken) — return settings milik `req.user.id` (satu EO = satu settings), atau `null` kalau belum ada.
+  - `POST /api/settings/promoter` (verifyToken) — **upsert by `userId`**: field `companyName`, `logoUrl`, `bankName`, `bankAccount`, `accountHolder`.
+  - **REUSE lintas fitur**: `bankName`/`bankAccount`/`accountHolder` dipakai sebagai "TRANSFER KE" di Invoice PDF sponsor DAN sebagai rekening tujuan Payout/Pencairan Dana — TIDAK ada field bank duplikat di model `User`. `logoUrl`/`companyName` dipakai di header dokumen (invoice/PO).
+- Tag: #audit-retroaktif #promoter-settings #settings #upsert #reuse #prisma #schema
+
+---
+
+## [2026-07-12] AUDIT RETROAKTIF — Dead code: 2 file event MVP yang ter-supersede (kandidat hapus, JANGAN dihapus sekarang)
+
+- Gejala/konteks: (Audit retroaktif — temuan dead code saat audit menyeluruh, BUKAN bug aktif.) Dua file relik dari scaffold awal "Inisiasi MVP Habitat" (2026-06-21 `99aebb0`, tidak pernah disentuh lagi) sudah di-supersede oleh versi di `server/controllers/` + `server/routes/` tapi masih ada di repo.
+- Root cause: Migrasi struktur awal dari `server/src/{routes,controllers}/` ke `server/{routes,controllers}/` menyisakan file lama yang tidak ikut dibersihkan.
+- File terkait (DEAD — tidak di-mount di `server/src/index.js`):
+  - `server/src/routes/events.js` — TIDAK di-import di `index.js` (yang di-mount adalah `../routes/event.routes`). Grep seluruh `server/` mengonfirmasi tidak ada yang `require` file ini. **Selain itu `require('../middleware/auth')` menunjuk file yang TIDAK ADA** (yang ada hanya `../middleware/auth.middleware.js`) → file ini akan **throw saat load** jika ada yang meng-import-nya. Satu-satunya referrer-nya adalah dirinya sendiri terhadap controller mati di bawah.
+  - `server/src/controllers/event.controller.js` — duplikat basi, hanya berisi `createEvent` (versi lebih tipis dari `server/controllers/event.controller.js` yang live). Satu-satunya yang me-require-nya adalah `server/src/routes/events.js` yang mati itu.
+- Fix/Status: **TIDAK dihapus di audit ini — sengaja.** Ini kandidat penghapusan untuk cleanup mendatang; keputusan hapus diserahkan ke founder (task audit ini read-only untuk kode, hanya menulis dokumentasi). Yang MASIH HIDUP di folder `server/src/controllers/` yang sama: `auth.controller.js` dan `admin.controller.js` (dipakai oleh `src/routes/auth.routes.js` & `src/routes/admin.routes.js` yang di-mount) — JANGAN sentuh dua ini. Yang mati HANYA pasangan `events.js` + `src/controllers/event.controller.js`.
+- Tag: #audit-retroaktif #dead-code #cleanup-candidate #event #tidak-dihapus
