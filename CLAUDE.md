@@ -212,11 +212,13 @@ petty_cash_transactions
   2. Catat pengembalian sisa (type: `"return"`)
 - Top-up (type: `"topup"`) HANYA bisa dilakukan oleh Promotor dari dashboard
 
-### Yang BELUM dibangun (jangan implementasi dulu tanpa instruksi)
-- Tabel `petty_cash_accounts` dan `petty_cash_transactions`
-- UI mobile untuk Field Crew
-- Sistem invite crew ke event
-- Integrasi petty cash ke P&L Report
+### Status: ✅ SUDAH DIBANGUN & DEPLOYED (Field Crew + Petty Cash, per 2026-07-01)
+Seluruh sistem ini SUDAH live — jangan bangun ulang. Yang sudah ada:
+- **Tabel**: `EventCrew`, `PettyCashAccount`, `PettyCashTransaction` (+ field `role` di `User`: `"promotor" | "crew" | "scanner"`).
+- **Invite crew**: `POST /api/crew/invite` (promotor, Pro-gated) → buat EventCrew + PettyCashAccount. Kelola di `/dashboard/crew`.
+- **UI mobile Field Crew**: `/field` (halaman standalone, di luar layout `/dashboard`, light theme) — crew catat `expense`/`return`; `topup` hanya promotor via dashboard.
+- **Integrasi P&L Report**: SUDAH terintegrasi. Aturan KRITIS (tetap berlaku): P&L hanya menghitung `type:"expense"` — `topup` & `return` BUKAN biaya (mutasi internal). Saldo crew = topup − expense − return.
+- Endpoint utama: `/api/crew/*` (invite/list/remove/my-events) & `/api/petty-cash/*` (topup/transaction/my-account/overview).
 
 ## Pricing & Subscription Model
 
@@ -279,76 +281,35 @@ Data platform disimpan di DB untuk analytics internal.
 - E-ticket: QR code dikirim via email (Resend) + tombol bagikan ke WhatsApp
 - Approval flow: Draft → Pending Approval → Admin Approve/Reject → Live
 
-### Pending — Harus Dikerjakan Sebelum Customer Pertama
+### Status Fitur Storefront — ✅ SEMUA 5 ITEM DI BAWAH SUDAH DIIMPLEMENTASI & DEPLOYED
+> Bagian ini dulu berjudul "Pending". Kelima item SUDAH live per 2026-07-02 s/d 2026-07-06 — JANGAN bangun ulang.
+> Deskripsi di bawah adalah PERILAKU FINAL (beberapa berubah dari rencana awal saat implementasi).
 
-#### 1. Fee Platform — KEPUTUSAN FINAL (Belum Diimplementasi)
+#### 1. Fee Platform — ✅ IMPLEMENTED (2026-07-02, direvisi 2026-07-05)
+- **PERUBAHAN PENTING dari rencana awal**: fee BUKAN lagi satu angka. Sekarang **3 persentase terpisah** di Event:
+  `ticketFeePercent`, `merchFeePercent`, `bundlingFeePercent` (Float?). `platformFeePercent` DIPERTAHANKAN sebagai
+  fallback legacy untuk event lama. Fallback chain di `createOrder`: fee spesifik per orderType → `platformFeePercent` → `DEFAULT_FEE_PERCENT` (3.5).
+- Diset Admin per event saat approval storefront (validasi 1.0–5.0 per fee) + bisa diedit terpisah setelah live via
+  Admin Panel "Kelola Fee Event" (`PATCH /api/admin/events/:eventId/fees`).
+- **Siapa menanggung** (`Event.feeBearer`, wajib diisi promotor sebelum bisa ajukan approval): `"audience"` (fee ditambah ke harga, tampil transparan) atau `"promotor"` (pembeli bayar bersih, promotor terima dikurangi fee).
+- Setiap `TicketOrder` mencatat `feeAmount` + `feeBearer` terpisah. Fee nexEvent TIDAK dicampur revenue promotor. P&L & payout promotor tampilkan pendapatan NET setelah fee.
+- **Business rule pitching (masih berlaku)**: mulai 3.5% → turun ke 2% untuk volume besar → 1.5% kartu truf khusus. Promotor TIDAK bisa ubah fee, hanya pilih penanggung.
 
-**Struktur Fee:**
-- Default/Standar: 3.5% per transaksi tiket
-- Negosiasi promotor besar: 2%
-- Minimum absolut (case khusus early adopter/volume sangat besar): 1.5%
-- Diatur oleh Admin nexEvent per promotor di Admin Panel
-- Promotor TIDAK bisa ubah besaran fee — hanya bisa pilih siapa yang menanggung
+#### 2. Pajak 10% (Opsional per Event) — ✅ IMPLEMENTED (2026-07-02)
+- `Event.taxEnabled Boolean @default(false)`. Kalau aktif → ditanggung pembeli.
+- **KOREKSI penting (2026-07-05)**: pajak dihitung HANYA dari **subtotal tiket** (`taxAmount = round(ticketSubtotal * 0.1)`), merchandise TIDAK pernah kena pajak. Label di checkout: "Pajak Tiket (10%)". Baris pajak hanya muncul kalau ada tiket di keranjang.
 
-**Siapa yang Menanggung Fee:**
-- Promotor WAJIB memilih sebelum storefront bisa diajukan ke admin untuk approval
-- Tidak ada default — pilihan harus eksplisit
-- Pilihan A: Fee ditanggung PENONTON → harga tiket + fee ditampilkan transparan di storefront
-  Contoh: tiket Rp 50.000 + fee Rp 1.750 = total Rp 51.750
-- Pilihan B: Fee ditanggung PROMOTOR → pembeli bayar harga bersih, promotor terima hasil dikurangi fee
-  Contoh: tiket Rp 50.000, promotor terima Rp 48.250
+#### 3. Toggle Aktif/Nonaktif — ✅ IMPLEMENTED
+- Toggle switch aktif/nonaktif (hijau/abu-abu) untuk item storefront (jenis tiket via `TicketType.isActive`, produk merch, paket bundling) di `/dashboard/tickets`.
 
-**Alur Wajib Sebelum Storefront Live:**
-1. Promotor buat event + jenis tiket
-2. Promotor WAJIB pilih: siapa yang bayar fee (tidak bisa skip)
-3. Baru bisa klik "Ajukan Persetujuan ke Admin"
-4. Admin review + set fee % untuk promotor ini + approve
-5. Storefront live
+#### 4. UI Storefront Publik + Banner/Logo — ✅ IMPLEMENTED (2026-07-02/03)
+- `Event.bannerUrl` + `Event.logoUrl` (upload via Supabase Storage bucket `event-assets`, endpoint `/api/upload/event-banner` & `/api/upload/event-logo`).
+- `/event/[slug]` sudah redesign penuh: banner hero full-width (fallback gradient), logo overlap banner, layout 2 kolom (desktop)/1 kolom (mobile), section "Tentang Event"/"Fasilitas"/"S&K", ticket card dengan progress bar & quantity selector.
 
-**Aturan Bisnis:**
-- Agent nexEvent saat pitching: mulai dari 3.5%, turun ke 2% untuk volume besar, 1.5% hanya untuk case sangat khusus
-- Fee 1.5% adalah kartu truf — jangan jadikan harga normal
-- Setiap transaksi tiket WAJIB catat: harga tiket, fee amount, fee bearer (penonton/promotor) terpisah di database
-- Fee nexEvent TIDAK boleh dicampur dengan revenue promotor di laporan keuangan
-- P&L Report promotor: pendapatan tiket ditampilkan SETELAH dipotong fee platform (jika fee ditanggung promotor)
-
-**Fields yang perlu ditambah ke database (belum diimplementasi):**
-- Event model: feeBearer String? — "audience" atau "promotor" (wajib diisi sebelum approval)
-- Event model: platformFeePercent Float? — fee % khusus untuk event ini (diset admin saat approve)
-- TicketOrder model: feeAmount Int — nominal fee yang dikumpulkan nexEvent per transaksi
-- TicketOrder model: feeBearer String — siapa yang menanggung fee di transaksi ini
-
-**Catatan Implementasi:**
-- Fee platform BELUM aktif — semua transaksi saat ini tidak kena fee
-- Jangan implementasi fee sampai seluruh flow di atas siap (pilihan promotor + admin set fee % + kalkulasi di checkout)
-- Storefront yang sudah approved perlu direview ulang setelah fee diaktifkan
-
-#### 2. Pajak 10% (Opsional per Event)
-- Promotor bisa aktifkan opsi pajak 10% per event
-- Jika diaktifkan: pajak ditanggung pembeli (ditambahkan ke total)
-- Tampil transparan di halaman storefront: "Harga sudah termasuk pajak 10%"
-- Butuh field baru di Event: taxEnabled Boolean @default(false)
-- Kalkulasi: totalAmount = subtotal + (subtotal * 0.1) if taxEnabled
-
-#### 3. Toggle Aktif/Nonaktif Jenis Tiket
-- Tombol teks "Aktifkan/Nonaktifkan" diganti dengan Toggle switch
-- Status aktif = hijau, nonaktif = abu-abu
-- Lebih intuitif untuk promotor yang kelola banyak jenis tiket
-
-#### 4. UI Storefront Publik (WAJIB DIPERBAIKI)
-- Halaman /event/[slug] terlalu polos — ini wajah utama nexEvent ke audience
-- Promotor WAJIB bisa upload: banner event (hero image) + logo event
-- Banner tampil sebagai hero section di atas halaman storefront
-- Logo tampil di header/card event
-- Butuh field baru di Event: bannerUrl String?, logoUrl String?
-- Upload via Supabase Storage (sudah ada di stack)
-- Desain ulang: tambah warna, tipografi lebih bold, card tiket lebih menarik
-
-#### 5. Merchandise + Bundling (SPRINT TERPISAH — Jangan gabung sekarang)
-- Storefront akan support penjualan merchandise + tiket dalam satu checkout
-- Bisa buat bundling: "Tiket Regular + T-Shirt = Rp 150.000"
-- Ini fitur besar — butuh schema baru (MerchItem, Bundle) dan UI terpisah
-- JANGAN dikerjakan sampai storefront dasar sudah stabil
+#### 5. Merchandise + Bundling — ✅ IMPLEMENTED (2026-07-05/06)
+- Merch: model `MerchItem`/`MerchVariant` (size+stok)/`MerchOrderItem`; produk baru wajib approve admin (`approvalStatus`) sebelum tampil di storefront.
+- Bundling Paket Kurasi (Storefront Roadmap #1): `BundlePackage` harga total, isi fleksibel tiket+merch, stok mengambil dari stok tiket & merch existing.
+- **PENTING**: `TicketOrder.orderType` punya 4 nilai — `"ticket"`, `"merch"`, `"bundling"` (paket kurasi), `"mixed"` (tiket+merch biasa, fee dihitung TERPISAH per tipe — BUKAN otomatis bundling).
 
 ### Aturan Baru untuk Storefront
 - Setiap transaksi tiket WAJIB mencatat: harga tiket, fee platform, pajak (jika ada)
@@ -358,11 +319,11 @@ Data platform disimpan di DB untuk analytics internal.
 - Agent nexEvent WAJIB jelaskan fee kepada promotor saat pitching dengan contoh angka nyata sebelum event dibuat
 - Promotor yang tidak memahami struktur fee tidak boleh disetujui storefrontnya
 
-### Fields yang Perlu Ditambah ke Event Model (Belum Diimplementasi)
-- taxEnabled: Boolean @default(false) — opsi pajak 10%
-- bannerUrl: String? — banner/hero image storefront
-- logoUrl: String? — logo event di storefront
-- platformFeePercent: Float? — fee platform khusus untuk event ini (override default)
+### Fields Event Model untuk Storefront — ✅ SUDAH ADA DI SCHEMA (bukan lagi rencana)
+- `taxEnabled: Boolean @default(false)` — opsi pajak 10% (hanya subtotal tiket)
+- `bannerUrl: String?` / `logoUrl: String?` — banner & logo storefront (Supabase Storage)
+- `feeBearer: String?` — "audience" | "promotor" (wajib diisi sebelum approval)
+- `platformFeePercent: Float?` (legacy fallback) + `ticketFeePercent` / `merchFeePercent` / `bundlingFeePercent: Float?` — fee per tipe order (diset admin)
 
 ## Storefront Feature Roadmap (Urutan Pengerjaan)
 
@@ -427,16 +388,12 @@ Keputusan final:
 - Mekanisme penekan promotor nakal: BELUM DIPUTUSKAN
   (opsi: blokir buka event baru sampai lunas, ATAU deposit di muka)
 
-### 5. Scanner Tiket (Validasi di Venue) — DETAIL BELUM DIBAHAS
-Validasi QR tiket saat penukaran/masuk venue.
-
-Status: dicatat sebagai roadmap, detail dibahas nanti saat gilirannya.
-Fondasi SUDAH ADA:
-- Setiap Ticket punya ticketCode unik
-- Setiap Ticket punya field isUsed (Boolean) + usedAt
-Yang BELUM diputuskan:
-- Akses scanner: link bebas (siapapun panitia bisa scan) VS akun petugas khusus
-- Idealnya web-based (buka kamera HP → scan → validasi real-time, tanpa install app)
+### 5. Scanner Tiket (Validasi di Venue) — ✅ SELESAI & DEPLOYED (2026-07-08, commit `16fcbb2`)
+Validasi QR tiket saat penukaran/masuk venue. Keputusan yang dulu "belum diputuskan" SUDAH final:
+- **Akses: akun petugas khusus (login WAJIB)** — bukan link bebas. Role baru `"scanner"` di `User`; promotor undang scanner ke event via UI di halaman Field Crew (Pro-gated). Scanner hanya bisa validasi event yang di-assign.
+- **Web-based** (sesuai aturan "semua fitur web-based only" — lihat Mobile App Migration): halaman `/scanner` standalone (light theme), kamera + decode via `html5-qrcode`, overlay hijau (valid) / merah (ditolak: alasan + waktu pakai).
+- Model `EventScanner` (mirror EventCrew, `@@unique([eventId,userId])`). `validateTicket` mark used atomik (`updateMany where isUsed:false`) → cegah double-accept. Endpoint `/api/scanner/*` (invite/my-events/validate/event-scanners/remove).
+- Fondasi tetap: `Ticket.ticketCode` unik + `isUsed`/`usedAt`.
 
 ## Payout & Laporan Keuangan Roadmap (Urutan Pengerjaan)
 
@@ -550,14 +507,26 @@ Keputusan final:
 10. ✅ Payout / Pencairan Dana (manual-transfer, commit 4df3f1c — deployed + verified production)
 11. 🔴 URGENT: Midtrans Production (menunggu approval KYC — sistem masih Sandbox)
 12. Storefront advanced features → lihat section "Storefront Feature Roadmap"
-    (Bundling paket kurasi, edit/pindah stok, box office offline, hutang fee, scanner tiket)
+    (SUDAH SELESAI: bundling paket kurasi ✅, Ticket Box offline ✅, hutang fee/rekonsiliasi ✅, scanner tiket ✅.
+    MASIH PENDING: hanya #2 "Edit Stok + Pindah Stok Antar Jenis Tiket")
 13. ✅ Payout & Laporan Keuangan lanjutan → SELESAI SEMUA (#1–#5), DEPLOYED KE PRODUCTION 2026-07-10.
     Lihat section "Payout & Laporan Keuangan Roadmap" (potong hutang fee otomatis, laporan pencairan PDF,
     laporan pendapatan platform, data audiens). Item terakhir (#5 Data Audiens, commit 21a125a) sudah
     deployed & terverifikasi di production (smoke test 401-not-404 lolos, PM2 stabil, Vercel READY).
 14. ✅ Ticket Sales Manual Input (untuk promotor yang pakai platform lain)
-15. Event Summary Report (kirim via email saat event selesai)
+15. 🟡 Event Summary Report (kirim via email saat event selesai) — CODE-COMPLETE & terverifikasi lokal,
+    PENDING DEPLOY ke production (commit `16c9d75`). Laporan akhir 1 event (9 seksi: keuangan, sponsor+status
+    bayar, pengeluaran promotor+crew, deliverables, penjualan tiket per-kategori + per-channel, data audiens,
+    hutang fee, ringkasan petty cash, status pencairan) → PDF lampiran email saat "Tandai Event Selesai".
+    Pro-only. Endpoint `POST /api/events/:eventId/finish` + `GET /api/events/:eventId/summary-pdf`; UI di
+    `/dashboard/event-summary`. Schema `Event.finishedAt` SUDAH di-push ke Supabase (additive nullable).
 16. CRON Job booking timeout (sudah ada — verifikasi)
+
+**Belum pernah dibangun (dari PRD awal, TIDAK ada status terlacak — founder perlu putuskan):**
+- **Tenant/Lapak Booth Booking (B2B)** — di PRD asli (Sprint 2: "peta booth interaktif + kurasi promotor +
+  self-registration + auto-invoice tenant"). Saat ini HANYA ada tab "Tenant" placeholder ber-label
+  "Coming Soon" di halaman Invoice (`/dashboard/invoice`); TIDAK ada model, controller, atau logic apa pun di
+  backend. Founder perlu memutuskan: revive, deprioritaskan resmi, atau konfirmasi tidak lagi dibutuhkan.
 
 _Update bagian ini setiap prioritas berubah, supaya Claude Code dan Claude.ai selalu tahu fokus development saat ini._
 

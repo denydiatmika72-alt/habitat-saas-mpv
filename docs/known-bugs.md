@@ -1494,3 +1494,17 @@ File ini adalah log permanen bug yang sudah pernah terjadi di project ini besert
 - Verifikasi: `node --check` 7 file backend lolos; `npx tsc --noEmit` client EXIT 0. Uji terhadap event nyata "Malekolo" (data lintas seksi): cross-check A `channelTotal.net===pl.nexeventSalesTotal`, B `indep SUM(total-fee)===payout.eventNetRevenue===channelTotal.net`, C parity refactor P&L (service===inline lama), D `pettySaldo=topup-expense-return` → SEMUA PASS. PDF sig `%PDF-`, 2 halaman, pagination benar, angka akurat, seksi 6 `excluded:2` cocok dgn order NIK-dummy test. `finishEvent` handler: guard 404 non-owner PASS, owner→200+finishedAt persist PASS, email `{error}` invalid-key→`emailSent:false` + pesan fallback PASS, state finishedAt DIKEMBALIKAN ke null (tidak mengubah data produksi). Tidak ada email nyata terkirim (dummy key ditolak Resend). Deploy pending instruksi Mandor.
 - Catatan: seksi 5 "per kategori" pakai `TicketOrderItem` (tiket langsung); revenue bundling tercermin di total per-channel (net), tidak dobel. Seksi 6 di report ini = ringkasan demografi (bukan tabel mentah penuh — itu tetap di laporan "Data Audiens" terpisah).
 - Tag: #event-summary #pdfkit #pdf-safe-pattern #pl-report #payout #fee-debt #audience-report #petty-cash #reuse #prisma #schema #email #resend #pro-gating
+
+---
+
+## [2026-07-11] Sinkronisasi CLAUDE.md dengan status nyata (docs-only, no code change)
+
+- Gejala/konteks: (Bukan bug — maintenance dokumentasi.) CLAUDE.md drift jauh dari kenyataan: beberapa fitur ditandai "belum dibangun/pending/belum diimplementasi" padahal SUDAH live berminggu-minggu. Risiko: sesi mendatang (human/AI) baca CLAUDE.md, kira fitur belum ada, bangun ulang → konflik dgn kode live.
+- Perubahan (semua di CLAUDE.md, traceable ke entry known-bugs.md):
+  1. "Petty Cash — Yang BELUM dibangun" → diganti "SUDAH DIBANGUN & DEPLOYED" (tabel EventCrew/PettyCash*, invite `/api/crew`, UI `/field`, integrasi P&L `type:"expense"` only). Sumber: [2026-07-01] Field Crew + Petty Cash.
+  2. "Storefront Pending Features" (5 item) → semua ditandai IMPLEMENTED + perilaku FINAL: fee kini 3 persen terpisah (ticket/merch/bundling), pajak hanya subtotal tiket, toggle isActive, banner/logo Supabase, merch+bundling (orderType 4 nilai). Sumber: [2026-07-02], [2026-07-05], [2026-07-06].
+  3. "Scanner Tiket DETAIL BELUM DIBAHAS" → "SELESAI & DEPLOYED" (role scanner, EventScanner, `/scanner`, html5-qrcode, invite Pro-gated, web-based+login). Sumber: [2026-07-08] Ticket Scanner (2 entry).
+  4. Roadmap #15 Event Summary Report → 🟡 CODE-COMPLETE pending deploy (commit 16c9d75). Roadmap #12 dikoreksi (bundling/ticket-box/hutang-fee/scanner ✅, sisa hanya edit/pindah stok).
+  5. Investigasi Tenant Booth Booking: grep `booth|tenant` seluruh repo → backend `server/` NOL match; hanya ada tab "Tenant" ber-label "Coming Soon" di `/dashboard/invoice` (placeholder murni) + spec di MASTER-PRD.md. Kesimpulan: TIDAK PERNAH dibangun. Ditambah catatan jujur di Next Priority (founder perlu putuskan revive/deprioritaskan).
+- Tidak disentuh (memang akurat/pending benar): Growth Plan DITUNDA; "penekan promotor nakal BELUM DIPUTUSKAN" (mekanisme enforcement fee-debt masih open, walau rekonsiliasi+auto-deduct sudah live).
+- Tag: #docs #claude-md #maintenance #sync #no-code-change #petty-cash #storefront #scanner #event-summary #tenant-booth #prd
