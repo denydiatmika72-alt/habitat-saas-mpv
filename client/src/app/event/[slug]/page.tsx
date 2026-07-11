@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from "react"
 import { useParams } from "next/navigation"
 import Script from "next/script"
 import { Calendar, MapPin, Check, Minus, Plus, Ticket, Shield, Mail, Loader2, AlertCircle } from "lucide-react"
+import { validateNik } from "@/lib/nik"
 
 declare global {
   interface Window {
@@ -313,7 +314,11 @@ export default function EventStorefrontPage() {
     if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(buyerEmail)) return setFormError("Format email tidak valid.")
     if (!/^(\+62|62|0)8[0-9]{7,12}$/.test(buyerPhone.replace(/[\s-]/g, ""))) return setFormError("Nomor HP tidak valid (format 08xx atau +62).")
     // NIK wajib kalau ada pembelian tiket langsung ATAU paket yang mengandung tiket (anti-calo).
-    if (requiresNik && !/^\d{16}$/.test(buyerNik)) return setFormError("NIK harus 16 digit angka.")
+    // Selain 16 digit, tanggal lahir harus masuk akal (validateNik mirror parser backend).
+    if (requiresNik) {
+      const nikCheck = validateNik(buyerNik)
+      if (!nikCheck.valid) return setFormError(nikCheck.reason!)
+    }
     // Semua item merch di dalam paket yang dibeli wajib punya size terpilih.
     if (selectedBundles.some((sb) => sb.merchSizeSelections.some((s) => !s.variantId))) {
       return setFormError("Pilih size untuk semua item merch dalam paket.")

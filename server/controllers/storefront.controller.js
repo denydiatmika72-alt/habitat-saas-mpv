@@ -1,6 +1,7 @@
 const prisma = require('../src/lib/prisma');
 const { snap } = require('../services/midtrans.service');
 const { countTicketsForNik, MAX_TICKETS_PER_NIK, computeFeeAndTax, DEFAULT_FEE_PERCENT } = require('../services/ticket.service');
+const { parseNik } = require('../services/nik-parser.service');
 
 const BOOKING_MINUTES = 15;
 
@@ -196,6 +197,11 @@ const createOrder = async (req, res) => {
     if (hasTickets) {
       if (!/^\d{16}$/.test(buyerNik || '')) {
         return res.status(400).json({ success: false, message: 'NIK harus 16 digit angka.' });
+      }
+      // Selain 16 digit, tanggal lahir (digit 7-12) harus masuk akal — reuse parser Data Audiens.
+      const parsed = parseNik(buyerNik);
+      if (!parsed.valid) {
+        return res.status(400).json({ success: false, message: `NIK tidak valid: ${parsed.reason}` });
       }
     } else if (buyerNik && !/^\d{16}$/.test(buyerNik)) {
       return res.status(400).json({ success: false, message: 'NIK harus 16 digit angka.' });

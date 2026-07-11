@@ -4,6 +4,7 @@ import { useEffect, useState, useCallback } from "react"
 import { useParams, useRouter } from "next/navigation"
 import Script from "next/script"
 import { Calendar, MapPin, Minus, Plus, Loader2, CheckCircle2, Ticket } from "lucide-react"
+import { validateNik } from "@/lib/nik"
 
 declare global {
   interface Window {
@@ -128,7 +129,9 @@ export default function TicketBoxPage() {
     setFormError("")
     if (totalQty === 0) return setFormError("Pilih minimal 1 tiket.")
     if (!buyerName.trim()) return setFormError("Nama pembeli wajib diisi.")
-    if (!/^\d{16}$/.test(buyerNik)) return setFormError("NIK harus 16 digit angka.")
+    // NIK: 16 digit + tanggal lahir masuk akal (validateNik mirror parser backend).
+    const nikCheck = validateNik(buyerNik)
+    if (!nikCheck.valid) return setFormError(nikCheck.reason!)
     // Email WAJIB — cek kosong dulu, lalu format (pola sama dgn online storefront).
     if (!buyerEmail.trim()) return setFormError("Email wajib diisi untuk pengiriman e-ticket & konfirmasi.")
     if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(buyerEmail)) return setFormError("Format email tidak valid.")

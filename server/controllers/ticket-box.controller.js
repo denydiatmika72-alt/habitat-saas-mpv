@@ -3,6 +3,7 @@ const QRCode = require('qrcode');
 const { snap } = require('../services/midtrans.service');
 const { sendOrderEmail } = require('../services/email.service');
 const { generateTicketsForOrderItems, countTicketsForNik, MAX_TICKETS_PER_NIK, computeFeeAndTax, resolveFeePercents } = require('../services/ticket.service');
+const { parseNik } = require('../services/nik-parser.service');
 
 const PAYMENT_METHODS = ['cash', 'transfer'];
 const BOOKING_MINUTES = 15; // sama dengan online storefront — window bayar transfer sebelum di-release cron.
@@ -98,9 +99,14 @@ const createTicketBoxOrder = async (req, res) => {
     if (ticketItems.length === 0) {
       return res.status(400).json({ success: false, message: 'Pilih minimal 1 tiket.' });
     }
-    // NIK wajib + valid (anti-calo).
+    // NIK wajib + valid (anti-calo). Ticket Box selalu jual tiket (ticketItems.length dicek di atas).
     if (!/^\d{16}$/.test(buyerNik || '')) {
       return res.status(400).json({ success: false, message: 'NIK harus 16 digit angka.' });
+    }
+    // Tanggal lahir (digit 7-12) harus masuk akal — reuse parser Data Audiens.
+    const parsedNik = parseNik(buyerNik);
+    if (!parsedNik.valid) {
+      return res.status(400).json({ success: false, message: `NIK tidak valid: ${parsedNik.reason}` });
     }
     // Email WAJIB (e-ticket & konfirmasi dikirim ke sini). Cek kosong dulu, lalu format — pola sama dgn storefront.
     if (!buyerEmail || !buyerEmail.trim()) {
