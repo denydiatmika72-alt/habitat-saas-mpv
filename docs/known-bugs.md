@@ -1467,3 +1467,30 @@ File ini adalah log permanen bug yang sudah pernah terjadi di project ini besert
 - Yang TIDAK diubah (sengaja): `countTicketsForNik` (anti-calo) — bekerja atas string NIK yang sama, tidak perlu diubah. Validasi TIDAK diterapkan ke order merch-only.
 - Verifikasi: `node --check` lolos untuk kedua controller + nik-parser; harness test `parseNik` 6/6 lolos (valid L/P, hari 38, bulan 13, 31 Feb, non-16-digit); `npx tsc --noEmit` client EXIT 0. E2E (NIK valid → sukses; hari 38 → ditolak online & Ticket Box; merch-only → tetap sukses tanpa NIK) pending setelah deploy Mandor.
 - Tag: #nik #checkout #storefront #ticket-box #validation #anti-calo #audience-report #reuse
+
+---
+
+## [2026-07-11] Event Summary Report — implementasi fitur baru (laporan akhir 1 event, 9 seksi, PDF via email)
+
+- Gejala/konteks: (Bukan bug — implementasi fitur "Event Summary Report" dari CLAUDE.md.) Saat promotor klik "Tandai Event Selesai", sistem generate 1 PDF laporan akhir gabungan 9 seksi (ringkasan keuangan, sponsor+status bayar, pengeluaran promotor+crew, deliverables, penjualan tiket per-kategori + per-channel, data audiens, hutang fee, ringkasan petty cash, status pencairan) lalu kirim ke email promotor. Fitur Pro-only (lock UI Starter).
+- Prinsip: REUSE logic terverifikasi lintas controller — TIDAK reimplementasi. Temuan investigasi (Step 1):
+  1. **Payout TIDAK bisa per-event** — `PayoutRequest` tidak punya `eventId` (keyed `promotorId`, amount lump-sum lintas SEMUA event). Jadi "total dicairkan untuk event ini" mustahil. Solusi: seksi 9 tampilkan pendapatan bersih EVENT (`SUM(totalAmount-feeAmount)` order paid event, = formula `payout.computeBalance`) + konteks saldo akun-wide (gross/reserved/available/transferred) yang DILABELI JELAS "lintas seluruh event, bukan per-event".
+  2. **Audience report SUDAH reusable** — `audience-report.controller.js` sudah export `fetchAudienceOrders/fetchAudienceTickets/buildAudienceData/buildTicketRows/computeDashboardStats`. Dipanggil event-scoped, zero duplikasi.
+  3. **P&L belum ter-faktor** — logic inline & terduplikasi di `getPLReport` + `exportPLReportPDF`. Diekstrak ke `services/pl-report.service.js` (`fetchEventPLRows`+`computeEventPLTotals`), kedua fungsi lama + report baru kini pakai satu sumber. Parity diverifikasi byte-region: totals service === logic lama inline (PASS).
+  4. **channel value**: order online = `channel:'online'` (default), Ticket Box = `channel:'ticket_box'` (BUKAN `'box_office'` — komentar schema line 144 stale/salah) + `paymentMethod:'cash'|'transfer'`. 3 bucket seksi 5 dari sini. `fee-debt.service` sudah pakai `'ticket_box'` (benar).
+- File terkait:
+  - `server/prisma/schema.prisma` — Event: +`finishedAt DateTime? @map("finished_at")` (nullable, additive, pola sama saleStartAt). `db push` (bukan migrate).
+  - `server/services/pl-report.service.js` (BARU) — sumber tunggal agregasi P&L per-event.
+  - `server/controllers/pl-report.controller.js` — refactor pakai service (output identik, diverifikasi).
+  - `server/services/fee-debt.service.js` — +`getEventFeeDebt(eventId)` (reuse `DEBT_ORDER_WHERE`).
+  - `server/controllers/payout.controller.js` — export `computeBalance` (di-reuse seksi 9).
+  - `server/controllers/event-summary.controller.js` (BARU) — `gatherEventSummaryData` (9 seksi) + `buildEventSummaryPDFBuffer` (PDF ke BUFFER penuh, bukan pipe→res: hilangkan kelas korupsi query-interleave; buffer dikirim via `res.send` / lampiran email) + `finishEvent` (POST, idempotent set finishedAt + generate + email) + `getEventSummaryPDF` (GET download).
+  - `server/services/email.service.js` — +`sendEventSummaryEmail` (lampiran PDF Buffer via Resend `attachments`). **PENTING**: cek `{ error }` dari `resend.emails.send` (SDK v6 TIDAK throw saat key invalid) → `emailSent` akurat.
+  - `server/routes/event.routes.js` — `POST /:eventId/finish`, `GET /:eventId/summary-pdf` (di atas `/:id`).
+  - `client/src/app/api/[...proxy]/route.ts` — `BINARY_PATHS` +`'summary-pdf'`.
+  - `client/src/components/dashboard/sidebar.tsx` — nav "Laporan Akhir Event" (badge Pro).
+  - `client/src/app/dashboard/event-summary/page.tsx` (BARU) — Pro lock UI + selector + tombol "Tandai Event Selesai" (confirm dialog) + "Unduh Laporan PDF".
+- Pola aman PDF (ditegakkan): SEMUA query selesai SEBELUM render; render pure; buffer penuh dulu baru kirim (download bisa balas JSON error karena belum ada byte terkirim); flow layout (moveDown+continued+align:right); guard pagination `br()` sebelum tiap seksi/baris; `doc.end()` dibungkus try/catch.
+- Verifikasi: `node --check` 7 file backend lolos; `npx tsc --noEmit` client EXIT 0. Uji terhadap event nyata "Malekolo" (data lintas seksi): cross-check A `channelTotal.net===pl.nexeventSalesTotal`, B `indep SUM(total-fee)===payout.eventNetRevenue===channelTotal.net`, C parity refactor P&L (service===inline lama), D `pettySaldo=topup-expense-return` → SEMUA PASS. PDF sig `%PDF-`, 2 halaman, pagination benar, angka akurat, seksi 6 `excluded:2` cocok dgn order NIK-dummy test. `finishEvent` handler: guard 404 non-owner PASS, owner→200+finishedAt persist PASS, email `{error}` invalid-key→`emailSent:false` + pesan fallback PASS, state finishedAt DIKEMBALIKAN ke null (tidak mengubah data produksi). Tidak ada email nyata terkirim (dummy key ditolak Resend). Deploy pending instruksi Mandor.
+- Catatan: seksi 5 "per kategori" pakai `TicketOrderItem` (tiket langsung); revenue bundling tercermin di total per-channel (net), tidak dobel. Seksi 6 di report ini = ringkasan demografi (bukan tabel mentah penuh — itu tetap di laporan "Data Audiens" terpisah).
+- Tag: #event-summary #pdfkit #pdf-safe-pattern #pl-report #payout #fee-debt #audience-report #petty-cash #reuse #prisma #schema #email #resend #pro-gating

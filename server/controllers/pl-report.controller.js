@@ -1,16 +1,9 @@
 const prisma = require('../src/lib/prisma')
 const PDFDocument = require('pdfkit')
+const { fetchEventPLRows, computeEventPLTotals, oiCategoryLabel } = require('../services/pl-report.service')
 
-const formatIDR = (num) => 'Rp ' + Math.round(num).toLocaleString('id-ID')
-
-// Label tampilan kategori Pemasukan Lain (nilai DB → label manusiawi). null/undefined = record lama = "Lainnya".
-const OI_CATEGORY_LABELS = {
-  merchandise: 'Merchandise',
-  donasi: 'Donasi/Sumbangan',
-  tiket_platform_lain: 'Tiket Platform Lain',
-  lainnya: 'Lainnya',
-}
-const oiCategoryLabel = (cat) => OI_CATEGORY_LABELS[cat] || 'Lainnya'
+// Logika agregasi P&L (query + total) kini hidup di services/pl-report.service.js supaya IDENTIK dengan
+// Event Summary Report. Controller ini hanya bertugas: ownership check + shaping JSON / render PDF.
 
 const getPLReport = async (req, res) => {
   try {
@@ -25,118 +18,23 @@ const getPLReport = async (req, res) => {
     })
     if (!event) return res.status(404).json({ success: false, message: 'Event tidak ditemukan.' })
 
-    const [sponsorDeals, otherIncomeRows, promotorExpenseRows, crewTxRows, ticketOrders] = await Promise.all([
-      // 1. Sponsor income — status Disetujui
-      prisma.sponsorDeal.findMany({
-        where: {
-          eventId,
-          status: 'Disetujui',
-          // Hanya deal yang sudah ada pembayaran (DP atau Lunas)
-          invoices: { some: { status: { in: ['DP Terbayar', 'Lunas'] } } },
-        },
-        select: { sponsorName: true, tier: true, totalValue: true },
-      }),
-
-      // 2. Other income (kini bawa category + platform untuk sub-breakdown)
-      prisma.otherIncome.findMany({
-        where: { eventId, userId },
-        orderBy: { date: 'desc' },
-        select: { id: true, description: true, amount: true, date: true, category: true, platform: true },
-      }),
-
-      // 3. Promotor expenses
-      prisma.expense.findMany({
-        where: { eventId, userId },
-        select: { description: true, amount: true, category: true, date: true },
-      }),
-
-      // 4. Crew petty cash — ONLY type:"expense" (NEVER topup or return)
-      prisma.pettyCashTransaction.findMany({
-        where: {
-          type: 'expense',
-          account: { eventId },
-        },
-        include: { account: { select: { division: true } } },
-      }),
-
-      // 5. Penjualan tiket/merch/bundling nexEvent (channel online + ticket_box) — status "paid".
-      //    Pola SAMA dgn payout.getAvailableBalance: net = totalAmount - feeAmount (fee platform = hak nexEvent).
-      //    Di-scope ke event ini saja (P&L per-event; event sudah divalidasi milik promotor di atas).
-      prisma.ticketOrder.findMany({
-        where: { status: 'paid', eventId },
-        select: { totalAmount: true, feeAmount: true },
-      }),
-    ])
-
-    // Sponsor income
-    const sponsorTotal = sponsorDeals.reduce((s, d) => s + Number(d.totalValue), 0)
-    const sponsorItems = sponsorDeals.map((d) => ({
-      sponsorName: d.sponsorName,
-      tier: d.tier,
-      totalValue: Number(d.totalValue),
-    }))
-
-    // Pendapatan tiket & merchandise nexEvent (net setelah fee platform)
-    const nexeventSalesTotal = ticketOrders.reduce((s, o) => s + (Number(o.totalAmount) - Number(o.feeAmount)), 0)
-
-    // Other income — total + sub-breakdown per kategori (record lama tanpa category → "lainnya")
-    const otherTotal = otherIncomeRows.reduce((s, r) => s + r.amount, 0)
-    const otherByCatMap = {}
-    for (const r of otherIncomeRows) {
-      const key = r.category || 'lainnya'
-      otherByCatMap[key] = (otherByCatMap[key] || 0) + r.amount
-    }
-    const otherByCategory = Object.entries(otherByCatMap).map(([category, total]) => ({
-      category, label: oiCategoryLabel(category), total,
-    }))
-    const otherItems = otherIncomeRows.map((r) => ({
-      id: r.id, description: r.description, amount: r.amount, date: r.date,
-      category: r.category || 'lainnya', categoryLabel: oiCategoryLabel(r.category), platform: r.platform || null,
-    }))
-
-    // Promotor expenses — group by category
-    const promotorTotal = promotorExpenseRows.reduce((s, e) => s + e.amount, 0)
-    const byCategoryMap = {}
-    for (const e of promotorExpenseRows) {
-      byCategoryMap[e.category] = (byCategoryMap[e.category] || 0) + e.amount
-    }
-    const promotorByCategory = Object.entries(byCategoryMap).map(([category, total]) => ({ category, total }))
-
-    // Crew expenses — group by division
-    const crewTotal = crewTxRows.reduce((s, t) => s + t.amount, 0)
-    const byDivisionMap = {}
-    for (const t of crewTxRows) {
-      const div = t.account.division
-      byDivisionMap[div] = (byDivisionMap[div] || 0) + t.amount
-    }
-    const crewByDivision = Object.entries(byDivisionMap).map(([division, total]) => ({ division, total }))
-    const crewItems = crewTxRows.map((t) => ({
-      description: t.description,
-      amount: t.amount,
-      division: t.account.division,
-      createdAt: t.createdAt,
-    }))
-
-    // Summary — total pemasukan kini mencakup penjualan tiket/merch nexEvent (Part 1 fix)
-    const totalIncome = nexeventSalesTotal + sponsorTotal + otherTotal
-    const totalExpense = promotorTotal + crewTotal
-    const netPL = totalIncome - totalExpense
-    const marginPct = totalIncome > 0 ? ((netPL / totalIncome) * 100).toFixed(1) : '0'
+    const rows = await fetchEventPLRows({ eventId, userId })
+    const t = computeEventPLTotals(rows)
 
     return res.json({
       success: true,
       event: { id: event.id, title: event.title, eventDate: event.event_date, location: event.location },
-      summary: { totalIncome, totalExpense, netPL, marginPct, isProfit: netPL >= 0 },
+      summary: { totalIncome: t.totalIncome, totalExpense: t.totalExpense, netPL: t.netPL, marginPct: t.marginPct, isProfit: t.isProfit },
       income: {
         // Penjualan tiket & merchandise via nexEvent (net setelah fee platform). SUMBER TERPISAH dari
         // "tiket_platform_lain" di Pemasukan Lain — jangan pernah digabung (hindari double-count).
-        nexeventSales: { total: nexeventSalesTotal, orderCount: ticketOrders.length, note: 'Penjualan tiket/merch/bundling via nexEvent (online + Ticket Box), sudah dikurangi fee platform' },
-        sponsor: { total: sponsorTotal, note: 'Hanya deal dengan invoice DP Terbayar atau Lunas', items: sponsorItems },
-        other: { total: otherTotal, byCategory: otherByCategory, items: otherItems },
+        nexeventSales: { total: t.nexeventSalesTotal, orderCount: t.nexeventOrderCount, note: 'Penjualan tiket/merch/bundling via nexEvent (online + Ticket Box), sudah dikurangi fee platform' },
+        sponsor: { total: t.sponsorTotal, note: 'Hanya deal dengan invoice DP Terbayar atau Lunas', items: t.sponsorItems },
+        other: { total: t.otherTotal, byCategory: t.otherByCategory, items: t.otherItems },
       },
       expense: {
-        promotor: { total: promotorTotal, byCategory: promotorByCategory, items: promotorExpenseRows },
-        crew: { total: crewTotal, byDivision: crewByDivision, items: crewItems },
+        promotor: { total: t.promotorTotal, byCategory: t.promotorByCategory, items: rows.promotorExpenseRows },
+        crew: { total: t.crewTotal, byDivision: t.crewByDivision, items: t.crewItems },
       },
     })
   } catch (err) {
@@ -152,7 +50,7 @@ const exportPLReportPDF = async (req, res) => {
   if (!eventId) return res.status(400).json({ success: false, message: 'eventId diperlukan.' })
 
   // ── STEP 1: Fetch ALL data BEFORE touching PDF stream ──
-  let event, user, sponsorDeals, otherIncomeRows, promotorExpenseRows, crewTxRows, ticketOrders
+  let event, user, rows, t
   try {
     event = await prisma.event.findFirst({
       where: { id: eventId, promotor_id: userId },
@@ -161,34 +59,8 @@ const exportPLReportPDF = async (req, res) => {
     if (!event) return res.status(404).json({ success: false, message: 'Event tidak ditemukan.' })
 
     user = await prisma.user.findUnique({ where: { id: userId }, select: { name: true } })
-
-    ;[sponsorDeals, otherIncomeRows, promotorExpenseRows, crewTxRows, ticketOrders] = await Promise.all([
-      prisma.sponsorDeal.findMany({
-        where: {
-          eventId,
-          status: 'Disetujui',
-          invoices: { some: { status: { in: ['DP Terbayar', 'Lunas'] } } },
-        },
-        select: { sponsorName: true, tier: true, totalValue: true },
-      }),
-      prisma.otherIncome.findMany({
-        where: { eventId, userId },
-        select: { description: true, amount: true, category: true, platform: true },
-      }),
-      prisma.expense.findMany({
-        where: { eventId, userId },
-        select: { description: true, amount: true, category: true },
-      }),
-      prisma.pettyCashTransaction.findMany({
-        where: { type: 'expense', account: { eventId } },
-        include: { account: { select: { division: true } } },
-      }),
-      // Penjualan tiket/merch/bundling nexEvent (paid) — net setelah fee platform (sama dgn getPLReport).
-      prisma.ticketOrder.findMany({
-        where: { status: 'paid', eventId },
-        select: { totalAmount: true, feeAmount: true },
-      }),
-    ])
+    rows = await fetchEventPLRows({ eventId, userId })
+    t = computeEventPLTotals(rows)
   } catch (err) {
     console.error('[pl-report] exportPDF data fetch error:', err)
     return res.status(500).json({ success: false, message: 'Gagal mengambil data laporan.' })
@@ -198,28 +70,12 @@ const exportPLReportPDF = async (req, res) => {
   const safe = (n) => Math.round(Number(n) || 0)
   const fmtIDR = (n) => 'Rp ' + safe(n).toLocaleString('id-ID')
 
-  const sponsorTotal = sponsorDeals.reduce((s, d) => s + safe(d.totalValue), 0)
-  const nexeventSalesTotal = ticketOrders.reduce((s, o) => s + (safe(o.totalAmount) - safe(o.feeAmount)), 0)
-  const otherTotal = otherIncomeRows.reduce((s, r) => s + safe(r.amount), 0)
-  const promotorTotal = promotorExpenseRows.reduce((s, e) => s + safe(e.amount), 0)
-  const crewTotal = crewTxRows.reduce((s, t) => s + safe(t.amount), 0)
-
-  const byCategoryMap = {}
-  for (const e of promotorExpenseRows) {
-    const cat = e.category || 'Lain-lain'
-    byCategoryMap[cat] = (byCategoryMap[cat] || 0) + safe(e.amount)
-  }
-  const byDivisionMap = {}
-  for (const t of crewTxRows) {
-    const div = t.account?.division || 'Crew'
-    byDivisionMap[div] = (byDivisionMap[div] || 0) + safe(t.amount)
-  }
-
-  const totalIncome = nexeventSalesTotal + sponsorTotal + otherTotal
-  const totalExpense = promotorTotal + crewTotal
-  const netPL = totalIncome - totalExpense
-  const marginPct = totalIncome > 0 ? ((netPL / totalIncome) * 100).toFixed(1) : '0'
-  const isProfit = netPL >= 0
+  const { sponsorDeals, otherIncomeRows } = rows
+  const {
+    sponsorTotal, nexeventSalesTotal, nexeventOrderCount, otherTotal, promotorTotal, crewTotal,
+    promotorByCategoryMap: byCategoryMap, crewByDivisionMap: byDivisionMap,
+    totalIncome, totalExpense, netPL, marginPct, isProfit,
+  } = t
 
   const eventDate = event.event_date
     ? new Date(event.event_date).toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric' })
@@ -239,8 +95,6 @@ const exportPLReportPDF = async (req, res) => {
   doc.pipe(res)
 
   try {
-    const W = doc.page.width - 100
-
     // Header
     doc.fontSize(18).fillColor(GREEN).font('Helvetica-Bold').text('LAPORAN LABA/RUGI EVENT', { align: 'center' })
     doc.moveDown(0.2)
@@ -287,7 +141,7 @@ const exportPLReportPDF = async (req, res) => {
     doc.fontSize(9).fillColor(DARK).font('Helvetica-Bold').text('A. Pendapatan Tiket & Merchandise (nexEvent)')
     doc.fontSize(8).fillColor(GRAY).font('Helvetica').text('  * Penjualan via nexEvent (online + Ticket Box), sudah dikurangi fee platform')
     doc.fontSize(9).fillColor(nexeventSalesTotal === 0 ? GRAY : DARK)
-      .text(`  • ${ticketOrders.length} transaksi tiket/merch/bundling terbayar`, { continued: true })
+      .text(`  • ${nexeventOrderCount} transaksi tiket/merch/bundling terbayar`, { continued: true })
       .text(fmtIDR(nexeventSalesTotal), { align: 'right' })
     doc.fontSize(9).fillColor(DARK).font('Helvetica-Bold')
       .text('  Subtotal Tiket nexEvent', { continued: true }).text(fmtIDR(nexeventSalesTotal), { align: 'right' })
@@ -393,7 +247,6 @@ const exportPLReportPDF = async (req, res) => {
   } catch (err) {
     console.error('[pl-report] exportPDF generation error:', err)
     // Headers already sent (pipe started) — can't send JSON error.
-    // End the doc to properly terminate the stream so browser gets a valid response.
     try { doc.end() } catch {}
   }
 }

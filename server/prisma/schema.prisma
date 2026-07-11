@@ -89,6 +89,11 @@ model Event {
   facilities         Json?
   termsConditions    String?  @map("terms_conditions")
 
+  // Diisi saat promotor klik "Tandai Event Selesai" → memicu generate + kirim Event Summary Report.
+  // Nullable = event belum diselesaikan. Menyimpan waktu (bukan boolean) untuk header laporan +
+  // guard idempotensi (mencegah finish/kirim email berulang). Pola sama: saleStartAt/saleEndAt.
+  finishedAt         DateTime? @map("finished_at")
+
   createdAt          DateTime @default(now()) @map("created_at")
   updatedAt          DateTime @updatedAt      @map("updated_at")
 

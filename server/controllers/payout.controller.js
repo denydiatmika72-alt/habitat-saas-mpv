@@ -438,6 +438,7 @@ const getPayoutStatementPDF = async (req, res) => {
 };
 
 module.exports = {
+  computeBalance, // di-reuse Event Summary Report (konteks payout account-wide — payout tak per-event)
   getAvailableBalance,
   requestPayout,
   getMyPayoutRequests,

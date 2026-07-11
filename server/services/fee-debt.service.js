@@ -20,6 +20,18 @@ async function getPromotorFeeDebt(promotorId) {
   return { orderIds: orders.map((o) => o.id), totalDebt, orderCount: orders.length };
 }
 
+// Hutang fee (belum settle) untuk SATU EVENT saja — dipakai Event Summary Report (section 7).
+// Reuse DEBT_ORDER_WHERE (definisi tunggal) + filter eventId → tidak menduplikasi filter hutang.
+// Return { orderIds, totalDebt, orderCount }.
+async function getEventFeeDebt(eventId) {
+  const orders = await prisma.ticketOrder.findMany({
+    where: { ...DEBT_ORDER_WHERE, eventId },
+    select: { id: true, feeAmount: true },
+  });
+  const totalDebt = orders.reduce((sum, o) => sum + o.feeAmount, 0);
+  return { orderIds: orders.map((o) => o.id), totalDebt, orderCount: orders.length };
+}
+
 // Hutang fee (belum settle) SELURUH promotor, digroup per promotor + total gabungan.
 // Dipakai oleh fee-debt.controller (rekonsiliasi admin) DAN platform-revenue.controller (item #4)
 // supaya definisi hutang identik di semua tempat — JANGAN re-implement filter/grouping di luar sini.
@@ -54,4 +66,4 @@ async function getAllPromotorsFeeDebt() {
   return { perPromotor, totalDebt };
 }
 
-module.exports = { DEBT_ORDER_WHERE, getPromotorFeeDebt, getAllPromotorsFeeDebt };
+module.exports = { DEBT_ORDER_WHERE, getPromotorFeeDebt, getEventFeeDebt, getAllPromotorsFeeDebt };

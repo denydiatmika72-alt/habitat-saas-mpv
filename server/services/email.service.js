@@ -246,4 +246,47 @@ const sendOrderEmail = async (order) => {
   }
 };
 
-module.exports = { sendNewUserNotification, sendSponsorCredential, sendProExpiryReminder, sendOrderEmail };
+// Laporan Akhir Event (Event Summary Report) — dikirim ke promotor saat "Tandai Event Selesai".
+// PDF dilampirkan langsung (Resend attachments: content = Buffer). Ringkasan laba/rugi ditaruh di body.
+const sendEventSummaryEmail = async ({ to, promotorName, eventTitle, filename, pdfBuffer, pl }) => {
+  try {
+    const isProfit = pl ? pl.netPL >= 0 : true;
+    const summaryHTML = pl
+      ? `
+        <table cellpadding="6" style="border-collapse:collapse;margin:12px 0;font-size:14px">
+          <tr><td style="color:#64748b">Total Pemasukan</td><td style="text-align:right"><strong>${IDR(pl.totalIncome)}</strong></td></tr>
+          <tr><td style="color:#64748b">Total Pengeluaran</td><td style="text-align:right"><strong>${IDR(pl.totalExpense)}</strong></td></tr>
+          <tr><td style="color:${isProfit ? '#065f46' : '#dc2626'}"><strong>${isProfit ? 'Laba' : 'Rugi'} Bersih</strong></td><td style="text-align:right;color:${isProfit ? '#065f46' : '#dc2626'}"><strong>${IDR(pl.netPL)}</strong></td></tr>
+        </table>`
+      : '';
+    // Resend v6 mengembalikan { data, error } — TIDAK throw saat API menolak (mis. key salah). Cek `error`
+    // supaya emailSent yang dikembalikan akurat (menggerakkan pesan ke promotor).
+    const { error } = await resend.emails.send({
+      from: 'nexEvent <noreply@nexeventapp.tech>',
+      to,
+      subject: `Laporan Akhir Event — ${eventTitle}`,
+      html: `
+        <div style="font-family:sans-serif;max-width:560px;margin:0 auto;color:#0f172a">
+          <h2 style="color:#065f46;margin-bottom:4px">Laporan Akhir Event</h2>
+          <p style="color:#64748b;margin-top:0">Halo ${promotorName || 'Promotor'}, event <strong>${eventTitle}</strong> telah ditandai selesai.</p>
+          <p style="margin:0 0 4px">Ringkasan keuangan:</p>
+          ${summaryHTML}
+          <p style="font-size:14px">Laporan lengkap (sponsor, pengeluaran, penjualan tiket per channel, data audiens, petty cash, hutang fee, & pencairan) terlampir sebagai PDF di email ini.</p>
+          <p style="font-size:12px;color:#64748b;margin-top:24px">Email ini dikirim otomatis oleh sistem nexEvent — nexeventapp.tech</p>
+        </div>
+      `,
+      attachments: [{ filename: filename || 'Laporan-Event.pdf', content: pdfBuffer }],
+    });
+    if (error) {
+      console.error('[EMAIL] Resend menolak laporan akhir event:', error.message || error);
+      return { sent: false, error: error.message || String(error) };
+    }
+    console.log(`[EMAIL] Laporan akhir event terkirim ke ${to} (${eventTitle})`);
+    return { sent: true };
+  } catch (error) {
+    console.error('[EMAIL] Gagal kirim laporan akhir event:', error.message);
+    return { sent: false, error: error.message };
+  }
+};
+
+module.exports = { sendNewUserNotification, sendSponsorCredential, sendProExpiryReminder, sendOrderEmail, sendEventSummaryEmail };

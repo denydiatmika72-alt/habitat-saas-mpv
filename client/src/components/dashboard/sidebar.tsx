@@ -15,6 +15,7 @@ import {
   Ticket,
   Banknote,
   TrendingUp,
+  FileCheck,
 } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { useUser } from "@/hooks/useUser"
@@ -41,6 +42,7 @@ const nav: NavItem[] = [
   { label: "Manajemen Tiket", icon: Ticket, href: "/dashboard/tickets" },
   { label: "Pencairan Dana", icon: Banknote, href: "/dashboard/payout" },
   { label: "Laporan P&L", icon: BarChart2, href: "/dashboard/pl-report", badge: "Pro" },
+  { label: "Laporan Akhir Event", icon: FileCheck, href: "/dashboard/event-summary", badge: "Pro" },
   { label: "Approve User", icon: ShieldCheck, href: "/dashboard/admin", adminOnly: true },
   { label: "Pendapatan Platform", icon: TrendingUp, href: "/dashboard/admin/revenue", adminOnly: true },
 ]
