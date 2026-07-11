@@ -2,7 +2,7 @@
 
 ## Ringkasan Project
 
-Platform SaaS untuk manajemen event musik. Stack: **Next.js 15** (client, port 3000) + **Express 5** (server, port 5000) + **PostgreSQL via Supabase** + **Prisma ORM**.
+Platform SaaS untuk manajemen event musik. Stack: **Next.js 16** (client, port 3000) + **Express 5** (server, port 5000) + **PostgreSQL via Supabase** + **Prisma ORM**.
 
 ## Struktur
 
@@ -17,9 +17,13 @@ nexevent-saas/
 │   ├── src/
 │   │   ├── index.js            # Entry point (port 5000)
 │   │   ├── lib/prisma.js       # Prisma client (pakai adapter-pg)
-│   │   └── middleware/auth.middleware.js  # Export: protect & verifyToken (alias)
-│   ├── controllers/
-│   ├── routes/
+│   │   ├── middleware/auth.middleware.js  # Export: protect, verifyToken (alias), requireAdmin
+│   │   ├── controllers/        # auth.controller.js, admin.controller.js (dipakai src/routes)
+│   │   ├── routes/             # auth.routes.js, admin.routes.js (di-mount di index.js)
+│   │   └── cron/               # pro-subscription.cron.js, ticket-booking.cron.js
+│   ├── controllers/            # mayoritas controller fitur (event, sponsor, ticket, dll)
+│   ├── routes/                 # mayoritas route file fitur
+│   ├── services/               # email, midtrans, supabase, ticket, nik-parser, pl-report, fee-debt
 │   └── prisma/schema.prisma
 └── docs/
     └── known-bugs.md   # Log bug & solusi — WAJIB dicek sebelum debugging baru
@@ -34,8 +38,14 @@ nexevent-saas/
 ## Penting: Auth Middleware
 
 File: `server/src/middleware/auth.middleware.js`
-Export: `{ protect, verifyToken: protect }` — kedua nama adalah alias.
-Semua route file import `{ verifyToken }`.
+Export: `{ protect, verifyToken: protect, requireAdmin }` — `protect` & `verifyToken` adalah alias yang sama; `requireAdmin` cek `isAdmin` fresh dari DB (bukan dari JWT) → 403 kalau bukan admin.
+Route promotor pakai `verifyToken`; route admin (`admin.routes.js`, `fee-debt.routes.js`, `payout.routes.js`, `platform-revenue.routes.js`) pakai `protect + requireAdmin`.
+
+## Registrasi, Approval Akun & Login
+
+- **Register** `POST /api/auth/register`: wajib name/email/password (min 6 karakter); `role` whitelist `["promotor","crew","scanner"]` (default "promotor"); email duplikat → 409; password di-hash bcrypt (10 rounds); user dibuat `status:"pending"` + kirim notifikasi email ke admin (fire-and-forget). TIDAK langsung dapat token — harus di-approve admin dulu.
+- **Approval admin** (`protect + requireAdmin`): `GET /api/admin/users` (list `status:"pending"`) + `PATCH /api/admin/users/:id/approve` (set `status:"active"`). Lifecycle: `pending → active`; status `suspended` juga memblokir login.
+- **Login** `POST /api/auth/login`: 401 kalau kredensial salah; 403 kalau status `pending`/`suspended`; sukses → JWT (payload `{ id, email, name, role }`, expiry 7d default) + response body `{ id, name, email, plan, role, isAdmin }`. Catatan: `plan`/`isAdmin` ADA di response body, TIDAK di dalam JWT payload.
 
 ## Prisma
 
@@ -155,6 +165,14 @@ Lihat **`docs/known-bugs.md`** untuk daftar lengkap bug yang sudah pernah terjad
 - Koneksi ke Supabase via PrismaPg adapter wajib pakai opsi `ssl: { rejectUnauthorized: false }`
 - Tanpa opsi ini, koneksi akan gagal (lihat known-bugs.md untuk histori)
 
+## Expense Tracker (Pengeluaran Promotor Langsung) — Fitur Pro
+
+Pencatatan pengeluaran event yang diinput promotor sendiri, TERPISAH dari petty cash crew.
+- Endpoint `/api/expenses` (`expenses.controller.js`): `GET ?eventId=` (list milik user utk event, order date desc), `POST` (buat — `amount` wajib angka > 0; field description/category/amount/receiptUrl?), `DELETE /:id` (ownership via `userId` → 403 kalau bukan pemilik). Semua route cek ownership event via `promotor_id`.
+- Kategori diambil dari kategori RAB event (`GET /api/expenses/budget-categories?eventId=`), fallback ke default kalau event belum punya RAB.
+- Model `Expense` (eventId, userId, description, amount, category, receiptUrl?, date).
+- Gate: fitur Pro (lock UI Starter via `useUser`). Di Laporan P&L masuk sebagai "Pengeluaran Langsung (Promotor)" — digabung dengan petty cash crew type:"expense".
+
 ## Petty Cash System — Aturan Akuntansi (WAJIB DIBACA SEBELUM CODING)
 
 ### Konteks
@@ -193,7 +211,7 @@ Siklus ini berulang setiap hari event berlangsung.
    - P&L Report menggabungkan keduanya, tapi dari tabel yang berbeda
 
 5. **PEMASUKAN P&L Report = 3 sumber TERPISAH (deployed 2026-07-11, commit `edca24d`)**
-   - **Tiket & Merchandise (nexEvent)**: `SUM(TicketOrder.totalAmount - feeAmount)` untuk order `status:"paid"` di event tsb (net setelah fee platform — pola SAMA dgn `payout.getAvailableBalance`). SEBELUM fix ini, revenue tiket nexEvent TIDAK ikut di P&L sama sekali (bug kritis — laba tampil terlalu kecil).
+   - **Tiket & Merchandise (nexEvent)**: `SUM(TicketOrder.totalAmount - feeAmount)` untuk order `status:"paid"` di event tsb (net setelah fee platform — pola SAMA dgn `payout.computeBalance`, fungsi shared; `getAvailableBalance` hanya route wrapper-nya). SEBELUM fix ini, revenue tiket nexEvent TIDAK ikut di P&L sama sekali (bug kritis — laba tampil terlalu kecil).
    - **Sponsor Deal**: hanya deal `Disetujui` dengan invoice `DP Terbayar`/`Lunas`.
    - **Pemasukan Lain** (`OtherIncome`): berkategori `merchandise` / `donasi` / `tiket_platform_lain` (+ field `platform`, mis. LOKET/Tix.id) / `lainnya`. Record lama tanpa kategori diperlakukan `lainnya`.
    - **ANTI DOUBLE-COUNT**: "Tiket & Merchandise (nexEvent)" (dari `TicketOrder`, otomatis) vs "Tiket Platform Lain" (entri `OtherIncome`, input manual platform eksternal) adalah DUA sumber BERBEDA — jangan pernah dijumlahkan jadi satu / dianggap sama.
@@ -290,6 +308,7 @@ Data platform disimpan di DB untuk analytics internal.
 ### Yang Sudah Live
 - Public storefront: nexeventapp.tech/event/[slug] (tanpa login pembeli)
 - Anti-calo: max 4 tiket per NIK per event (dihitung kumulatif, bukan per transaksi)
+- NIK checkout divalidasi ketat (2026-07-11) — bukan hanya format 16 digit, tapi tanggal lahir (digit 7-12) harus valid secara kalender (via `parseNik()`, reused dari Data Audiens). Berlaku di SEMUA jalur beli tiket (storefront online + Ticket Box).
 - Timeout booking: 15 menit, CRON job release expired orders setiap menit
 - E-ticket: QR code dikirim via email (Resend) + tombol bagikan ke WhatsApp
 - Approval flow: Draft → Pending Approval → Admin Approve/Reject → Live
@@ -446,14 +465,19 @@ Integrasi payout dengan Sistem Hutang Fee (Rekonsiliasi) — lihat Storefront Ro
 Keputusan final:
 - Saat promotor ajukan pencairan, sistem WAJIB cek dulu apakah promotor punya hutang fee
   cash yang belum lunas (dari Fee Debt Reconciliation)
-- Jika saldo pencairan CUKUP menutup hutang: potong otomatis dari nominal pencairan, hutang
-  langsung ditandai lunas (`feeSettled: true`) — promotor TIDAK perlu transfer manual
-  terpisah ke nexEvent untuk melunasi hutangnya
-- Jika saldo pencairan TIDAK CUKUP menutup hutang: pencairan DITOLAK SELURUHNYA (bukan
-  dipotong sebagian) — sistem tampilkan notifikasi jelas alasan penolakan, dilampiri rincian
-  data pendapatan promotor supaya mereka paham kenapa ditolak
-- Ini mengubah alur `requestPayout` yang sudah ada di payout.controller.js — perlu
-  terintegrasi dengan fee-debt.controller.js yang sudah ada
+- **Model FINAL (koreksi founder 2026-07-09 — lihat known-bugs.md "KOREKSI interpretasi Payout
+  item #2"): hutang fee = TAMBAHAN di atas nominal, BUKAN dipotong dari DALAM nominal.** Syarat
+  diterima: `nominal + hutang ≤ saldo available`. Jika muat → promotor menerima nominal PENUH
+  yang diminta; hutang fee cash dilunasi TERPISAH dari saldo pada transaksi yang sama
+  (`feeSettled:true`, field `debtDeducted` dicatat untuk audit saja) — TIDAK mengurangi jumlah
+  yang ditransfer ke promotor.
+- Jika `nominal + hutang > saldo available`: pencairan DITOLAK SELURUHNYA (bukan dipotong
+  sebagian, bukan auto-turunkan) — sistem kirim `maxAllowedAmount = available − hutang` supaya
+  promotor bisa ajukan ulang dengan nominal lebih kecil sendiri, dilampiri rincian data
+  pendapatan promotor supaya paham alasan penolakan.
+- Ini mengubah alur `requestPayout` yang sudah ada di payout.controller.js — terintegrasi
+  dengan `getPromotorFeeDebt` di fee-debt.service.js (settle hutang atomik di dalam satu
+  `$transaction` bersama pembuatan PayoutRequest)
 
 ### 3. Laporan Pencairan (Payout Statement) — download promotor (✅ SELESAI — deployed, commit 101a175)
 Bukti resmi pencairan yang bisa diunduh promotor setelah transfer selesai.
@@ -463,7 +487,7 @@ Keputusan final:
   1 file laporan (PDF) berisi:
   - Rincian penjualan LENGKAP — mencakup tiket, merchandise, DAN bundling (bukan tiket saja)
   - Sisa saldo yang masih bisa ditarik (jika tidak ditarik semua sekaligus)
-  - Sisa hutang fee (jika masih ada yang belum lunas setelah potongan otomatis di item #2)
+  - Sisa hutang fee (jika masih ada yang belum lunas setelah pelunasan otomatis di item #2)
 - Gunakan library pdfkit yang sudah dipakai untuk Invoice PDF dan PO PDF (lihat section
   "PDF Generation")
 
@@ -500,7 +524,7 @@ Keputusan final:
 
 **Urutan eksekusi yang disepakati (kerjakan SATU PER SATU sesuai urutan ini):**
 1. Verifikasi ulang status deploy Payout (item #1) — pastikan seluruh endpoint aktif di production
-2. Bangun item #2 dan #3 sekaligus (saling terkait erat — logic potong hutang otomatis dan
+2. Bangun item #2 dan #3 sekaligus (saling terkait erat — logic pelunasan hutang otomatis dan
    laporan pencairan pakai data yang sama)
 3. Bangun item #4 (Laporan Pendapatan Platform)
 4. Bangun item #5 (Data Audiens) — boleh dipercepat urutannya jika perlu, karena ternyata
@@ -523,7 +547,7 @@ Keputusan final:
     (SUDAH SELESAI: bundling paket kurasi ✅, Ticket Box offline ✅, hutang fee/rekonsiliasi ✅, scanner tiket ✅.
     MASIH PENDING: hanya #2 "Edit Stok + Pindah Stok Antar Jenis Tiket")
 13. ✅ Payout & Laporan Keuangan lanjutan → SELESAI SEMUA (#1–#5), DEPLOYED KE PRODUCTION 2026-07-10.
-    Lihat section "Payout & Laporan Keuangan Roadmap" (potong hutang fee otomatis, laporan pencairan PDF,
+    Lihat section "Payout & Laporan Keuangan Roadmap" (pelunasan hutang fee otomatis, laporan pencairan PDF,
     laporan pendapatan platform, data audiens). Item terakhir (#5 Data Audiens, commit 21a125a) sudah
     deployed & terverifikasi di production (smoke test 401-not-404 lolos, PM2 stabil, Vercel READY).
 14. ✅ Ticket Sales Manual Input (untuk promotor yang pakai platform lain)
