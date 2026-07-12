@@ -1641,3 +1641,18 @@ File ini adalah log permanen bug yang sudah pernah terjadi di project ini besert
 - Fix/Implementasi: Pindah stok = endpoint atomik `$transaction([decrement sumber, increment tujuan])` → total kuota terjaga (invariant conservation). Validasi transfer: dua tiket satu event + satu promotor, gate approved, `quota - sold ≥ quantity`, quantity bilangan bulat > 0, sumber ≠ tujuan. TIDAK ada batasan jumlah pindah (hak promotor). Satu-satunya batas teknis (tiket & merch): stok tidak boleh di bawah jumlah terjual.
 - Verifikasi: `node --check` semua file backend + `npx tsc --noEmit` client lolos. DB Supabase TIDAK reachable dari PC kantor (ECONNREFUSED) → tidak bisa integrasi live; sebagai gantinya 26 logic-test lolos (mock prisma via require-cache, mengeksekusi code path controller asli: gate draft/pending/approved, below-sold, transfer conservation + semua edge case). SUDAH DEPLOYED ke production (commit `0577daf`, 2026-07-12) — push ke `origin/main` terverifikasi + deploy.sh dijalankan founder.
 - Tag: #storefront #stok #tiket #merch #transfer-stok #gate #fitur-baru #deployed
+
+---
+
+## [2026-07-12] Menu Pro tanpa badge + halaman Payout tanpa lock UI + menu "Vendor & Talent" placeholder masih tampil
+
+- Gejala/konteks: (Konsistensi UX gating Pro — bukan bug fungsional, tapi ketidakkonsistenan yang membingungkan.) Dua menu sidebar yang mengarah ke fitur Pro ("Manajemen Tiket" → `/dashboard/tickets`, "Pencairan Dana" → `/dashboard/payout`) TIDAK punya badge "Pro" amber seperti menu Pro lain (Simulasi, Sponsor, Expense, Crew, P&L, Laporan Akhir). Selain itu halaman Payout (`/dashboard/payout`) TIDAK punya lock UI untuk user Starter — beda dari expenses/crew/pl-report yang sudah gate `if (!isPro) return <lock>`. Menu placeholder "Vendor & Talent" (hanya `alert("Fitur Vendor Segera Hadir")`, belum ada fitur) masih tampil di sidebar.
+- Root cause: Badge Pro & lock UI ditambahkan per-fitur secara manual; saat Manajemen Tiket + Pencairan Dana dibangun, badge sidebar + lock UI Payout belum ikut disisipkan. "Vendor & Talent" adalah sisa placeholder awal yang belum disembunyikan.
+- File terkait:
+  - `client/src/components/dashboard/sidebar.tsx` — nav array + tipe `NavItem` + logika filter.
+  - `client/src/app/dashboard/payout/page.tsx` — gating Pro halaman.
+- Fix:
+  - Sidebar: tambah `badge: "Pro"` ke item "Manajemen Tiket" & "Pencairan Dana" (render pakai pola pill amber yang sudah ada). Tambah `hidden?: boolean` ke tipe `NavItem` + `hidden: true` ke "Vendor & Talent" (objek TIDAK dihapus, hanya disembunyikan). Filter render jadi `nav.filter((item) => !item.hidden && (!item.adminOnly || isAdmin))`.
+  - Payout: import `useUser` + render `if (!isPro) return <lock UI>` (Banknote+PRO header, ikon Lock, "🔒 Fitur Pro", deskripsi "Pencairan Dana tersedia untuk pengguna Pro…", tombol Upgrade → `/dashboard/upgrade`) — pola identik dgn expenses/crew/pl-report. Gate ditaruh SETELAH semua hooks (patuh Rules of Hooks), sebelum early-return `loading` yang sudah ada. Logika/API/balance backend TIDAK disentuh (UI-only). `tickets/page.tsx` TIDAK diubah — gate `isPro`-nya sudah ada & benar.
+- Verifikasi: `npx tsc --noEmit` client exit 0. "Vendor & Talent" (hidden:true) tidak lolos filter → tidak ter-render. Payout: Pro → UI normal, Starter → lock UI (reasoning JSX, gate setelah hooks).
+- Tag: #ui #pro-gating #sidebar #badge #payout #lock-ui #konsistensi

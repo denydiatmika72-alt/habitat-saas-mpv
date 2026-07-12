@@ -28,19 +28,19 @@ const mobileNavItems = [
 ]
 
 type NavItem =
-  | { label: string; icon: React.ElementType; href: string; badge?: string; adminOnly?: boolean; onClick?: never }
-  | { label: string; icon: React.ElementType; onClick: () => void; badge?: string; adminOnly?: boolean; href?: never }
+  | { label: string; icon: React.ElementType; href: string; badge?: string; adminOnly?: boolean; hidden?: boolean; onClick?: never }
+  | { label: string; icon: React.ElementType; onClick: () => void; badge?: string; adminOnly?: boolean; hidden?: boolean; href?: never }
 
 const nav: NavItem[] = [
   { label: "Dashboard", icon: LayoutDashboard, href: "/dashboard" },
   { label: "Simulasi Harga Tiket", icon: Calculator, href: "/dashboard/simulasi", badge: "Pro" },
   { label: "Sponsor & Partner", icon: Handshake, href: "/dashboard/sponsor", badge: "Pro" },
-  { label: "Vendor & Talent", icon: Users, onClick: () => alert("Fitur Vendor Segera Hadir") },
+  { label: "Vendor & Talent", icon: Users, onClick: () => alert("Fitur Vendor Segera Hadir"), hidden: true },
   { label: "Invoice & Purchase Order", icon: ReceiptText, href: "/dashboard/invoice" },
   { label: "Expense Tracker", icon: Wallet, href: "/dashboard/expenses", badge: "Pro" },
   { label: "Field Crew", icon: Users, href: "/dashboard/crew", badge: "Pro" },
-  { label: "Manajemen Tiket", icon: Ticket, href: "/dashboard/tickets" },
-  { label: "Pencairan Dana", icon: Banknote, href: "/dashboard/payout" },
+  { label: "Manajemen Tiket", icon: Ticket, href: "/dashboard/tickets", badge: "Pro" },
+  { label: "Pencairan Dana", icon: Banknote, href: "/dashboard/payout", badge: "Pro" },
   { label: "Laporan P&L", icon: BarChart2, href: "/dashboard/pl-report", badge: "Pro" },
   { label: "Laporan Akhir Event", icon: FileCheck, href: "/dashboard/event-summary", badge: "Pro" },
   { label: "Approve User", icon: ShieldCheck, href: "/dashboard/admin", adminOnly: true },
@@ -50,7 +50,7 @@ const nav: NavItem[] = [
 export function Sidebar() {
   const pathname = usePathname()
   const { isAdmin } = useUser()
-  const visibleNav = nav.filter((item) => !item.adminOnly || isAdmin)
+  const visibleNav = nav.filter((item) => !item.hidden && (!item.adminOnly || isAdmin))
 
   return (
     // Komentar sudah saya pindahkan ke luar JSX agar tidak error
