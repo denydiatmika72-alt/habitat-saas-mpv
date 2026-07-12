@@ -170,7 +170,7 @@ export default function RABPage() {
             <tbody>
               <tr>
                 <td className="border-0 align-top p-0 w-1/2">
-                  <div className="flex items-center gap-2 mb-2"><div className="w-8 h-8 bg-emerald-800 rounded flex items-center justify-center text-white font-bold text-xl">A</div><span className="font-bold text-lg text-slate-800 tracking-wider">AURORA</span></div>
+                  <div className="flex items-center gap-2 mb-2"><div className="w-8 h-8 bg-emerald-800 rounded flex items-center justify-center text-white font-bold text-xl">N</div><span className="font-bold text-lg text-slate-800 tracking-wider">nexEvent</span></div>
                   <table className="text-xs text-slate-700 mt-4 border-0">
                     <tbody>
                       <tr><td className="border-0 py-0.5 font-semibold w-24 px-0">Nama Event</td><td className="border-0 py-0.5 px-0">: {eventTitle}</td></tr>

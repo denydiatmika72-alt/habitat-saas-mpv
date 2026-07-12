@@ -1656,3 +1656,22 @@ File ini adalah log permanen bug yang sudah pernah terjadi di project ini besert
   - Payout: import `useUser` + render `if (!isPro) return <lock UI>` (Banknote+PRO header, ikon Lock, "🔒 Fitur Pro", deskripsi "Pencairan Dana tersedia untuk pengguna Pro…", tombol Upgrade → `/dashboard/upgrade`) — pola identik dgn expenses/crew/pl-report. Gate ditaruh SETELAH semua hooks (patuh Rules of Hooks), sebelum early-return `loading` yang sudah ada. Logika/API/balance backend TIDAK disentuh (UI-only). `tickets/page.tsx` TIDAK diubah — gate `isPro`-nya sudah ada & benar.
 - Verifikasi: `npx tsc --noEmit` client exit 0. "Vendor & Talent" (hidden:true) tidak lolos filter → tidak ter-render. Payout: Pro → UI normal, Starter → lock UI (reasoning JSX, gate setelah hooks).
 - Tag: #ui #pro-gating #sidebar #badge #payout #lock-ui #konsistensi
+
+---
+
+## [2026-07-12] Rebrand AURORA → nexEvent + topbar user statis ("Promotor Aktif"/"Administrator") + urutan menu
+
+- Gejala/konteks: (Branding + data-wiring, BUKAN bug.) Sidebar + header proposal RAB masih pakai nama brand lama "AURORA"/"Promotor Studio". Topbar menampilkan nama & peran user HARDCODE ("Promotor Aktif" / "Administrator") — tidak mencerminkan user yang login. Menu "Invoice & Purchase Order" berada jauh di bawah (setelah Sponsor), padahal sering dipakai → diminta naik ke urutan ke-2 setelah Dashboard.
+- Root cause: Sisa scaffold awal (brand placeholder "AURORA") + komponen topbar dibuat sebelum hook `useUser` tersedia, jadi teks user diisi statis.
+- File terkait:
+  - `client/src/components/dashboard/sidebar.tsx` — brand block + urutan nav.
+  - `client/src/components/dashboard/top-bar.tsx` — nama + label peran user.
+  - `client/src/hooks/useUser.ts` — tipe `UserProfile` (tambah field `role`).
+  - `client/src/app/dashboard/rab/[id]/page.tsx` — header brand di proposal PDF (print view).
+- Fix:
+  - Sidebar: pindah "Invoice & Purchase Order" ke posisi tepat setelah "Dashboard" (href/icon/badge tidak diubah). Ganti blok "AURORA"/"Promotor Studio" jadi wordmark teks "nexEvent" + monogram "N" (Crown dihapus dari import karena tak terpakai lagi); tinggalkan komentar TODO untuk ganti aset logo asli saat founder kirim file. (Header RAB proposal juga di-rebrand "A"/AURORA → "N"/nexEvent agar tidak ada sisa brand lama.)
+  - Topbar: wiring `useUser()` — nama statis "Promotor Aktif" → `user?.name` (fallback "Pengguna"); saat `loading` tampil skeleton pulse (bukan blank/undefined). Label "Administrator" statis → `roleLabel` dinamis: `isAdmin` → "Administrator", `role` promotor/crew/scanner → "Promotor"/"Crew Lapangan"/"Scanner Tiket", else "Pengguna". Field `role` (dikirim `/api/auth/me` `getMe`, `select role:true`) ditambahkan ke interface `UserProfile` (type-only, backend tidak disentuh).
+  - Inisial avatar statis "RA" → dinamis dari `user.name` (maks 2 huruf pertama tiap kata, fallback "?"; skeleton saat loading).
+  - Semua perubahan frontend-only, palet emerald/slate dipertahankan, Pro-gating tidak disentuh.
+- Verifikasi: `npx tsc --noEmit` client exit 0. Grep ulang: tidak ada sisa "AURORA"/"PROMOTOR STUDIO"/"Promotor Studio"/"Promotor Aktif"; "Administrator" hanya tersisa di dalam conditional `roleLabel` (bukan hardcode UI). Urutan nav & topbar dinamis dikonfirmasi lewat reasoning JSX.
+- Tag: #ui #branding #rebrand #nexevent #topbar #useuser #sidebar #data-wiring

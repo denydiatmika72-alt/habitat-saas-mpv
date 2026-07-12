@@ -7,6 +7,7 @@ export interface UserProfile {
   email: string;
   phone?: string | null;
   status: string;
+  role?: 'promotor' | 'crew' | 'scanner';
   plan: 'starter' | 'pro';
   proEventId?: string | null;
   proExpiresAt?: string | null;

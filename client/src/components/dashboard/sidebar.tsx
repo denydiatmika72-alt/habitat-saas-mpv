@@ -9,7 +9,6 @@ import {
   Users,
   ReceiptText,
   BarChart2,
-  Crown,
   ShieldCheck,
   Wallet,
   Ticket,
@@ -33,10 +32,10 @@ type NavItem =
 
 const nav: NavItem[] = [
   { label: "Dashboard", icon: LayoutDashboard, href: "/dashboard" },
+  { label: "Invoice & Purchase Order", icon: ReceiptText, href: "/dashboard/invoice" },
   { label: "Simulasi Harga Tiket", icon: Calculator, href: "/dashboard/simulasi", badge: "Pro" },
   { label: "Sponsor & Partner", icon: Handshake, href: "/dashboard/sponsor", badge: "Pro" },
   { label: "Vendor & Talent", icon: Users, onClick: () => alert("Fitur Vendor Segera Hadir"), hidden: true },
-  { label: "Invoice & Purchase Order", icon: ReceiptText, href: "/dashboard/invoice" },
   { label: "Expense Tracker", icon: Wallet, href: "/dashboard/expenses", badge: "Pro" },
   { label: "Field Crew", icon: Users, href: "/dashboard/crew", badge: "Pro" },
   { label: "Manajemen Tiket", icon: Ticket, href: "/dashboard/tickets", badge: "Pro" },
@@ -56,16 +55,14 @@ export function Sidebar() {
     // Komentar sudah saya pindahkan ke luar JSX agar tidak error
     <aside className="print:hidden hidden w-64 shrink-0 flex-col border-r border-slate-200 bg-white lg:flex">
       {/* Logo / Brand */}
+      {/* TODO: replace with actual nexEvent logo asset when founder provides the file */}
       <div className="flex items-center gap-3 border-b border-slate-200 px-6 py-5">
-        <div className="flex size-9 items-center justify-center rounded-md bg-emerald-800 text-white">
-          <Crown className="size-5" />
+        <div className="flex size-9 items-center justify-center rounded-md bg-emerald-800 text-sm font-bold text-white">
+          N
         </div>
         <div className="leading-tight">
           <p className="font-heading text-lg font-semibold tracking-tight text-slate-900">
-            AURORA
-          </p>
-          <p className="text-[11px] uppercase tracking-[0.2em] text-slate-500">
-            Promotor Studio
+            nexEvent
           </p>
         </div>
       </div>
