@@ -197,7 +197,7 @@ export default function PayoutPage() {
               <h1 className="text-2xl font-semibold tracking-tight text-slate-900">
                 Pencairan Dana
               </h1>
-              <span className="rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-bold text-amber-800">
+              <span className="rounded-full bg-emerald-800 px-2 py-0.5 text-[10px] font-bold text-white">
                 PRO
               </span>
             </div>

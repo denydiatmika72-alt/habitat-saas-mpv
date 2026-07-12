@@ -92,7 +92,7 @@ export function Sidebar() {
                     <item.icon className="size-4" />
                     <span className="flex-1">{item.label}</span>
                     {item.badge && (
-                      <span className="rounded-full bg-amber-500 px-1.5 py-0.5 text-[9px] font-black leading-none text-neutral-950">
+                      <span className="rounded-full bg-emerald-800 px-1.5 py-0.5 text-[9px] font-black leading-none text-white">
                         {item.badge}
                       </span>
                     )}
@@ -106,7 +106,7 @@ export function Sidebar() {
                     <item.icon className="size-4" />
                     <span className="flex-1">{item.label}</span>
                     {item.badge && (
-                      <span className="rounded-full bg-amber-500 px-1.5 py-0.5 text-[9px] font-black leading-none text-neutral-950">
+                      <span className="rounded-full bg-emerald-800 px-1.5 py-0.5 text-[9px] font-black leading-none text-white">
                         {item.badge}
                       </span>
                     )}

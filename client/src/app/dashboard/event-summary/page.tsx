@@ -191,7 +191,7 @@ function Header() {
       <div>
         <div className="flex items-center gap-2">
           <h1 className="text-2xl font-semibold tracking-tight text-slate-900">Laporan Akhir Event</h1>
-          <span className="rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-bold text-amber-800">PRO</span>
+          <span className="rounded-full bg-emerald-800 px-2 py-0.5 text-[10px] font-bold text-white">PRO</span>
         </div>
         <p className="mt-0.5 text-sm text-slate-500">Tandai event selesai untuk menghasilkan laporan akhir lengkap dan mengirimnya ke email Anda.</p>
       </div>
