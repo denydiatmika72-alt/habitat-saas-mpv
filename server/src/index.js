@@ -113,33 +113,6 @@ app.use('/api/admin/payout',  adminPayoutRoutes);
 app.use('/api/admin/platform-revenue', platformRevenueRoutes);
 app.use('/api/upload',        uploadRoutes);
 
-// ── TEMPORARY: one-time admin promotion endpoint (PENDING CLEANUP by founder) ──
-// Pola sama dengan endpoint setup-admin lama (lihat known-bugs 2026-07-02): route
-// HANYA terdaftar kalau env var secret di-set — tanpa env var, route tidak ada sama
-// sekali (bukan 404 vs 403 yang membedakan keberadaannya). Secret dibaca dari env,
-// TIDAK PERNAH hardcode di source (repo public → git history permanen).
-// HAPUS blok ini setelah dipakai (Step 4).
-if (process.env.SETUP_ADMIN_SECRET_2) {
-  const prisma = require('./lib/prisma');
-  app.post('/api/setup-admin-temp-2', async (req, res) => {
-    const provided = req.headers['x-setup-secret'] || (req.body && req.body.secret);
-    if (provided !== process.env.SETUP_ADMIN_SECRET_2) {
-      return res.status(403).json({ success: false, message: 'Forbidden' });
-    }
-    try {
-      const user = await prisma.user.update({
-        where: { email: 'nexeventapp@gmail.com' },
-        data: { isAdmin: true },
-        select: { id: true, email: true, isAdmin: true, plan: true, proExpiresAt: true },
-      });
-      return res.json({ success: true, user });
-    } catch (err) {
-      console.error('[setup-admin-temp-2] gagal:', err.message);
-      return res.status(500).json({ success: false, message: 'Update gagal' });
-    }
-  });
-}
-
 app.use((req, res) => {
   console.warn('[404] Route tidak ditemukan:', req.method, req.originalUrl);
   res.status(404).json({ success: false, message: `Route ${req.method} ${req.originalUrl} tidak ditemukan.` });
