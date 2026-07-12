@@ -5,6 +5,7 @@ const {
   createTicketType,
   updateTicketType,
   deleteTicketType,
+  transferTicketStock,
   getTicketTypes,
   requestStorefrontApproval,
   updateStorefrontSettings,
@@ -22,6 +23,7 @@ router.get('/types', verifyToken, getTicketTypes);
 router.post('/types', verifyToken, createTicketType);
 router.patch('/types/:id', verifyToken, updateTicketType);
 router.delete('/types/:id', verifyToken, deleteTicketType);
+router.post('/types/:id/transfer-stock', verifyToken, transferTicketStock);
 
 router.post('/request-approval', verifyToken, requestStorefrontApproval);
 router.patch('/storefront-settings', verifyToken, updateStorefrontSettings);

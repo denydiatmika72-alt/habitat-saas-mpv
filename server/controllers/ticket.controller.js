@@ -1,5 +1,6 @@
 const prisma = require('../src/lib/prisma');
 const slugify = require('slugify');
+const { isStockEditAllowed, STOCK_EDIT_GATE_MESSAGE } = require('../services/ticket.service');
 
 // POST /api/tickets/types — promotor buat jenis tiket
 const createTicketType = async (req, res) => {
@@ -42,6 +43,12 @@ const updateTicketType = async (req, res) => {
     if (!ticketType || ticketType.event.promotor_id !== req.user.id) {
       return res.status(404).json({ success: false, message: 'Jenis tiket tidak ditemukan.' });
     }
+    // Gate edit STOK (kuota) — Storefront Roadmap #2. Ubah nama/harga/isActive tidak digate
+    // (nama/harga = setup, isActive = fitur toggle terpisah). Hanya perubahan kuota yang butuh
+    // storefront approved + fee sudah diatur admin.
+    if (quota !== undefined && !isStockEditAllowed(ticketType.event)) {
+      return res.status(400).json({ success: false, message: STOCK_EDIT_GATE_MESSAGE });
+    }
     if (quota !== undefined && Number(quota) < ticketType.sold) {
       return res.status(400).json({ success: false, message: `Kuota tidak boleh kurang dari jumlah terjual (${ticketType.sold}).` });
     }
@@ -80,6 +87,64 @@ const deleteTicketType = async (req, res) => {
     return res.json({ success: true, message: 'Jenis tiket berhasil dihapus.' });
   } catch (err) {
     console.error('[DELETE TICKET TYPE ERROR]', err);
+    return res.status(500).json({ success: false, message: 'Server error.' });
+  }
+};
+
+// POST /api/tickets/types/:id/transfer-stock — pindah kuota antar jenis tiket dalam event yang sama.
+// Storefront Roadmap #2: TIDAK ada batasan jumlah pindah (hak & tanggung jawab promotor), satu-satunya
+// batas teknis = tidak boleh memindah stok yang sudah menutup tiket terjual (quota - sold di sumber).
+// Operasi ATOMIK ($transaction) supaya total kuota terjaga & tidak ada window inkonsisten.
+const transferTicketStock = async (req, res) => {
+  try {
+    const { id } = req.params; // sumber
+    const { destinationId, quantity } = req.body;
+    const qty = Number(quantity);
+
+    if (!destinationId) {
+      return res.status(400).json({ success: false, message: 'destinationId (tiket tujuan) wajib diisi.' });
+    }
+    if (destinationId === id) {
+      return res.status(400).json({ success: false, message: 'Tiket sumber dan tujuan tidak boleh sama.' });
+    }
+    if (!Number.isInteger(qty) || qty <= 0) {
+      return res.status(400).json({ success: false, message: 'Jumlah yang dipindah harus bilangan bulat lebih dari 0.' });
+    }
+
+    const [source, dest] = await Promise.all([
+      prisma.ticketType.findUnique({ where: { id }, include: { event: true } }),
+      prisma.ticketType.findUnique({ where: { id: destinationId }, include: { event: true } }),
+    ]);
+    if (!source || source.event.promotor_id !== req.user.id) {
+      return res.status(404).json({ success: false, message: 'Jenis tiket sumber tidak ditemukan.' });
+    }
+    if (!dest || dest.event.promotor_id !== req.user.id) {
+      return res.status(404).json({ success: false, message: 'Jenis tiket tujuan tidak ditemukan.' });
+    }
+    if (source.eventId !== dest.eventId) {
+      return res.status(400).json({ success: false, message: 'Hanya bisa memindah stok antar jenis tiket dalam event yang sama.' });
+    }
+    // Kedua tiket satu event → cukup cek gate di salah satunya.
+    if (!isStockEditAllowed(source.event)) {
+      return res.status(400).json({ success: false, message: STOCK_EDIT_GATE_MESSAGE });
+    }
+
+    const available = source.quota - source.sold;
+    if (qty > available) {
+      return res.status(400).json({
+        success: false,
+        message: `Stok tersedia di tiket sumber hanya ${available}. Tidak bisa memindah ${qty}.`,
+      });
+    }
+
+    const [updatedSource, updatedDest] = await prisma.$transaction([
+      prisma.ticketType.update({ where: { id }, data: { quota: source.quota - qty } }),
+      prisma.ticketType.update({ where: { id: destinationId }, data: { quota: dest.quota + qty } }),
+    ]);
+
+    return res.json({ success: true, data: { source: updatedSource, destination: updatedDest } });
+  } catch (err) {
+    console.error('[TRANSFER TICKET STOCK ERROR]', err);
     return res.status(500).json({ success: false, message: 'Server error.' });
   }
 };
@@ -424,6 +489,7 @@ module.exports = {
   createTicketType,
   updateTicketType,
   deleteTicketType,
+  transferTicketStock,
   getTicketTypes,
   requestStorefrontApproval,
   updateStorefrontSettings,

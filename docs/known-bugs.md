@@ -1625,3 +1625,19 @@ File ini adalah log permanen bug yang sudah pernah terjadi di project ini besert
   - `server/src/controllers/event.controller.js` — duplikat basi, hanya berisi `createEvent` (versi lebih tipis dari `server/controllers/event.controller.js` yang live). Satu-satunya yang me-require-nya adalah `server/src/routes/events.js` yang mati itu.
 - Fix/Status: **TIDAK dihapus di audit ini — sengaja.** Ini kandidat penghapusan untuk cleanup mendatang; keputusan hapus diserahkan ke founder (task audit ini read-only untuk kode, hanya menulis dokumentasi). Yang MASIH HIDUP di folder `server/src/controllers/` yang sama: `auth.controller.js` dan `admin.controller.js` (dipakai oleh `src/routes/auth.routes.js` & `src/routes/admin.routes.js` yang di-mount) — JANGAN sentuh dua ini. Yang mati HANYA pasangan `events.js` + `src/controllers/event.controller.js`.
 - Tag: #audit-retroaktif #dead-code #cleanup-candidate #event #tidak-dihapus
+
+---
+
+## [2026-07-12] Edit Stok + Pindah Stok Antar Jenis Tiket (Storefront Roadmap #2 — fitur baru, bukan bug)
+
+- Gejala/konteks: (Implementasi fitur baru, BUKAN bug — dicatat di sini mengikuti konvensi entry fitur sebelumnya.) Item terakhir yang masih pending di "Storefront Feature Roadmap". Sebelum ini: edit stok tiket sudah ada (updateTicketType), edit stok merch backend ada (`updateVariantStock`) tapi TANPA UI, pindah stok antar jenis tiket TIDAK ada sama sekali, dan gate "hanya boleh kelola stok setelah storefront approved + fee diset admin" belum di-enforce di kode.
+- Keputusan gate (founder, sesi ini): edit/pindah stok (tiket & merch) hanya boleh kalau storefront event `approved` DAN fee sudah diatur admin. Karena fee SELALU ter-resolve via fallback chain (`resolveFeePercents`: fee spesifik → platformFeePercent → default 3.5) dan admin bisa approve dengan fee null (→ default), cek "fee not-null" yang ketat akan KELIRU memblokir event live yang jual pakai fee default. Maka gate efektif = `storefrontStatus === 'approved'` (approval itu sendiri = titik admin menetapkan fee; feeBearer wajib diisi promotor sebelum bisa ajukan approval). Satu kondisi ini mencakup kedua syarat tanpa false-block.
+- File terkait:
+  - `server/services/ticket.service.js` — helper bersama baru `isStockEditAllowed(event)` + konstanta pesan `STOCK_EDIT_GATE_MESSAGE` (di-export).
+  - `server/controllers/ticket.controller.js` — gate di `updateTicketType` (HANYA saat `quota` dikirim; nama/harga/isActive tetap bebas) + controller baru `transferTicketStock`.
+  - `server/routes/ticket.routes.js` — route baru `POST /api/tickets/types/:id/transfer-stock`.
+  - `server/controllers/merch.controller.js` — gate di `updateVariantStock`.
+  - `client/src/app/dashboard/tickets/page.tsx` — flag `canEditStock`; UI edit stok merch per varian; UI "Pindah Stok" (ikon ArrowLeftRight) + form pilih tujuan/jumlah + preview before/after + `confirm()`; kolom kuota inline-edit tiket dikunci saat belum approved (`saveEdit` hanya kirim `quota` kalau `canEditStock`).
+- Fix/Implementasi: Pindah stok = endpoint atomik `$transaction([decrement sumber, increment tujuan])` → total kuota terjaga (invariant conservation). Validasi transfer: dua tiket satu event + satu promotor, gate approved, `quota - sold ≥ quantity`, quantity bilangan bulat > 0, sumber ≠ tujuan. TIDAK ada batasan jumlah pindah (hak promotor). Satu-satunya batas teknis (tiket & merch): stok tidak boleh di bawah jumlah terjual.
+- Verifikasi: `node --check` semua file backend + `npx tsc --noEmit` client lolos. DB Supabase TIDAK reachable dari PC kantor (ECONNREFUSED) → tidak bisa integrasi live; sebagai gantinya 26 logic-test lolos (mock prisma via require-cache, mengeksekusi code path controller asli: gate draft/pending/approved, below-sold, transfer conservation + semua edge case). PENDING deploy + E2E di production.
+- Tag: #storefront #stok #tiket #merch #transfer-stok #gate #fitur-baru #pending-deploy

@@ -2,6 +2,7 @@ const path = require('path');
 const multer = require('multer');
 const prisma = require('../src/lib/prisma');
 const { supabase } = require('../services/supabase.service');
+const { isStockEditAllowed, STOCK_EDIT_GATE_MESSAGE } = require('../services/ticket.service');
 
 const VALID_SIZES = ['S', 'M', 'L', 'XL', 'XXL', 'FREE SIZE', 'ONE SIZE'];
 const BUCKET = 'event-assets';
@@ -123,6 +124,10 @@ const updateVariantStock = async (req, res) => {
     const variant = await prisma.merchVariant.findUnique({ where: { id }, include: { item: { include: { event: true } } } });
     if (!variant || variant.item.event.promotor_id !== req.user.id) {
       return res.status(404).json({ success: false, message: 'Varian tidak ditemukan.' });
+    }
+    // Gate edit STOK — Storefront Roadmap #2 (sama dgn updateTicketType): butuh storefront approved + fee diatur admin.
+    if (!isStockEditAllowed(variant.item.event)) {
+      return res.status(400).json({ success: false, message: STOCK_EDIT_GATE_MESSAGE });
     }
     if (Number(stock) < variant.sold) {
       return res.status(400).json({ success: false, message: `Stok tidak boleh kurang dari jumlah terjual (${variant.sold}).` });

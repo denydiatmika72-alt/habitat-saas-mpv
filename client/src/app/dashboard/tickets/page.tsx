@@ -2,7 +2,7 @@
 
 import { useEffect, useState, useCallback } from "react"
 import Link from "next/link"
-import { Lock, Ticket as TicketIcon, Plus, Trash2, Pencil, Copy, Check, ExternalLink, Upload, Package, Download } from "lucide-react"
+import { Lock, Ticket as TicketIcon, Plus, Trash2, Pencil, Copy, Check, ExternalLink, Upload, Package, Download, ArrowLeftRight } from "lucide-react"
 import { useUser } from "@/hooks/useUser"
 import { formatIDRInput, parseIDRInput } from "@/lib/formatNumber"
 
@@ -236,6 +236,18 @@ export default function TicketsPage() {
   const [editingId, setEditingId] = useState<string | null>(null)
   const [editDraft, setEditDraft] = useState({ name: "", price: "", quota: "" })
 
+  // Edit stok merch per varian (Storefront Roadmap #2)
+  const [editingVariantId, setEditingVariantId] = useState<string | null>(null)
+  const [variantStockDraft, setVariantStockDraft] = useState("")
+  const [variantStockError, setVariantStockError] = useState("")
+
+  // Pindah stok antar jenis tiket (Storefront Roadmap #2)
+  const [transferSourceId, setTransferSourceId] = useState<string | null>(null)
+  const [transferDest, setTransferDest] = useState("")
+  const [transferQty, setTransferQty] = useState("")
+  const [transferError, setTransferError] = useState("")
+  const [transferring, setTransferring] = useState(false)
+
   const [saleStart, setSaleStart] = useState("")
   const [saleEnd, setSaleEnd] = useState("")
   const [submittingApproval, setSubmittingApproval] = useState(false)
@@ -376,10 +388,17 @@ export default function TicketsPage() {
 
   const saveEdit = async (id: string) => {
     try {
+      // Kuota (stok) hanya dikirim kalau gate lolos (storefront approved). Sebelum approve,
+      // promotor masih boleh perbaiki nama/harga saat setup, tapi kuota terkunci — cermin backend.
+      const body: { name: string; price: number; quota?: number } = {
+        name: editDraft.name,
+        price: parseIDRInput(editDraft.price),
+      }
+      if (canEditStock) body.quota = Number(editDraft.quota)
       const res = await fetch(`/api/tickets/types/${id}`, {
         method: "PATCH",
         headers: authHeaders(),
-        body: JSON.stringify({ name: editDraft.name, price: parseIDRInput(editDraft.price), quota: Number(editDraft.quota) }),
+        body: JSON.stringify(body),
       })
       const data = await res.json()
       if (data.success) {
@@ -409,6 +428,54 @@ export default function TicketsPage() {
     const data = await res.json()
     if (data.success) setTicketTypes((prev) => prev.filter((t) => t.id !== id))
     else alert(data.message || "Gagal menghapus jenis tiket.")
+  }
+
+  const startTransfer = (tt: TicketType) => {
+    setTransferSourceId(tt.id)
+    setTransferDest("")
+    setTransferQty("")
+    setTransferError("")
+    setEditingId(null)
+  }
+
+  const handleTransferStock = async (sourceId: string) => {
+    setTransferError("")
+    const qty = Number(transferQty)
+    if (!transferDest) { setTransferError("Pilih jenis tiket tujuan."); return }
+    if (!Number.isInteger(qty) || qty <= 0) { setTransferError("Jumlah harus bilangan bulat lebih dari 0."); return }
+    const source = ticketTypes.find((t) => t.id === sourceId)
+    const dest = ticketTypes.find((t) => t.id === transferDest)
+    if (!source || !dest) return
+    if (qty > source.quota - source.sold) {
+      setTransferError(`Stok tersedia di ${source.name} hanya ${source.quota - source.sold}.`)
+      return
+    }
+    if (!confirm(`Pindahkan ${qty} stok dari "${source.name}" (kuota ${source.quota} → ${source.quota - qty}) ke "${dest.name}" (kuota ${dest.quota} → ${dest.quota + qty})?`)) return
+    setTransferring(true)
+    try {
+      const res = await fetch(`/api/tickets/types/${sourceId}/transfer-stock`, {
+        method: "POST",
+        headers: authHeaders(),
+        body: JSON.stringify({ destinationId: transferDest, quantity: qty }),
+      })
+      const data = await res.json()
+      if (data.success) {
+        setTicketTypes((prev) => prev.map((t) => {
+          if (t.id === data.data.source.id) return data.data.source
+          if (t.id === data.data.destination.id) return data.data.destination
+          return t
+        }))
+        setTransferSourceId(null)
+        setTransferDest("")
+        setTransferQty("")
+      } else {
+        setTransferError(data.message || "Gagal memindah stok.")
+      }
+    } catch {
+      setTransferError("Gagal menghubungi server.")
+    } finally {
+      setTransferring(false)
+    }
   }
 
   const handleAddMerch = async () => {
@@ -490,6 +557,38 @@ export default function TicketsPage() {
       alert("Gagal menghubungi server.")
     } finally {
       setUploadingMerchId(null)
+    }
+  }
+
+  const startEditVariant = (v: MerchVariant) => {
+    setEditingVariantId(v.id)
+    setVariantStockDraft(String(v.stock))
+    setVariantStockError("")
+  }
+
+  const saveVariantStock = async (variantId: string, merchItemId: string) => {
+    setVariantStockError("")
+    const stock = Number(variantStockDraft)
+    if (!Number.isInteger(stock) || stock < 0) { setVariantStockError("Stok harus bilangan bulat ≥ 0."); return }
+    try {
+      const res = await fetch(`/api/merch/variants/${variantId}`, {
+        method: "PATCH",
+        headers: authHeaders(),
+        body: JSON.stringify({ stock }),
+      })
+      const data = await res.json()
+      if (data.success) {
+        setMerchItems((prev) => prev.map((m) => (
+          m.id === merchItemId
+            ? { ...m, variants: m.variants.map((v) => (v.id === variantId ? data.data : v)) }
+            : m
+        )))
+        setEditingVariantId(null)
+      } else {
+        setVariantStockError(data.message || "Gagal menyimpan stok.")
+      }
+    } catch {
+      setVariantStockError("Gagal menghubungi server.")
     }
   }
 
@@ -761,6 +860,10 @@ export default function TicketsPage() {
     }
   }
 
+  // Gate edit/pindah stok (Storefront Roadmap #2) — cermin backend isStockEditAllowed:
+  // hanya boleh setelah storefront disetujui admin (fee ikut diatur saat approval).
+  const canEditStock = event?.storefrontStatus === "approved"
+
   const storefrontUrl = event?.slug ? `nexeventapp.tech/event/${event.slug}` : ""
   const copyUrl = () => {
     navigator.clipboard.writeText(`https://${storefrontUrl}`)
@@ -895,12 +998,52 @@ export default function TicketsPage() {
                               value={editDraft.quota}
                               onChange={(e) => setEditDraft((d) => ({ ...d, quota: e.target.value }))}
                               placeholder="Kuota"
-                              className="w-1/2 rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-sm"
+                              disabled={!canEditStock}
+                              title={canEditStock ? "Kuota" : "Kuota (stok) bisa diubah setelah storefront disetujui admin"}
+                              className="w-1/2 rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-sm disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-400"
                             />
                           </div>
+                          {!canEditStock && (
+                            <p className="text-[11px] text-slate-400">Kuota terkunci sampai storefront disetujui admin. Nama &amp; harga tetap bisa diubah.</p>
+                          )}
                           <div className="flex gap-2">
                             <button onClick={() => saveEdit(tt.id)} className="flex-1 rounded-lg bg-emerald-800 py-1.5 text-xs font-semibold text-white hover:bg-emerald-900">Simpan</button>
                             <button onClick={() => setEditingId(null)} className="flex-1 rounded-lg bg-slate-200 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-300">Batal</button>
+                          </div>
+                        </div>
+                      ) : transferSourceId === tt.id ? (
+                        <div className="flex flex-col gap-2">
+                          <p className="text-xs font-semibold text-slate-700">Pindah Stok dari &quot;{tt.name}&quot;</p>
+                          <p className="text-[11px] text-slate-400">Tersedia dipindah: {tt.quota - tt.sold} (kuota {tt.quota} − terjual {tt.sold})</p>
+                          <select
+                            value={transferDest}
+                            onChange={(e) => setTransferDest(e.target.value)}
+                            className="rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-sm outline-none focus:border-emerald-500"
+                          >
+                            <option value="">-- Pilih tiket tujuan --</option>
+                            {ticketTypes.filter((t) => t.id !== tt.id).map((t) => (
+                              <option key={t.id} value={t.id}>{t.name} (kuota {t.quota})</option>
+                            ))}
+                          </select>
+                          <input
+                            type="number"
+                            min={1}
+                            value={transferQty}
+                            onChange={(e) => setTransferQty(e.target.value)}
+                            placeholder="Jumlah stok yang dipindah"
+                            className="rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-sm outline-none focus:border-emerald-500"
+                          />
+                          {transferDest && Number(transferQty) > 0 && (
+                            <p className="rounded-lg bg-slate-100 px-2.5 py-1.5 text-[11px] text-slate-600">
+                              {tt.name}: {tt.quota} → {tt.quota - Number(transferQty)}
+                              {" · "}
+                              {ticketTypes.find((t) => t.id === transferDest)?.name}: {ticketTypes.find((t) => t.id === transferDest)?.quota} → {(ticketTypes.find((t) => t.id === transferDest)?.quota ?? 0) + Number(transferQty)}
+                            </p>
+                          )}
+                          {transferError && <p className="rounded-lg bg-red-50 px-2.5 py-1.5 text-[11px] text-red-600">{transferError}</p>}
+                          <div className="flex gap-2">
+                            <button onClick={() => handleTransferStock(tt.id)} disabled={transferring} className="flex-1 rounded-lg bg-emerald-800 py-1.5 text-xs font-semibold text-white hover:bg-emerald-900 disabled:opacity-50">{transferring ? "Memindah..." : "Pindahkan"}</button>
+                            <button onClick={() => { setTransferSourceId(null); setTransferError("") }} className="flex-1 rounded-lg bg-slate-200 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-300">Batal</button>
                           </div>
                         </div>
                       ) : (
@@ -919,6 +1062,11 @@ export default function TicketsPage() {
                                 {tt.isActive ? "Aktif" : "Nonaktif"}
                               </span>
                             </div>
+                            {canEditStock && ticketTypes.length > 1 && (
+                              <button onClick={() => startTransfer(tt)} title="Pindah stok ke jenis tiket lain" className="flex size-7 items-center justify-center rounded-md text-slate-400 hover:bg-emerald-50 hover:text-emerald-700">
+                                <ArrowLeftRight className="size-3.5" />
+                              </button>
+                            )}
                             <button onClick={() => startEdit(tt)} className="flex size-7 items-center justify-center rounded-md text-slate-400 hover:bg-slate-200 hover:text-slate-700">
                               <Pencil className="size-3.5" />
                             </button>
@@ -1072,6 +1220,48 @@ export default function TicketsPage() {
                               </span>
                             ))}
                           </div>
+
+                          {/* Edit stok per size — Storefront Roadmap #2 (gated: storefront approved + fee diatur admin) */}
+                          {canEditStock ? (
+                            <div className="mt-2 border-t border-slate-100 pt-2">
+                              <p className="mb-1.5 text-[11px] font-medium text-slate-500">Edit Stok</p>
+                              <div className="flex flex-col gap-1.5">
+                                {item.variants.map((v) => (
+                                  <div key={v.id} className="flex items-center gap-2">
+                                    <span className="w-16 shrink-0 text-xs font-semibold text-slate-600">{v.size}</span>
+                                    {editingVariantId === v.id ? (
+                                      <>
+                                        <input
+                                          type="number"
+                                          min={v.sold}
+                                          value={variantStockDraft}
+                                          onChange={(e) => setVariantStockDraft(e.target.value)}
+                                          className="w-20 rounded-lg border border-slate-200 bg-white px-2 py-1 text-xs outline-none focus:border-emerald-500"
+                                        />
+                                        <span className="text-[11px] text-slate-400">pcs</span>
+                                        <button onClick={() => saveVariantStock(v.id, item.id)} className="ml-auto rounded-lg bg-emerald-800 px-2.5 py-1 text-[11px] font-semibold text-white hover:bg-emerald-900">Simpan</button>
+                                        <button onClick={() => { setEditingVariantId(null); setVariantStockError("") }} className="rounded-lg bg-slate-200 px-2.5 py-1 text-[11px] font-semibold text-slate-700 hover:bg-slate-300">Batal</button>
+                                      </>
+                                    ) : (
+                                      <>
+                                        <span className="text-xs text-slate-500">{v.stock} pcs <span className="text-slate-400">({v.sold} terjual)</span></span>
+                                        <button onClick={() => startEditVariant(v)} className="ml-auto flex size-6 items-center justify-center rounded-md text-slate-400 hover:bg-slate-200 hover:text-slate-700">
+                                          <Pencil className="size-3" />
+                                        </button>
+                                      </>
+                                    )}
+                                  </div>
+                                ))}
+                              </div>
+                              {variantStockError && editingVariantId && (
+                                <p className="mt-1.5 rounded-lg bg-red-50 px-2.5 py-1.5 text-[11px] text-red-600">{variantStockError}</p>
+                              )}
+                            </div>
+                          ) : (
+                            <p className="mt-2 border-t border-slate-100 pt-2 text-[11px] text-slate-400">
+                              Edit stok tersedia setelah storefront disetujui admin.
+                            </p>
+                          )}
                         </div>
                       </div>
                     </li>

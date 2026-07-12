@@ -381,19 +381,29 @@ PENTING — Ubah perilaku checkout saat ini:
   fee merch untuk merch) — BUKAN otomatis bundling
 - "Bundling" HANYA berlaku untuk paket kurasi yang sengaja dibuat promotor
 
-### 2. Edit Stok + Pindah Stok Antar Jenis Tiket
+### 2. Edit Stok + Pindah Stok Antar Jenis Tiket (✅ SELESAI — code-complete + logic-tested, pending deploy + E2E)
 Fitur operasional untuk promotor mengelola stok setelah storefront live.
 
-Keputusan final:
-- Syarat bisa edit stok: storefront sudah approved DAN fee sudah diset admin
-- Edit stok merch: sudah ada (updateVariantStock) — verifikasi UI-nya
-- Edit stok tiket: cek apakah UI sudah ada, kalau belum → bangun
-- Pindah stok antar jenis tiket: contoh geser sisa Early Bird → Presale 1
-  → TIDAK ada pembatasan jumlah pindah — hak & tanggung jawab promotor
-- Format number di SEMUA input harga: auto pemisah ribuan (ketik 200000 → 200.000)
-  → berlaku untuk harga tiket, merch, bundling, top-up petty cash, dll
-- SATU-SATUNYA batas teknis: stok tidak boleh diset di bawah jumlah yang SUDAH TERJUAL
-  (bukan aturan kebijakan, tapi perlindungan agar tiket terjual tidak hilang)
+Implementasi final:
+- **Gate edit/pindah stok**: helper bersama `isStockEditAllowed(event)` di `services/ticket.service.js` — hanya
+  boleh kalau `event.storefrontStatus === 'approved'`. Approval SEKALIGUS menetapkan fee (feeBearer wajib diisi
+  sebelum ajukan approval, fee % diset admin saat approve → selalu ter-resolve via `resolveFeePercents`), jadi
+  syarat "storefront approved DAN fee sudah diset admin" praktis dipenuhi oleh satu kondisi `approved` — TIDAK
+  keliru memblokir event live yang pakai fee default. Pesan tolak: `STOCK_EDIT_GATE_MESSAGE` (400).
+- **Edit stok tiket (kuota)**: gate dipasang di `updateTicketType` HANYA saat `quota` ikut dikirim — ubah
+  nama/harga/isActive tetap bebas (setup + toggle). UI: kolom kuota di inline-edit terkunci (disabled) sampai
+  approved; frontend `saveEdit` hanya kirim `quota` kalau `canEditStock`.
+- **Edit stok merch**: gate dipasang di `updateVariantStock`. UI baru: seksi "Edit Stok" per varian (size) di
+  `/dashboard/tickets` (inline edit + Simpan/Batal), muncul hanya saat `canEditStock`.
+- **Pindah stok antar jenis tiket**: endpoint baru `POST /api/tickets/types/:id/transfer-stock`
+  (body `{ destinationId, quantity }`) di `ticket.controller.js` (`transferTicketStock`). Validasi: dua tiket
+  satu event + satu promotor, gate approved, `quota - sold ≥ quantity`. Mutasi ATOMIK dalam satu `$transaction`
+  (decrement sumber + increment tujuan) → total kuota terjaga. **TIDAK ada batasan jumlah pindah** (hak promotor).
+  UI: tombol "Pindah Stok" (ikon ArrowLeftRight) per tiket → form pilih tujuan + jumlah + preview kuota
+  before/after + `confirm()`.
+- Format number input harga: pakai `formatIDRInput`/`parseIDRInput` (sudah ada). Kolom kuota/stok = angka polos.
+- **SATU-SATUNYA batas teknis**: stok/kuota tidak boleh diset/dipindah di bawah jumlah yang SUDAH TERJUAL
+  (perlindungan agar tiket/merch terjual tidak hilang).
 
 ### 3. Box Office Offline (Ticket Box) (✅ SELESAI v1 — code-complete, pending deploy + E2E)
 UI khusus penjualan tiket offline di lokasi fisik.
@@ -543,9 +553,9 @@ Keputusan final:
 9. ✅ Merchandise Storefront + Approval
 10. ✅ Payout / Pencairan Dana (manual-transfer, commit 4df3f1c — deployed + verified production)
 11. 🔴 URGENT: Midtrans Production (menunggu approval KYC — sistem masih Sandbox)
-12. Storefront advanced features → lihat section "Storefront Feature Roadmap"
-    (SUDAH SELESAI: bundling paket kurasi ✅, Ticket Box offline ✅, hutang fee/rekonsiliasi ✅, scanner tiket ✅.
-    MASIH PENDING: hanya #2 "Edit Stok + Pindah Stok Antar Jenis Tiket")
+12. ✅ Storefront advanced features → SELESAI SEMUA. Lihat section "Storefront Feature Roadmap"
+    (bundling paket kurasi ✅, Ticket Box offline ✅, hutang fee/rekonsiliasi ✅, scanner tiket ✅,
+    Edit Stok + Pindah Stok Antar Jenis Tiket ✅ — code-complete + logic-tested, pending deploy + E2E).
 13. ✅ Payout & Laporan Keuangan lanjutan → SELESAI SEMUA (#1–#5), DEPLOYED KE PRODUCTION 2026-07-10.
     Lihat section "Payout & Laporan Keuangan Roadmap" (pelunasan hutang fee otomatis, laporan pencairan PDF,
     laporan pendapatan platform, data audiens). Item terakhir (#5 Data Audiens, commit 21a125a) sudah

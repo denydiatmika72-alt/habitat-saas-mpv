@@ -6,6 +6,19 @@ const DEFAULT_FEE_PERCENT = 3.5;
 
 const makeTicketCode = () => `NE-${Date.now()}-${Math.random().toString(36).slice(2, 8).toUpperCase()}`;
 
+// Gate untuk edit/pindah stok (Storefront Roadmap #2). Founder rule: kelola stok hanya boleh
+// SETELAH storefront disetujui admin — dan approval itu SEKALIGUS menetapkan fee (approveStorefront).
+// feeBearer wajib diisi promotor sebelum bisa ajukan approval, lalu admin menetapkan fee % saat
+// approve (bisa dikosongkan → default via resolveFeePercents). Karena fee SELALU ter-resolve lewat
+// fallback chain, syarat "fee sudah diatur" praktis terpenuhi begitu status 'approved'. Jadi satu
+// kondisi 'approved' sudah mencakup kedua syarat tanpa keliru memblokir event live yang pakai fee default.
+const STOCK_EDIT_GATE_MESSAGE =
+  'Edit stok hanya bisa dilakukan setelah storefront disetujui admin dan fee sudah diatur.';
+
+function isStockEditAllowed(event) {
+  return !!event && event.storefrontStatus === 'approved';
+}
+
 // Resolusi fee % per tipe order dengan fallback chain: fee spesifik → platformFeePercent (legacy) → 3.5.
 // `?? ` (nullish) menjaga nilai 0 yang di-set admin secara eksplisit (tidak jatuh ke fallback).
 function resolveFeePercents(event) {
@@ -67,6 +80,8 @@ async function countTicketsForNik(client, eventId, nik) {
 module.exports = {
   MAX_TICKETS_PER_NIK,
   DEFAULT_FEE_PERCENT,
+  STOCK_EDIT_GATE_MESSAGE,
+  isStockEditAllowed,
   makeTicketCode,
   generateTicketsForOrderItems,
   countTicketsForNik,
