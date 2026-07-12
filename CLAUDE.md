@@ -381,7 +381,7 @@ PENTING — Ubah perilaku checkout saat ini:
   fee merch untuk merch) — BUKAN otomatis bundling
 - "Bundling" HANYA berlaku untuk paket kurasi yang sengaja dibuat promotor
 
-### 2. Edit Stok + Pindah Stok Antar Jenis Tiket (✅ SELESAI — code-complete + logic-tested, pending deploy + E2E)
+### 2. Edit Stok + Pindah Stok Antar Jenis Tiket (✅ SELESAI — deployed ke production 2026-07-12, commit `0577daf`)
 Fitur operasional untuk promotor mengelola stok setelah storefront live.
 
 Implementasi final:
@@ -555,7 +555,7 @@ Keputusan final:
 11. 🔴 URGENT: Midtrans Production (menunggu approval KYC — sistem masih Sandbox)
 12. ✅ Storefront advanced features → SELESAI SEMUA. Lihat section "Storefront Feature Roadmap"
     (bundling paket kurasi ✅, Ticket Box offline ✅, hutang fee/rekonsiliasi ✅, scanner tiket ✅,
-    Edit Stok + Pindah Stok Antar Jenis Tiket ✅ — code-complete + logic-tested, pending deploy + E2E).
+    Edit Stok + Pindah Stok Antar Jenis Tiket ✅ — deployed ke production 2026-07-12, commit `0577daf`).
 13. ✅ Payout & Laporan Keuangan lanjutan → SELESAI SEMUA (#1–#5), DEPLOYED KE PRODUCTION 2026-07-10.
     Lihat section "Payout & Laporan Keuangan Roadmap" (pelunasan hutang fee otomatis, laporan pencairan PDF,
     laporan pendapatan platform, data audiens). Item terakhir (#5 Data Audiens, commit 21a125a) sudah
