@@ -1,8 +1,7 @@
 "use client"
 
 import { useEffect, useState, useCallback } from "react"
-import Link from "next/link"
-import { Lock, Ticket as TicketIcon, Plus, Trash2, Pencil, Copy, Check, ExternalLink, Upload, Package, Download, ArrowLeftRight } from "lucide-react"
+import { Ticket as TicketIcon, Plus, Trash2, Pencil, Copy, Check, ExternalLink, Upload, Package, Download, ArrowLeftRight } from "lucide-react"
 import { useUser } from "@/hooks/useUser"
 import { formatIDRInput, parseIDRInput } from "@/lib/formatNumber"
 
@@ -169,7 +168,7 @@ function toLocalInputValue(iso: string | null) {
 }
 
 export default function TicketsPage() {
-  const { isPro, loading: userLoading } = useUser()
+  const { loading: userLoading } = useUser()
 
   const [events, setEvents] = useState<Event[]>([])
   const [selectedEventId, setSelectedEventId] = useState("")
@@ -310,7 +309,6 @@ export default function TicketsPage() {
   }, [selectedEventId])
 
   useEffect(() => {
-    if (!isPro) return
     setEvent(null)
     setTicketTypes([])
     setOrders([])
@@ -324,7 +322,7 @@ export default function TicketsPage() {
     setTicketBoxQr("")
     setTicketBoxError("")
     fetchDetail()
-  }, [selectedEventId, isPro, fetchDetail])
+  }, [selectedEventId, fetchDetail])
 
   const handleGenerateTicketBoxQR = async () => {
     if (!selectedEventId) return
@@ -875,39 +873,6 @@ export default function TicketsPage() {
     return (
       <div className="flex min-h-[60vh] items-center justify-center">
         <div className="h-8 w-8 animate-spin rounded-full border-2 border-emerald-800 border-t-transparent" />
-      </div>
-    )
-  }
-
-  if (!isPro) {
-    return (
-      <div className="mx-auto flex w-full max-w-7xl flex-col gap-6">
-        <div className="flex items-start gap-4">
-          <div className="flex size-11 items-center justify-center rounded-xl bg-emerald-50 text-emerald-800">
-            <TicketIcon className="size-5" />
-          </div>
-          <div>
-            <h1 className="text-2xl font-semibold tracking-tight text-slate-900">Manajemen Tiket</h1>
-            <p className="mt-0.5 text-sm text-slate-500">Jual tiket event langsung ke penonton lewat storefront publik nexEvent.</p>
-          </div>
-        </div>
-        <div className="flex flex-col items-center gap-4 rounded-xl border border-slate-200 bg-white p-10 text-center">
-          <div className="flex size-14 items-center justify-center rounded-xl bg-emerald-50">
-            <Lock className="size-7 text-emerald-800" />
-          </div>
-          <div>
-            <p className="text-lg font-semibold text-slate-900">🔒 Fitur Pro</p>
-            <p className="mx-auto mt-2 max-w-xs text-sm leading-relaxed text-slate-500">
-              Ticketing Storefront tersedia untuk pengguna Pro. Upgrade untuk mulai jual tiket online.
-            </p>
-          </div>
-          <Link
-            href="/dashboard/upgrade"
-            className="mt-2 inline-flex items-center gap-2 rounded-lg bg-emerald-800 px-6 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-emerald-900"
-          >
-            Upgrade ke Pro →
-          </Link>
-        </div>
       </div>
     )
   }

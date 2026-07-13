@@ -28,9 +28,9 @@ const mobileNavItems = [
   { label: "Invoice", icon: ReceiptText, href: "/dashboard/invoice" },
 ]
 
-type NavGroup = "Perencanaan" | "Kerjasama" | "Operasional" | "Keuangan"
+type NavGroup = "Perencanaan" | "Kerjasama" | "Operasional" | "Keuangan" | "Tiket & Pencairan"
 
-const GROUP_ORDER: NavGroup[] = ["Perencanaan", "Kerjasama", "Operasional", "Keuangan"]
+const GROUP_ORDER: NavGroup[] = ["Perencanaan", "Kerjasama", "Operasional", "Keuangan", "Tiket & Pencairan"]
 
 type NavItem =
   | { label: string; icon: React.ElementType; href: string; badge?: string; adminOnly?: boolean; hidden?: boolean; group?: NavGroup; onClick?: never }
@@ -44,8 +44,8 @@ const nav: NavItem[] = [
   { label: "Vendor & Talent", icon: Users, onClick: () => alert("Fitur Vendor Segera Hadir"), hidden: true },
   { label: "Expense Tracker", icon: Wallet, href: "/dashboard/expenses", badge: "Pro", group: "Keuangan" },
   { label: "Field Crew", icon: Users, href: "/dashboard/crew", badge: "Pro", group: "Operasional" },
-  { label: "Manajemen Tiket", icon: Ticket, href: "/dashboard/tickets", badge: "Pro", group: "Operasional" },
-  { label: "Pencairan Dana", icon: Banknote, href: "/dashboard/payout", badge: "Pro", group: "Keuangan" },
+  { label: "Manajemen Tiket", icon: Ticket, href: "/dashboard/tickets", group: "Tiket & Pencairan" },
+  { label: "Pencairan Dana", icon: Banknote, href: "/dashboard/payout", group: "Tiket & Pencairan" },
   { label: "Laporan P&L", icon: BarChart2, href: "/dashboard/pl-report", badge: "Pro", group: "Keuangan" },
   { label: "Laporan Akhir Event", icon: FileCheck, href: "/dashboard/event-summary", badge: "Pro", group: "Keuangan" },
   { label: "Approve User", icon: ShieldCheck, href: "/dashboard/admin", adminOnly: true },
@@ -68,6 +68,7 @@ export function Sidebar() {
     Kerjasama: true,
     Operasional: true,
     Keuangan: true,
+    "Tiket & Pencairan": true,
   })
 
   const renderItem = (item: NavItem) => {

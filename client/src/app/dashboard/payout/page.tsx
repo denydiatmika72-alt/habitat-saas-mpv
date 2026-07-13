@@ -1,8 +1,7 @@
 "use client"
 
 import { useEffect, useState, useCallback } from "react"
-import { Banknote, Wallet, Pencil, Check, Download, Lock } from "lucide-react"
-import Link from "next/link"
+import { Banknote, Wallet, Pencil, Check, Download } from "lucide-react"
 import { useUser } from "@/hooks/useUser"
 
 type Bank = { filled: boolean; bankName: string | null; bankAccount: string | null; accountHolder: string | null }
@@ -32,7 +31,7 @@ const fmtDate = (iso: string) =>
   new Date(iso).toLocaleString("id-ID", { day: "2-digit", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" })
 
 export default function PayoutPage() {
-  const { isPro, loading: userLoading } = useUser()
+  const { loading: userLoading } = useUser()
 
   const [balance, setBalance] = useState<Balance | null>(null)
   const [requests, setRequests] = useState<PayoutRequest[]>([])
@@ -181,49 +180,6 @@ export default function PayoutPage() {
     return (
       <div className="flex min-h-[60vh] items-center justify-center">
         <div className="h-8 w-8 animate-spin rounded-full border-2 border-emerald-800 border-t-transparent" />
-      </div>
-    )
-  }
-
-  if (!isPro) {
-    return (
-      <div className="mx-auto flex w-full max-w-7xl flex-col gap-6">
-        <div className="flex items-start gap-4">
-          <div className="flex size-11 items-center justify-center rounded-xl bg-emerald-50 text-emerald-800">
-            <Banknote className="size-5" />
-          </div>
-          <div>
-            <div className="flex items-center gap-2">
-              <h1 className="text-2xl font-semibold tracking-tight text-slate-900">
-                Pencairan Dana
-              </h1>
-              <span className="rounded-full bg-emerald-800 px-2 py-0.5 text-[10px] font-bold text-white">
-                PRO
-              </span>
-            </div>
-            <p className="mt-0.5 text-sm text-slate-500">
-              Cairkan hasil penjualan tiket ke rekening Anda.
-            </p>
-          </div>
-        </div>
-        <div className="flex flex-col items-center gap-4 rounded-xl border border-slate-200 bg-white p-10 text-center">
-          <div className="flex size-14 items-center justify-center rounded-xl bg-emerald-50">
-            <Lock className="size-7 text-emerald-800" />
-          </div>
-          <div>
-            <p className="text-lg font-semibold text-slate-900">🔒 Fitur Pro</p>
-            <p className="mx-auto mt-2 max-w-xs text-sm leading-relaxed text-slate-500">
-              Pencairan Dana tersedia untuk pengguna Pro. Upgrade ke Pro untuk mencairkan
-              hasil penjualan tiket ke rekening bank Anda.
-            </p>
-          </div>
-          <Link
-            href="/dashboard/upgrade"
-            className="mt-2 inline-flex items-center gap-2 rounded-lg bg-emerald-800 px-6 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-emerald-900"
-          >
-            Upgrade ke Pro →
-          </Link>
-        </div>
       </div>
     )
   }
