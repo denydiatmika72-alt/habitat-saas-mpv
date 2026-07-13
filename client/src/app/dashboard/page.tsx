@@ -6,7 +6,7 @@ import axios from "axios"
 import { StatCards } from "@/components/dashboard/stat-cards"
 import { DocumentTable } from "@/components/dashboard/document-table"
 import { Button } from "@/components/ui/button"
-import { Download } from "lucide-react"
+import { Calculator } from "lucide-react"
 
 // ─── Donut Chart Constants ────────────────────────────────────────────────────
 const R  = 56
@@ -118,36 +118,6 @@ export default function DashboardPage() {
   const [selectedChartEventId, setSelectedChartEventId] = useState<string>("")
   const [chartSegments,        setChartSegments]        = useState<ChartSegment[]>(DEFAULT_SEGMENTS)
   const [loadingChart,         setLoadingChart]         = useState(false)
-  const [downloadingAudience,  setDownloadingAudience]  = useState(false)
-
-  // Unduh Data Audiens gabungan semua event (Roadmap #5). Pola aman download PDF (lihat known-bugs.md):
-  // cek res.ok dulu, parse JSON error kalau gagal, blob kalau sukses.
-  const handleDownloadAllAudience = async () => {
-    setDownloadingAudience(true)
-    try {
-      const res = await fetch(`${API_BASE}/tickets/audience-report/all-events`, { headers: authHeaders() })
-      if (!res.ok) {
-        let message = `Server error (${res.status})`
-        try { const e = await res.json(); message = (e as { message?: string }).message || message } catch { message = res.statusText || message }
-        alert("Gagal mengunduh data audiens: " + message)
-        return
-      }
-      const blob = await res.blob()
-      if (blob.size < 100) { alert("Laporan kosong — coba lagi."); return }
-      const url = URL.createObjectURL(blob)
-      const a = document.createElement("a")
-      a.href = url
-      a.download = "Data-Audiens-Semua-Event.pdf"
-      document.body.appendChild(a)
-      a.click()
-      document.body.removeChild(a)
-      setTimeout(() => URL.revokeObjectURL(url), 1000)
-    } catch (e) {
-      alert("Gagal mengunduh data audiens: " + (e instanceof Error ? e.message : "Unknown error"))
-    } finally {
-      setDownloadingAudience(false)
-    }
-  }
 
   useEffect(() => {
     axios
@@ -271,12 +241,11 @@ export default function DashboardPage() {
         <div className="flex flex-wrap shrink-0 items-center gap-2">
           <Button
             variant="outline"
-            className="gap-2 border-slate-200 bg-white text-slate-900 hover:bg-slate-100 hover:text-slate-900 print:hidden disabled:opacity-50"
-            onClick={handleDownloadAllAudience}
-            disabled={downloadingAudience}
+            className="gap-2 border-slate-200 bg-white text-slate-900 hover:bg-slate-100 hover:text-slate-900 print:hidden"
+            onClick={() => router.push("/dashboard/simulasi")}
           >
-            <Download className="size-4" />
-            {downloadingAudience ? "Menyiapkan..." : "Data Audience (Semua Event)"}
+            <Calculator className="size-4" />
+            Simulasi Harga Tiket
           </Button>
           <Button
             className="gap-2 bg-emerald-800 text-white hover:bg-emerald-900 print:hidden"

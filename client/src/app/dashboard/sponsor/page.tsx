@@ -6,6 +6,7 @@ import {
   BadgeCheck,
   Check,
   Copy,
+  Download,
   ExternalLink,
   FileText,
   KeyRound,
@@ -1893,6 +1894,37 @@ export default function SponsorManagementPage() {
   const [benefits, setBenefits] = useState<ApiBenefit[]>([])
   const [benefitsLoading, setBenefitsLoading] = useState(true)
   const [thresholds, setThresholds] = useState<ApiThreshold[]>([])
+  const [downloadingAudience, setDownloadingAudience] = useState(false)
+
+  // Unduh Data Audiens gabungan semua event — data demografis pembeli tiket untuk bantu
+  // pitching ke sponsor. Pola aman download PDF (lihat known-bugs.md): cek res.ok dulu,
+  // parse JSON error kalau gagal, blob kalau sukses.
+  async function handleDownloadAllAudience() {
+    setDownloadingAudience(true)
+    try {
+      const res = await fetch(`${API_BASE}/tickets/audience-report/all-events`, { headers: authHeaders() })
+      if (!res.ok) {
+        let message = `Server error (${res.status})`
+        try { const e = await res.json(); message = (e as { message?: string }).message || message } catch { message = res.statusText || message }
+        alert("Gagal mengunduh data audiens: " + message)
+        return
+      }
+      const blob = await res.blob()
+      if (blob.size < 100) { alert("Laporan kosong — coba lagi."); return }
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement("a")
+      a.href = url
+      a.download = "Data-Audiens-Semua-Event.pdf"
+      document.body.appendChild(a)
+      a.click()
+      document.body.removeChild(a)
+      setTimeout(() => URL.revokeObjectURL(url), 1000)
+    } catch (e) {
+      alert("Gagal mengunduh data audiens: " + (e instanceof Error ? e.message : "Unknown error"))
+    } finally {
+      setDownloadingAudience(false)
+    }
+  }
 
   function fetchBenefits() {
     fetch(`${API_BASE}/sponsor/benefits`, { headers: authHeaders() })
@@ -1953,16 +1985,28 @@ export default function SponsorManagementPage() {
 
   return (
     <div className="mx-auto flex w-full max-w-5xl flex-col gap-6">
-      <div className="mb-4">
-        <p className="text-xs font-medium uppercase tracking-[0.2em] text-emerald-800">
-          Workspace Promotor
-        </p>
-        <h1 className="mt-2 text-balance text-3xl font-semibold tracking-tight text-slate-900 sm:text-4xl">
-          Manage Event Sponsors
-        </h1>
-        <p className="mt-3 max-w-2xl text-pretty text-sm leading-relaxed text-slate-500">
-          Invite brands with secure codes and design the sponsorship packages they can purchase — all from one premium workspace.
-        </p>
+      <div className="mb-4 flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
+        <div>
+          <p className="text-xs font-medium uppercase tracking-[0.2em] text-emerald-800">
+            Workspace Promotor
+          </p>
+          <h1 className="mt-2 text-balance text-3xl font-semibold tracking-tight text-slate-900 sm:text-4xl">
+            Manage Event Sponsors
+          </h1>
+          <p className="mt-3 max-w-2xl text-pretty text-sm leading-relaxed text-slate-500">
+            Invite brands with secure codes and design the sponsorship packages they can purchase — all from one premium workspace.
+          </p>
+        </div>
+        <Button
+          type="button"
+          variant="outline"
+          onClick={handleDownloadAllAudience}
+          disabled={downloadingAudience}
+          className="shrink-0 gap-2 border-slate-200 bg-white text-slate-900 hover:bg-slate-100 hover:text-slate-900 disabled:opacity-50"
+        >
+          {downloadingAudience ? <RotateCw className="size-4 animate-spin" /> : <Download className="size-4" />}
+          {downloadingAudience ? "Menyiapkan..." : "Data Audience (Semua Event)"}
+        </Button>
       </div>
 
       <InvitationCodeGenerator />
