@@ -10,7 +10,6 @@ import {
   Building2,
   CheckCircle2,
   Clock,
-  CreditCard,
   Download,
   Eye,
   FileText,
@@ -303,7 +302,7 @@ export default function InvoicePageWrapper() {
 function InvoicePage() {
   const searchParams = useSearchParams()
   const router = useRouter()
-  const [tab, setTab] = useState<"sponsorship" | "tenant" | "ticket" | "manual" | "list" | "settings">("sponsorship")
+  const [tab, setTab] = useState<"sponsorship" | "tenant" | "manual" | "list" | "settings">("sponsorship")
 
   // Promoter settings
   const [settings, setSettings] = useState<PromoterSettings>({
@@ -685,7 +684,6 @@ function InvoicePage() {
         {[
           { key: "sponsorship", label: "Sponsorship", icon: <BadgeCheck className="size-3.5" />, comingSoon: false },
           { key: "tenant",      label: "Tenant",      icon: <Building2   className="size-3.5" />, comingSoon: true  },
-          { key: "ticket",      label: "Tiket & Merch", icon: <CreditCard className="size-3.5" />, comingSoon: true  },
           { key: "manual",      label: "Manual",      icon: <FileText    className="size-3.5" />, comingSoon: false },
         ].map(({ key, label, icon, comingSoon }) => (
           <button
@@ -918,15 +916,6 @@ function InvoicePage() {
           <Clock className="mb-4 size-12 text-slate-200" />
           <p className="text-base font-semibold text-slate-500">Fitur ini sedang dalam pengembangan.</p>
           <p className="mt-1.5 text-sm text-slate-400">Invoice Tenant akan segera tersedia.</p>
-        </div>
-      )}
-
-      {/* ── TAB: Tiket & Merchandise (Coming Soon) ───────────────────────────── */}
-      {tab === "ticket" && (
-        <div className="flex flex-col items-center justify-center rounded-2xl border border-dashed border-slate-200 bg-slate-50 py-20 text-center">
-          <Clock className="mb-4 size-12 text-slate-200" />
-          <p className="text-base font-semibold text-slate-500">Fitur ini sedang dalam pengembangan.</p>
-          <p className="mt-1.5 text-sm text-slate-400">Invoice Tiket & Merchandise akan segera tersedia.</p>
         </div>
       )}
 

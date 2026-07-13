@@ -1729,3 +1729,19 @@ File ini adalah log permanen bug yang sudah pernah terjadi di project ini besert
   - **Sponsor & Partner** (`sponsor/page.tsx`): pindahkan tombol "Data Audience (Semua Event)" ke sini, di header (samping judul) DI DALAM konten Pro-gated (setelah `if (!isPro) return lockUI`), jadi tetap terkunci untuk Starter. Handler pakai POLA AMAN download PDF yang sama (cek `res.ok` → cek `blob.size` → anchor click → `revokeObjectURL`), bukan pola baru. Endpoint `/api/tickets/audience-report/all-events` TIDAK disentuh; tombol per-event "Download Data Audience" di `/dashboard/tickets` juga TIDAK disentuh.
 - Verifikasi: `npx tsc --noEmit` di `client/` exit 0. Frontend-only — tidak ada perubahan controller/route/schema. Grep konfirmasi tidak ada sisa referensi `allInvoices`/`invoiceStatusBadge`/`InvoiceDirectRow`/`MessageCircle`/`"Invoice"` di document-table.tsx.
 - Tag: #ui #dashboard #reorganization #sponsor #simulasi #data-audience
+
+---
+
+## [2026-07-13] Hapus placeholder sub-tab "Tiket & Merch (SOON)" dari halaman Invoice & Purchase Order (Langkah 3 rencana 4-langkah)
+
+- Gejala: Halaman Invoice & Purchase Order (`/dashboard/invoice`) punya sub-tab "Tiket & Merch" berbadge "SOON" yang cuma placeholder "sedang dalam pengembangan" — tidak pernah jadi fitur nyata. Fungsinya (bukti pembelian tiket/merch) sebenarnya SUDAH ditangani lewat email konfirmasi order + QR/barcode yang dikirim sistem, bukan lewat dokumen Invoice formal. Placeholder ini dihapus. Sub-tab "Tenant (SOON)" di halaman yang sama SENGAJA DIBIARKAN utuh — founder masih mau memutuskannya terpisah nanti.
+- Root cause: **Bukan bug — reorganisasi/cleanup UI, Langkah 3 dari rencana 4-langkah dashboard reorganization.** Lanjutan dari entry [2026-07-13] "Sidebar navigasi dikelompokkan jadi 4 grup collapsible" (Langkah 1) dan "Reorganisasi /dashboard jadi hub Perencanaan" (Langkah 2).
+- File terkait: `client/src/app/dashboard/invoice/page.tsx`
+- Fix:
+  - Hapus entri `{ key: "ticket", label: "Tiket & Merch", ... comingSoon: true }` dari array tab bar "Jenis Invoice".
+  - Hapus `"ticket"` dari union type state `tab` (`useState<"sponsorship" | "tenant" | "manual" | "list" | "settings">`; default tetap `"sponsorship"` yang valid).
+  - Hapus render branch `{tab === "ticket" && (...)}` (blok placeholder "Coming Soon").
+  - Hapus import `CreditCard` dari lucide-react yang jadi tak terpakai (dulu hanya ikon tab ticket).
+  - **TIDAK disentuh**: sub-tab "Tenant" (button + badge "Soon" via `comingSoon:true` + render branch `tab === "tenant"`, ikon `Building2`, `Clock`), "Sponsorship", "Manual", serta seluruh backend/route/controller/schema.
+- Verifikasi: `npx tsc --noEmit` di `client/` exit 0. Grep konfirmasi tidak ada sisa referensi `Tiket & Merch`/`ticket`/`CreditCard`; sementara `tenant`/`Tenant`/`Building2`/`Clock` masih ada utuh (badge "Soon" Tenant tetap render). Frontend-only.
+- Tag: #ui #invoice #cleanup #placeholder #tenant-untouched
