@@ -1760,3 +1760,14 @@ File ini adalah log permanen bug yang sudah pernah terjadi di project ini besert
   - **KRITIS — TIDAK DIUBAH sama sekali**: logika fee/tax/feeBearer/approval, controller/route/schema backend. Perubahan murni soal SIAPA yang boleh mengakses halaman (gating frontend) + bagaimana sidebar mengelompokkan dua item ini.
 - Verifikasi: `npx tsc --noEmit` di `client/` exit 0. Grep konfirmasi: tidak ada sisa `isPro` atau marker lock UI ("Fitur Pro"/"Upgrade ke Pro") di tickets/payout; "Tiket & Pencairan" muncul di NavGroup type + GROUP_ORDER + expandedGroups + dua item nav; "Manajemen Tiket" & "Pencairan Dana" tanpa `badge: "Pro"`.
 - Tag: #business-model #pro-gating #tickets #payout #sidebar #ungate #correction
+
+---
+
+## [2026-07-14] RAB Builder ditambahkan ke grup sidebar "Perencanaan" (gratis/Starter, tanpa badge Pro)
+
+- Gejala: RAB Builder tidak punya entri navigasi di sidebar / belum jadi bagian sistem grup "Perencanaan", padahal "Simulasi Harga Tiket" sudah ada di grup itu (dengan badge Pro). RAB Builder adalah fitur inti tier Starter (GRATIS), jadi perlu representasi tersendiri yang NON-Pro di grup yang sama supaya perbedaan tier terlihat jelas. Sebelumnya RAB per-event (`/dashboard/rab/[id]`, butuh event ID) hanya diakses lewat Document Table di `/dashboard`, tidak pernah ada link sidebar statis.
+- Root cause: **Bukan bug — melengkapi kategori sidebar Perencanaan, Task B dari rangkaian reorganisasi dashboard 2026-07-13.** Lanjutan dari entry sidebar grouping + hub Perencanaan + ungate Tiket & Pencairan.
+- File terkait: `client/src/components/dashboard/sidebar.tsx`
+- Fix: Tambah item nav baru `{ label: "RAB Builder", icon: ClipboardList, href: "/dashboard", group: "Perencanaan" }` (import `ClipboardList` dari lucide-react). Karena RAB per-event butuh event ID, href diarahkan ke `/dashboard` — hub Perencanaan tempat promotor pilih event lalu buka RAB-nya via Document Table (sesuai reorg 2026-07-13). **TANPA `badge: "Pro"`** (RAB gratis). "Simulasi Harga Tiket" TIDAK disentuh — tetap `badge: "Pro"` + group "Perencanaan". Tidak ada perubahan Pro-gating di halaman RAB / backend — murni penambahan navigasi sidebar. Grouping bersifat tematik, bukan proxy tier harga: satu group boleh berisi item free (RAB) dan Pro (Simulasi) sekaligus.
+- Verifikasi: `npx tsc --noEmit` di `client/` exit 0. Grep konfirmasi: "RAB Builder" punya `group: "Perencanaan"` dan TIDAK punya `badge: "Pro"`; "Simulasi Harga Tiket" tetap `badge: "Pro"` di group "Perencanaan".
+- Tag: #ui #sidebar #rab #perencanaan #free-tier #badge

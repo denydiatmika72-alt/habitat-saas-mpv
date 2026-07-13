@@ -6,6 +6,7 @@ import { usePathname } from "next/navigation"
 import {
   LayoutDashboard,
   Calculator,
+  ClipboardList,
   Handshake,
   Users,
   ReceiptText,
@@ -39,6 +40,7 @@ type NavItem =
 const nav: NavItem[] = [
   { label: "Dashboard", icon: LayoutDashboard, href: "/dashboard" },
   { label: "Invoice & Purchase Order", icon: ReceiptText, href: "/dashboard/invoice", group: "Kerjasama" },
+  { label: "RAB Builder", icon: ClipboardList, href: "/dashboard", group: "Perencanaan" },
   { label: "Simulasi Harga Tiket", icon: Calculator, href: "/dashboard/simulasi", badge: "Pro", group: "Perencanaan" },
   { label: "Sponsor & Partner", icon: Handshake, href: "/dashboard/sponsor", badge: "Pro", group: "Kerjasama" },
   { label: "Vendor & Talent", icon: Users, onClick: () => alert("Fitur Vendor Segera Hadir"), hidden: true },
