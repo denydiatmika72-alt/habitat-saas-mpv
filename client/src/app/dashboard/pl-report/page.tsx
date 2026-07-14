@@ -1,21 +1,24 @@
 "use client"
 
 import { useEffect, useState } from "react"
-import { Lock, TrendingUp, TrendingDown, ArrowDownLeft, ArrowUpRight, FileDown, FileCheck, Plus, X, ChevronDown, ChevronUp } from "lucide-react"
 import Link from "next/link"
 import { useUser } from "@/hooks/useUser"
+import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip } from "recharts"
 import {
-  PieChart,
-  Pie,
-  Cell,
-  BarChart,
-  Bar,
-  XAxis,
-  YAxis,
-  Tooltip,
-  ResponsiveContainer,
-  Legend,
-} from "recharts"
+  ArrowDownLeft,
+  ArrowUpRight,
+  TrendUp,
+  Percent,
+  Files,
+  FilePdf,
+  Plus,
+  X,
+  Handshake,
+  Package,
+  UsersThree,
+  CaretDown,
+  Lock,
+} from "@phosphor-icons/react/dist/ssr"
 
 // ── Types ──────────────────────────────────────────────────────────────────────
 type Event = { id: string; title: string }
@@ -47,10 +50,22 @@ type PLData = {
 // ── Helpers ────────────────────────────────────────────────────────────────────
 const IDR = new Intl.NumberFormat("id-ID", { style: "currency", currency: "IDR", maximumFractionDigits: 0 })
 
+// Short label used only for the donut center value ("Rp 11 jt").
+const fmtShort = (n: number) => {
+  const abs = Math.abs(n)
+  if (abs >= 1_000_000) {
+    const jt = abs / 1_000_000
+    return "Rp " + (jt % 1 ? jt.toFixed(1).replace(".", ",") : jt) + " jt"
+  }
+  if (abs >= 1_000) return "Rp " + Math.round(abs / 1_000) + " rb"
+  return IDR.format(abs)
+}
+
 const getToken = () => typeof window !== "undefined" ? (localStorage.getItem("token") ?? "") : ""
 const authHeaders = () => ({ Authorization: `Bearer ${getToken()}`, "Content-Type": "application/json" })
 
-const PIE_COLORS = ["#065f46", "#059669", "#34d399", "#6ee7b7", "#a7f3d0", "#d1fae5", "#0e7490", "#0891b2", "#38bdf8", "#7dd3fc"]
+// Warm brand-color donut palette (design system: emerald/coral/amber family).
+const DESIGN_PIE = ["#0F9D6D", "#FF7A50", "#FFC145", "#0B6E4F", "#7CC5A6", "#F2A98C", "#FFD98A", "#3B8A6E", "#C24E28", "#8A6100"]
 
 // Jenis Pemasukan Lain (value DB → label). "tiket_platform_lain" = tiket platform EKSTERNAL input manual.
 const OI_CATEGORIES = [
@@ -61,6 +76,96 @@ const OI_CATEGORIES = [
 ]
 // Platform tiket eksternal (selaras dgn konsep "Ticket Sales Manual Input" di CLAUDE.md).
 const EXTERNAL_PLATFORMS = ["LOKET", "Tix.id", "BookMyShow", "Dewatiket", "Artatix", "Goers", "Eratix", "Snaptix", "TipTip", "Eventbrite", "Lainnya"]
+
+// ── Design tokens (nexEvent design system) ──────────────────────────────────────
+const dsVars = {
+  "--emerald": "#0F9D6D",
+  "--emerald-dark": "#0B6E4F",
+  "--coral": "#FF7A50",
+  "--amber": "#FFC145",
+  "--ink": "#2B2620",
+  "--ink-soft": "#6B6459",
+  "--ink-faint": "#9C9488",
+  "--line": "#E3DCCD",
+  "--line-soft": "#EEE8DB",
+  "--surface-sunken": "#F3EEE4",
+  "--emerald-tint": "#E3F3EC",
+  "--coral-tint": "#FFEDE6",
+  "--amber-tint": "#FFF4DC",
+  "--bg-page": "#FBF8F3",
+  "--text-body": "#2B2620",
+  "--text-muted": "#6B6459",
+  "--text-faint": "#9C9488",
+  "--surface-card": "#FFFFFF",
+  "--status-warning": "#E09A00",
+  "--status-danger": "#D64545",
+  "--shadow-card": "0 8px 20px rgba(43, 38, 32, 0.08)",
+  "--font-display": "var(--font-sora), sans-serif",
+  "--font-body": "var(--font-space-grotesk), sans-serif",
+  "--font-mono": "var(--font-jetbrains-mono), monospace",
+} as React.CSSProperties
+
+// Scoped hover/press interactions (React hoists <style>; classes are page-local).
+const SCOPED_CSS = `
+.plr-btn { transition: filter 120ms cubic-bezier(0.22,1,0.36,1), transform 120ms cubic-bezier(0.22,1,0.36,1), background 120ms cubic-bezier(0.22,1,0.36,1); }
+.plr-btn-solid:hover:not(:disabled) { filter: brightness(0.94); }
+.plr-btn-solid:active:not(:disabled) { transform: scale(0.97); }
+.plr-btn-secondary:hover:not(:disabled) { background: var(--surface-sunken); }
+.plr-btn:disabled { opacity: 0.55; cursor: not-allowed; }
+.plr-iconbtn:hover { background: var(--surface-sunken); }
+.plr-accordion:hover { background: var(--surface-sunken); }
+.plr-select, .plr-input { transition: border 120ms cubic-bezier(0.22,1,0.36,1), box-shadow 120ms cubic-bezier(0.22,1,0.36,1); }
+.plr-select:focus, .plr-input:focus { border-color: var(--emerald) !important; box-shadow: 0 0 0 3px var(--emerald-tint); outline: none; }
+`
+
+// ── Small presentational helpers (design-system look) ───────────────────────────
+function Card({ children, padding = 18, radius = 16, style }: { children: React.ReactNode; padding?: number | string; radius?: number; style?: React.CSSProperties }) {
+  return (
+    <div style={{ background: "var(--surface-card)", borderRadius: radius, boxShadow: "var(--shadow-card)", padding, ...style }}>
+      {children}
+    </div>
+  )
+}
+
+function TearLine({ notchColor = "var(--bg-page)" }: { notchColor?: string }) {
+  const notch: React.CSSProperties = { position: "absolute", top: -9, width: 18, height: 18, borderRadius: "50%", background: notchColor }
+  return (
+    <div aria-hidden style={{ position: "relative", height: 0, borderTop: "1.5px dashed var(--line-soft)", margin: "2px 0" }}>
+      <span style={{ ...notch, left: -9 }} />
+      <span style={{ ...notch, right: -9 }} />
+    </div>
+  )
+}
+
+const BADGE_COLORS = {
+  neutral: { bg: "var(--surface-sunken)", fg: "var(--text-muted)", dot: "var(--ink-faint)" },
+  success: { bg: "var(--emerald-tint)", fg: "var(--emerald-dark)", dot: "var(--emerald)" },
+  warning: { bg: "var(--amber-tint)", fg: "#8A6100", dot: "var(--status-warning)" },
+}
+function Badge({ children, status = "neutral" }: { children: React.ReactNode; status?: keyof typeof BADGE_COLORS }) {
+  const c = BADGE_COLORS[status]
+  return (
+    <span style={{ display: "inline-flex", alignItems: "center", gap: 6, fontFamily: "var(--font-body)", fontSize: 12, fontWeight: 500, background: c.bg, color: c.fg, padding: "4px 10px", borderRadius: 999, whiteSpace: "nowrap" }}>
+      <span style={{ width: 6, height: 6, borderRadius: "50%", background: c.dot, flexShrink: 0 }} />
+      {children}
+    </span>
+  )
+}
+
+// Small mono "genre tag" chip (design Tag component).
+function Tag({ children, color = "amber" }: { children: React.ReactNode; color?: "amber" | "neutral" }) {
+  const c = color === "amber" ? { bg: "var(--amber)", fg: "var(--ink)" } : { bg: "var(--surface-sunken)", fg: "var(--text-muted)" }
+  return (
+    <span style={{ display: "inline-block", fontFamily: "var(--font-mono)", fontSize: 10, fontWeight: 500, textTransform: "uppercase", letterSpacing: "0.05em", background: c.bg, color: c.fg, padding: "3px 8px", borderRadius: 6, whiteSpace: "nowrap" }}>
+      {children}
+    </span>
+  )
+}
+
+const monoLabel: React.CSSProperties = { fontFamily: "var(--font-mono)", fontSize: 10, fontWeight: 500, textTransform: "uppercase", letterSpacing: "0.07em", color: "var(--text-muted)" }
+const h2Style: React.CSSProperties = { font: "700 18px/1.25 var(--font-display)", letterSpacing: "-0.01em", color: "var(--ink)", margin: 0 }
+const fieldLabel: React.CSSProperties = { fontFamily: "var(--font-mono)", fontSize: 11, fontWeight: 500, letterSpacing: "0.06em", textTransform: "uppercase", color: "var(--text-muted)", display: "block", marginBottom: 6 }
+const inputBase: React.CSSProperties = { width: "100%", fontFamily: "var(--font-body)", fontSize: 14, padding: "11px 14px", borderRadius: 10, border: "1.5px solid var(--line)", background: "var(--surface-card)", color: "var(--ink)", outline: "none" }
 
 // ── Component ─────────────────────────────────────────────────────────────────
 export default function PLReportPage() {
@@ -165,47 +270,65 @@ export default function PLReportPage() {
     fetchPLData(selectedEventId)
   }
 
-  // ── Lock UI ────────────────────────────────────────────────────────────────
+  // ── Page shell (warm canvas + design tokens) ─────────────────────────────────
+  const Shell = ({ children }: { children: React.ReactNode }) => (
+    <div
+      style={{ ...dsVars, background: "var(--bg-page)", color: "var(--text-body)", fontFamily: "var(--font-body)" }}
+      className="-mx-4 -mb-24 min-h-screen px-4 py-6 md:-mx-8 md:px-8 md:py-8 lg:-mb-8 lg:pb-8"
+    >
+      <style>{SCOPED_CSS}</style>
+      <div style={{ maxWidth: 1180, margin: "0 auto", display: "flex", flexDirection: "column", gap: 22 }}>
+        {children}
+      </div>
+    </div>
+  )
+
+  const PageHeader = () => (
+    <div style={{ minWidth: 260 }}>
+      <div style={{ ...monoLabel, display: "flex", alignItems: "center", gap: 8, marginBottom: 6 }}>
+        Keuangan · Laporan
+        <Tag color="amber">Pro</Tag>
+      </div>
+      <h1 style={{ font: "800 28px/1.15 var(--font-display)", letterSpacing: "-0.02em", color: "var(--ink)", margin: "0 0 6px" }}>Laporan Laba/Rugi</h1>
+      <p style={{ font: "400 13px/1.5 var(--font-body)", color: "var(--text-muted)", margin: 0 }}>Laporan P&amp;L otomatis dari seluruh sumber pemasukan dan pengeluaran event.</p>
+    </div>
+  )
+
+  // ── Loading (auth) ───────────────────────────────────────────────────────────
   if (userLoading) {
     return (
-      <div className="flex min-h-[60vh] items-center justify-center">
-        <div className="h-8 w-8 animate-spin rounded-full border-2 border-emerald-800 border-t-transparent" />
-      </div>
+      <Shell>
+        <div style={{ display: "flex", minHeight: "60vh", alignItems: "center", justifyContent: "center" }}>
+          <div className="h-8 w-8 animate-spin rounded-full border-2 border-t-transparent" style={{ borderColor: "var(--emerald-dark)", borderTopColor: "transparent" }} />
+        </div>
+      </Shell>
     )
   }
 
+  // ── Lock UI (Starter) ────────────────────────────────────────────────────────
   if (!isPro) {
     return (
-      <div className="mx-auto flex w-full max-w-7xl flex-col gap-6">
-        <div className="flex items-start gap-4">
-          <div className="flex size-11 items-center justify-center rounded-xl bg-emerald-50 text-emerald-800">
-            <TrendingUp className="size-5" />
-          </div>
-          <div>
-            <div className="flex items-center gap-2">
-              <h1 className="text-2xl font-semibold tracking-tight text-slate-900">Laporan Laba/Rugi</h1>
-              <span className="rounded-full bg-emerald-800 px-2 py-0.5 text-[10px] font-bold text-white">PRO</span>
+      <Shell>
+        <PageHeader />
+        <Card padding={0} radius={20}>
+          <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 16, padding: "64px 24px", textAlign: "center" }}>
+            <div style={{ width: 64, height: 64, borderRadius: 18, background: "var(--surface-sunken)", display: "flex", alignItems: "center", justifyContent: "center" }}>
+              <Lock size={30} weight="duotone" color="var(--text-faint)" />
             </div>
-            <p className="mt-0.5 text-sm text-slate-500">Laporan P&amp;L otomatis dari seluruh sumber pemasukan dan pengeluaran event.</p>
+            <div>
+              <p style={{ font: "700 18px/1.25 var(--font-display)", color: "var(--ink)", margin: 0 }}>Fitur Pro</p>
+              <p style={{ maxWidth: 320, font: "400 13px/1.5 var(--font-body)", color: "var(--text-muted)", margin: "6px 0 0" }}>Laporan Laba/Rugi otomatis tersedia untuk pengguna Pro. Upgrade untuk akses penuh.</p>
+            </div>
+            <Link href="/dashboard/upgrade" className="plr-btn plr-btn-solid" style={{ display: "inline-flex", alignItems: "center", gap: 8, fontFamily: "var(--font-display)", fontWeight: 700, fontSize: 13, padding: "10px 22px", borderRadius: 12, background: "var(--emerald)", color: "#fff", textDecoration: "none" }}>
+              Upgrade ke Pro
+            </Link>
           </div>
-        </div>
-        <div className="flex flex-col items-center gap-4 rounded-2xl border border-slate-200 bg-white py-16 text-center">
-          <div className="flex size-16 items-center justify-center rounded-2xl bg-slate-100">
-            <Lock className="size-8 text-slate-400" />
-          </div>
-          <div>
-            <p className="text-lg font-semibold text-slate-900">Fitur Pro</p>
-            <p className="mt-1 max-w-xs text-sm text-slate-500">Laporan Laba/Rugi otomatis tersedia untuk pengguna Pro. Upgrade untuk akses penuh.</p>
-          </div>
-          <Link href="/dashboard/upgrade" className="rounded-xl bg-emerald-800 px-6 py-2.5 text-sm font-bold text-white hover:bg-emerald-900">
-            Upgrade ke Pro
-          </Link>
-        </div>
-      </div>
+        </Card>
+      </Shell>
     )
   }
 
-  // ── Chart data ─────────────────────────────────────────────────────────────
+  // ── Derived chart data ───────────────────────────────────────────────────────
   const expenseChartData = plData
     ? [
         ...plData.expense.promotor.byCategory.map((c) => ({ name: c.category, value: c.total })),
@@ -213,392 +336,423 @@ export default function PLReportPage() {
       ]
     : []
 
-  const incomeVsExpenseData = plData
+  const totalIncome = plData?.summary.totalIncome ?? 0
+  const totalExpense = plData?.summary.totalExpense ?? 0
+  const maxBar = Math.max(totalIncome, totalExpense, 1)
+  const barInPct = Math.round((totalIncome / maxBar) * 100)
+  const barOutPct = Math.round((totalExpense / maxBar) * 100)
+  const topCat = expenseChartData.length ? expenseChartData.reduce((a, b) => (b.value > a.value ? b : a), expenseChartData[0]) : null
+  const topCatIdx = topCat ? expenseChartData.indexOf(topCat) : -1
+  const topCatPct = topCat && totalExpense > 0 ? Math.round((topCat.value / totalExpense) * 100) : 0
+
+  // Rincian Transaksi — 3 collapsible sections mapped from plData.
+  const sections = plData
     ? [
-        { name: "Pemasukan", value: plData.summary.totalIncome },
-        { name: "Pengeluaran", value: plData.summary.totalExpense },
+        {
+          key: "sponsor",
+          Icon: Handshake,
+          title: "Sponsor Deal",
+          sub: `${plData.income.sponsor.items.length} deal · Total ${IDR.format(plData.income.sponsor.total)}`,
+          open: showSponsorDetail,
+          onToggle: () => setShowSponsorDetail((v) => !v),
+          empty: "Belum ada deal sponsor untuk event ini.",
+          rows: plData.income.sponsor.items.map((s) => ({ name: s.sponsorName, meta: s.tier, badge: s.tier, amount: IDR.format(s.totalValue) })),
+        },
+        {
+          key: "promotor",
+          Icon: Package,
+          title: "Pengeluaran Promotor",
+          sub: `${plData.expense.promotor.items.length} item · Total ${IDR.format(plData.expense.promotor.total)}`,
+          open: showPromoExpDetail,
+          onToggle: () => setShowPromoExpDetail((v) => !v),
+          empty: "Belum ada pengeluaran promotor.",
+          rows: plData.expense.promotor.items.map((e) => ({ name: e.description, meta: new Date(e.date).toLocaleDateString("id-ID"), badge: e.category, amount: IDR.format(e.amount) })),
+        },
+        {
+          key: "crew",
+          Icon: UsersThree,
+          title: "Pengeluaran Crew Lapangan",
+          sub: `${plData.expense.crew.items.length} transaksi · Total ${IDR.format(plData.expense.crew.total)}`,
+          open: showCrewExpDetail,
+          onToggle: () => setShowCrewExpDetail((v) => !v),
+          empty: "Belum ada transaksi crew lapangan.",
+          rows: plData.expense.crew.items.map((t) => ({ name: t.description, meta: new Date(t.createdAt).toLocaleDateString("id-ID"), badge: t.division, amount: IDR.format(t.amount) })),
+        },
       ]
     : []
 
+  const heroIsProfit = plData?.summary.isProfit ?? true
+
   // ── Render ──────────────────────────────────────────────────────────────────
   return (
-    <div className="mx-auto flex w-full max-w-7xl flex-col gap-6">
+    <Shell>
 
       {/* Header */}
-      <div className="flex flex-wrap items-start justify-between gap-4">
-        <div className="flex items-start gap-4">
-          <div className="flex size-11 items-center justify-center rounded-xl bg-emerald-50 text-emerald-800">
-            <TrendingUp className="size-5" />
-          </div>
-          <div>
-            <div className="flex items-center gap-2">
-              <h1 className="text-2xl font-semibold tracking-tight text-slate-900">Laporan Laba/Rugi</h1>
-              <span className="rounded-full bg-emerald-800 px-2 py-0.5 text-[10px] font-bold text-white">PRO</span>
-            </div>
-            <p className="mt-0.5 text-sm text-slate-500">Laporan P&amp;L otomatis dari seluruh sumber pemasukan dan pengeluaran event.</p>
-          </div>
-        </div>
-        <div className="flex flex-wrap items-center gap-3">
+      <div style={{ display: "flex", flexWrap: "wrap", gap: 16, alignItems: "flex-end", justifyContent: "space-between" }}>
+        <PageHeader />
+        <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
           <Link
             href="/dashboard/event-summary"
-            className="flex items-center gap-2 rounded-xl bg-emerald-800 px-4 py-2.5 text-sm font-bold text-white transition-colors hover:bg-emerald-900"
+            className="plr-btn plr-btn-secondary"
+            style={{ display: "inline-flex", alignItems: "center", gap: 8, fontFamily: "var(--font-display)", fontWeight: 700, fontSize: 13, padding: "10px 18px", borderRadius: 12, background: "var(--surface-card)", color: "var(--ink)", border: "1.5px solid var(--line)", textDecoration: "none" }}
           >
-            <FileCheck className="size-4" />
+            <Files size={18} weight="duotone" color="var(--emerald-dark)" />
             Laporan Akhir Event
           </Link>
           {selectedEventId && plData && (
             <button
               onClick={handleExportPDF}
               disabled={exportingPdf}
-              className="flex items-center gap-2 rounded-xl bg-emerald-800 px-4 py-2.5 text-sm font-bold text-white transition-colors hover:bg-emerald-900 disabled:opacity-60"
+              className="plr-btn plr-btn-solid"
+              style={{ display: "inline-flex", alignItems: "center", gap: 8, fontFamily: "var(--font-display)", fontWeight: 700, fontSize: 13, padding: "10px 18px", borderRadius: 12, background: "var(--coral)", color: "#fff", border: "none", cursor: "pointer" }}
             >
-              <FileDown className="size-4" />
+              <FilePdf size={18} weight="duotone" color="#fff" />
               {exportingPdf ? "Generating..." : "Export PDF"}
             </button>
           )}
         </div>
       </div>
 
-      {/* Event Selector */}
-      <div>
-        <label className="mb-1.5 block text-sm font-medium text-slate-700">Pilih Event</label>
-        <select
-          value={selectedEventId}
-          onChange={(e) => { setSelectedEventId(e.target.value); setPlData(null) }}
-          className="w-full max-w-sm rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm text-slate-900 focus:border-emerald-500 focus:outline-none focus:ring-1 focus:ring-emerald-500/30"
-        >
-          <option value="">-- Pilih event --</option>
-          {events.map((ev) => (
-            <option key={ev.id} value={ev.id}>{ev.title}</option>
-          ))}
-        </select>
+      {/* Event picker */}
+      <div style={{ display: "flex", flexWrap: "wrap", gap: 14, alignItems: "flex-end", justifyContent: "space-between" }}>
+        <div style={{ width: "min(320px, 100%)" }}>
+          <label style={fieldLabel}>Pilih Event</label>
+          <span style={{ position: "relative", display: "block" }}>
+            <select
+              value={selectedEventId}
+              onChange={(e) => { setSelectedEventId(e.target.value); setPlData(null) }}
+              className="plr-select"
+              style={{ ...inputBase, appearance: "none", WebkitAppearance: "none", padding: "11px 36px 11px 14px", cursor: "pointer" }}
+            >
+              <option value="">-- Pilih event --</option>
+              {events.map((ev) => (
+                <option key={ev.id} value={ev.id}>{ev.title}</option>
+              ))}
+            </select>
+            <span style={{ position: "absolute", right: 12, top: "50%", transform: "translateY(-50%)", pointerEvents: "none", color: "var(--emerald-dark)", fontSize: 11 }}>▾</span>
+          </span>
+        </div>
+        <div style={{ fontFamily: "var(--font-mono)", fontSize: 11, color: "var(--text-faint)", letterSpacing: "0.05em" }}>
+          LAPORAN PER {new Date().toLocaleDateString("id-ID")}
+        </div>
       </div>
 
       {/* Loading */}
       {loading && (
-        <div className="flex min-h-[200px] items-center justify-center">
-          <div className="h-8 w-8 animate-spin rounded-full border-2 border-emerald-800 border-t-transparent" />
+        <div style={{ display: "flex", minHeight: 200, alignItems: "center", justifyContent: "center" }}>
+          <div className="h-8 w-8 animate-spin rounded-full border-2" style={{ borderColor: "var(--emerald-dark)", borderTopColor: "transparent" }} />
         </div>
       )}
 
       {/* Empty state */}
       {!loading && !plData && selectedEventId && (
-        <div className="flex min-h-[200px] items-center justify-center rounded-xl border border-slate-200 bg-white">
-          <p className="text-sm text-slate-400">Tidak ada data untuk event ini.</p>
-        </div>
+        <Card padding={0} radius={16}>
+          <div style={{ display: "flex", minHeight: 200, alignItems: "center", justifyContent: "center", font: "400 13px/1.5 var(--font-body)", color: "var(--text-faint)" }}>
+            Tidak ada data untuk event ini.
+          </div>
+        </Card>
       )}
 
       {plData && !loading && (
         <>
-          {/* Summary Cards */}
-          <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
-            <div className="rounded-xl border border-slate-200 bg-white p-5">
-              <div className="mb-3 flex size-9 items-center justify-center rounded-lg bg-emerald-50">
-                <ArrowDownLeft className="size-4 text-emerald-700" />
+          {/* Summary cards */}
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(205px, 1fr))", gap: 14 }}>
+            <Card>
+              <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 12 }}>
+                <div style={{ width: 34, height: 34, borderRadius: 10, background: "var(--emerald-tint)", display: "flex", alignItems: "center", justifyContent: "center" }}>
+                  <ArrowDownLeft size={18} weight="duotone" color="var(--emerald-dark)" />
+                </div>
+                <span style={monoLabel}>Total Pemasukan</span>
               </div>
-              <p className="text-xs font-medium text-slate-500">Total Pemasukan</p>
-              <p className="mt-1 text-lg font-bold text-emerald-800">{IDR.format(plData.summary.totalIncome)}</p>
-            </div>
-            <div className="rounded-xl border border-slate-200 bg-white p-5">
-              <div className="mb-3 flex size-9 items-center justify-center rounded-lg bg-red-50">
-                <ArrowUpRight className="size-4 text-red-600" />
+              <div style={{ fontFamily: "var(--font-mono)", fontWeight: 700, fontSize: 24, letterSpacing: "-0.01em", color: "var(--emerald-dark)" }}>{IDR.format(plData.summary.totalIncome)}</div>
+            </Card>
+
+            <Card>
+              <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 12 }}>
+                <div style={{ width: 34, height: 34, borderRadius: 10, background: "var(--coral-tint)", display: "flex", alignItems: "center", justifyContent: "center" }}>
+                  <ArrowUpRight size={18} weight="duotone" color="var(--status-danger)" />
+                </div>
+                <span style={monoLabel}>Total Pengeluaran</span>
               </div>
-              <p className="text-xs font-medium text-slate-500">Total Pengeluaran</p>
-              <p className="mt-1 text-lg font-bold text-red-600">{IDR.format(plData.summary.totalExpense)}</p>
-            </div>
-            <div className="rounded-xl border border-slate-200 bg-white p-5">
-              <div className={`mb-3 flex size-9 items-center justify-center rounded-lg ${plData.summary.isProfit ? "bg-emerald-50" : "bg-red-50"}`}>
-                {plData.summary.isProfit
-                  ? <TrendingUp className="size-4 text-emerald-700" />
-                  : <TrendingDown className="size-4 text-red-600" />}
+              <div style={{ fontFamily: "var(--font-mono)", fontWeight: 700, fontSize: 24, letterSpacing: "-0.01em", color: "var(--status-danger)" }}>{IDR.format(plData.summary.totalExpense)}</div>
+            </Card>
+
+            {/* Hero — Laba/Rugi Bersih (dark emerald surface) */}
+            <Card style={{ background: "var(--emerald-dark)" }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 12 }}>
+                <div style={{ width: 34, height: 34, borderRadius: 10, background: "rgba(255,255,255,0.14)", display: "flex", alignItems: "center", justifyContent: "center" }}>
+                  <TrendUp size={18} weight="duotone" color="#FFFFFF" />
+                </div>
+                <span style={{ ...monoLabel, color: "rgba(255,255,255,0.68)" }}>Laba/Rugi Bersih</span>
               </div>
-              <p className="text-xs font-medium text-slate-500">Laba/Rugi Bersih</p>
-              <p className={`mt-1 text-lg font-bold ${plData.summary.isProfit ? "text-emerald-800" : "text-red-600"}`}>
-                {IDR.format(plData.summary.netPL)}
-              </p>
-            </div>
-            <div className="rounded-xl border border-slate-200 bg-white p-5">
-              <div className={`mb-3 flex size-9 items-center justify-center rounded-lg ${plData.summary.isProfit ? "bg-emerald-50" : "bg-red-50"}`}>
-                <span className={`text-xs font-bold ${plData.summary.isProfit ? "text-emerald-700" : "text-red-600"}`}>%</span>
+              <div style={{ fontFamily: "var(--font-mono)", fontWeight: 700, fontSize: 24, letterSpacing: "-0.01em", color: heroIsProfit ? "#FFFFFF" : "var(--amber)" }}>{IDR.format(plData.summary.netPL)}</div>
+              <div style={{ font: "400 12px/1.5 var(--font-body)", color: "rgba(255,255,255,0.68)", marginTop: 4 }}>{heroIsProfit ? "Event ini untung" : "Event ini rugi"}</div>
+            </Card>
+
+            <Card>
+              <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 12 }}>
+                <div style={{ width: 34, height: 34, borderRadius: 10, background: "var(--amber-tint)", display: "flex", alignItems: "center", justifyContent: "center" }}>
+                  <Percent size={18} weight="duotone" color="var(--status-warning)" />
+                </div>
+                <span style={monoLabel}>Margin</span>
               </div>
-              <p className="text-xs font-medium text-slate-500">Margin</p>
-              <p className={`mt-1 text-lg font-bold ${plData.summary.isProfit ? "text-emerald-800" : "text-red-600"}`}>
-                {plData.summary.marginPct}%
-              </p>
-            </div>
+              <div style={{ fontFamily: "var(--font-mono)", fontWeight: 700, fontSize: 24, letterSpacing: "-0.01em", color: heroIsProfit ? "var(--ink)" : "var(--status-danger)" }}>{plData.summary.marginPct}%</div>
+            </Card>
           </div>
 
-          {/* Sumber Pemasukan — rincian per sumber (tiket nexEvent DISTINCT dari lainnya) */}
-          <div className="rounded-xl border border-slate-200 bg-white p-5">
-            <p className="mb-4 text-sm font-semibold text-slate-900">Sumber Pemasukan</p>
-            <div className="grid gap-3 sm:grid-cols-3">
-              <div className="rounded-xl border border-emerald-100 bg-emerald-50/50 p-4">
-                <p className="text-xs font-medium text-emerald-800">Tiket &amp; Merchandise (nexEvent)</p>
-                <p className="mt-1 text-base font-bold text-emerald-800">{IDR.format(plData.income.nexeventSales.total)}</p>
-                <p className="mt-0.5 text-[11px] text-emerald-700/70">{plData.income.nexeventSales.orderCount} transaksi · net setelah fee platform</p>
-              </div>
-              <div className="rounded-xl border border-slate-200 bg-slate-50/60 p-4">
-                <p className="text-xs font-medium text-slate-600">Sponsor Deal</p>
-                <p className="mt-1 text-base font-bold text-slate-900">{IDR.format(plData.income.sponsor.total)}</p>
-                <p className="mt-0.5 text-[11px] text-slate-400">{plData.income.sponsor.items.length} deal (DP/Lunas)</p>
-              </div>
-              <div className="rounded-xl border border-slate-200 bg-slate-50/60 p-4">
-                <p className="text-xs font-medium text-slate-600">Pemasukan Lain</p>
-                <p className="mt-1 text-base font-bold text-slate-900">{IDR.format(plData.income.other.total)}</p>
-                {plData.income.other.byCategory.length > 0 && (
-                  <p className="mt-0.5 text-[11px] text-slate-400">
-                    {plData.income.other.byCategory.map((c) => c.label).join(" · ")}
-                  </p>
-                )}
-              </div>
+          <TearLine />
+
+          {/* Sumber Pemasukan */}
+          <section>
+            <h2 style={{ ...h2Style, marginBottom: 12 }}>Sumber Pemasukan</h2>
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(230px, 1fr))", gap: 14 }}>
+              <Card style={{ background: "var(--emerald-tint)", boxShadow: "none" }}>
+                <div style={{ ...monoLabel, color: "var(--emerald-dark)", marginBottom: 10 }}>Tiket &amp; Merchandise (nexEvent)</div>
+                <div style={{ fontFamily: "var(--font-mono)", fontWeight: 700, fontSize: 20, color: "var(--emerald-dark)" }}>{IDR.format(plData.income.nexeventSales.total)}</div>
+                <div style={{ font: "400 12px/1.5 var(--font-body)", color: "var(--emerald-dark)", opacity: 0.8, marginTop: 5 }}>{plData.income.nexeventSales.orderCount} transaksi · net setelah fee platform</div>
+              </Card>
+              <Card>
+                <div style={{ ...monoLabel, marginBottom: 10 }}>Sponsor Deal</div>
+                <div style={{ fontFamily: "var(--font-mono)", fontWeight: 700, fontSize: 20, color: "var(--ink)" }}>{IDR.format(plData.income.sponsor.total)}</div>
+                <div style={{ font: "400 12px/1.5 var(--font-body)", color: "var(--text-muted)", marginTop: 5 }}>{plData.income.sponsor.items.length} deal (DP/Lunas)</div>
+              </Card>
+              <Card>
+                <div style={{ ...monoLabel, marginBottom: 10 }}>Pemasukan Lain</div>
+                <div style={{ fontFamily: "var(--font-mono)", fontWeight: 700, fontSize: 20, color: "var(--ink)" }}>{IDR.format(plData.income.other.total)}</div>
+                <div style={{ font: "400 12px/1.5 var(--font-body)", color: "var(--text-muted)", marginTop: 5 }}>
+                  {plData.income.other.byCategory.length > 0 ? plData.income.other.byCategory.map((c) => c.label).join(" · ") : "Belum ada catatan"}
+                </div>
+              </Card>
             </div>
-          </div>
+          </section>
 
           {/* Charts */}
-          <div className="grid gap-4 lg:grid-cols-2">
-            {/* Donut — expense breakdown */}
-            <div className="rounded-xl border border-slate-200 bg-white p-5">
-              <p className="mb-4 text-sm font-semibold text-slate-900">Komposisi Pengeluaran</p>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(320px, 1fr))", gap: 14 }}>
+            {/* Komposisi Pengeluaran — recharts donut */}
+            <Card padding={22} radius={20}>
+              <h2 style={{ ...h2Style, marginBottom: 16 }}>Komposisi Pengeluaran</h2>
               {expenseChartData.length > 0 ? (
-                <ResponsiveContainer width="100%" height={220}>
-                  <PieChart>
-                    <Pie data={expenseChartData} cx="50%" cy="50%" innerRadius={55} outerRadius={90} paddingAngle={2} dataKey="value">
-                      {expenseChartData.map((_, i) => (
-                        <Cell key={i} fill={PIE_COLORS[i % PIE_COLORS.length]} />
+                <>
+                  <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 18, flexWrap: "wrap", padding: "6px 0 12px" }}>
+                    <div style={{ position: "relative", width: 160, height: 160, flexShrink: 0 }}>
+                      <PieChart width={160} height={160}>
+                        <Pie data={expenseChartData} cx="50%" cy="50%" innerRadius={54} outerRadius={76} paddingAngle={2.5} dataKey="value" stroke="none">
+                          {expenseChartData.map((_, i) => (
+                            <Cell key={i} fill={DESIGN_PIE[i % DESIGN_PIE.length]} />
+                          ))}
+                        </Pie>
+                        <Tooltip formatter={(v) => IDR.format(Number(v))} />
+                      </PieChart>
+                      <div style={{ position: "absolute", inset: 0, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", pointerEvents: "none" }}>
+                        <span style={{ fontFamily: "var(--font-mono)", fontWeight: 700, fontSize: 20, color: "var(--ink)" }}>{fmtShort(totalExpense)}</span>
+                        <span style={{ fontFamily: "var(--font-body)", fontSize: 11, color: "var(--text-muted)", marginTop: 2 }}>total</span>
+                      </div>
+                    </div>
+                    <div style={{ display: "flex", flexDirection: "column", gap: 8, minWidth: 140 }}>
+                      {expenseChartData.map((d, i) => (
+                        <div key={i} style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                          <span style={{ width: 10, height: 10, borderRadius: 3, background: DESIGN_PIE[i % DESIGN_PIE.length], flexShrink: 0 }} />
+                          <span style={{ fontFamily: "var(--font-body)", fontSize: 13, color: "var(--ink)" }}>{d.name}</span>
+                          <span style={{ fontFamily: "var(--font-mono)", fontSize: 12, color: "var(--text-muted)", marginLeft: "auto", paddingLeft: 12 }}>
+                            {totalExpense > 0 ? Math.round((d.value / totalExpense) * 100) : 0}%
+                          </span>
+                        </div>
                       ))}
-                    </Pie>
-                    <Tooltip formatter={(v) => IDR.format(Number(v))} />
-                    <Legend iconType="circle" iconSize={8} wrapperStyle={{ fontSize: "11px" }} />
-                  </PieChart>
-                </ResponsiveContainer>
+                    </div>
+                  </div>
+                  {topCat && (
+                    <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "12px 14px", background: "var(--surface-sunken)", borderRadius: 12 }}>
+                      <span style={{ width: 10, height: 10, borderRadius: 3, background: DESIGN_PIE[topCatIdx % DESIGN_PIE.length], flexShrink: 0 }} />
+                      <span style={{ font: "500 13px/1.5 var(--font-body)" }}>Terbesar: <strong>{topCat.name}</strong></span>
+                      <span style={{ marginLeft: "auto", fontFamily: "var(--font-mono)", fontWeight: 700, fontSize: 15, color: "var(--emerald-dark)" }}>{topCatPct}% dari total</span>
+                    </div>
+                  )}
+                </>
               ) : (
-                <p className="text-center text-sm text-slate-400 py-8">Belum ada data pengeluaran.</p>
+                <p style={{ textAlign: "center", font: "400 13px/1.5 var(--font-body)", color: "var(--text-faint)", padding: "32px 0" }}>Belum ada data pengeluaran.</p>
               )}
-            </div>
+            </Card>
 
-            {/* Bar — income vs expense */}
-            <div className="rounded-xl border border-slate-200 bg-white p-5">
-              <p className="mb-4 text-sm font-semibold text-slate-900">Pemasukan vs Pengeluaran</p>
-              <ResponsiveContainer width="100%" height={220}>
-                <BarChart data={incomeVsExpenseData} barSize={48}>
-                  <XAxis dataKey="name" tick={{ fontSize: 11 }} axisLine={false} tickLine={false} />
-                  <YAxis hide />
-                  <Tooltip formatter={(v) => IDR.format(Number(v))} />
-                  <Bar dataKey="value" radius={[6, 6, 0, 0]}>
-                    <Cell fill="#065f46" />
-                    <Cell fill="#dc2626" />
-                  </Bar>
-                </BarChart>
-              </ResponsiveContainer>
-            </div>
+            {/* Pemasukan vs Pengeluaran — progress bars + selisih */}
+            <Card padding={22} radius={20}>
+              <h2 style={{ ...h2Style, marginBottom: 18 }}>Pemasukan vs Pengeluaran</h2>
+              <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+                <div>
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: 7 }}>
+                    <span style={{ font: "500 13px/1.5 var(--font-body)" }}>Pemasukan</span>
+                    <span style={{ fontFamily: "var(--font-mono)", fontWeight: 700, fontSize: 14, color: "var(--ink)" }}>{IDR.format(totalIncome)}</span>
+                  </div>
+                  <div style={{ height: 24, background: "var(--surface-sunken)", borderRadius: 999, overflow: "hidden" }}>
+                    <div style={{ height: "100%", width: `${barInPct}%`, background: "var(--emerald)", borderRadius: 999, transition: "width 200ms cubic-bezier(0.22,1,0.36,1)" }} />
+                  </div>
+                </div>
+                <div>
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: 7 }}>
+                    <span style={{ font: "500 13px/1.5 var(--font-body)" }}>Pengeluaran</span>
+                    <span style={{ fontFamily: "var(--font-mono)", fontWeight: 700, fontSize: 14, color: "var(--status-danger)" }}>{IDR.format(totalExpense)}</span>
+                  </div>
+                  <div style={{ height: 24, background: "var(--surface-sunken)", borderRadius: 999, overflow: "hidden" }}>
+                    <div style={{ height: "100%", width: `${barOutPct}%`, background: "var(--status-danger)", borderRadius: 999, transition: "width 200ms cubic-bezier(0.22,1,0.36,1)" }} />
+                  </div>
+                </div>
+                <div style={{ display: "flex", alignItems: "center", gap: 8, paddingTop: 2 }}>
+                  <span style={{ fontFamily: "var(--font-mono)", fontSize: 10, textTransform: "uppercase", letterSpacing: "0.07em", color: "var(--text-muted)" }}>Selisih</span>
+                  <span style={{ fontFamily: "var(--font-mono)", fontWeight: 700, fontSize: 14, color: heroIsProfit ? "var(--emerald-dark)" : "var(--status-danger)" }}>
+                    {heroIsProfit ? "+" : "−"}{IDR.format(Math.abs(plData.summary.netPL))}
+                  </span>
+                </div>
+              </div>
+            </Card>
           </div>
 
-          {/* Other Income Form */}
-          <div className="rounded-xl border border-slate-200 bg-white p-5">
-            <p className="mb-1 text-sm font-semibold text-slate-900">Pemasukan Lain</p>
-            <p className="mb-4 text-xs text-slate-500">Catat merchandise, donasi, atau tiket dari platform lain (mis. LOKET/Tix.id). Penjualan tiket via nexEvent sudah dihitung otomatis di atas.</p>
-            <form onSubmit={handleAddOtherIncome} className="mb-4 flex flex-wrap gap-3">
-              <select
-                value={oiCategory}
-                onChange={(e) => setOiCategory(e.target.value)}
-                className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 focus:border-emerald-500 focus:outline-none focus:ring-1 focus:ring-emerald-500/30 sm:w-52"
-              >
-                {OI_CATEGORIES.map((c) => (
-                  <option key={c.value} value={c.value}>{c.label}</option>
-                ))}
-              </select>
+          {/* Pemasukan Lain */}
+          <Card padding={22} radius={20}>
+            <h2 style={{ ...h2Style, marginBottom: 4 }}>Pemasukan Lain</h2>
+            <p style={{ font: "400 13px/1.5 var(--font-body)", color: "var(--text-muted)", margin: "0 0 16px" }}>Catat merchandise, donasi, atau tiket dari platform lain (mis. LOKET/Tix.id). Penjualan tiket via nexEvent sudah dihitung otomatis di atas.</p>
+            <form onSubmit={handleAddOtherIncome} style={{ display: "flex", flexWrap: "wrap", gap: 10, alignItems: "flex-end", marginBottom: 6 }}>
+              <div style={{ width: 180, flexShrink: 0 }}>
+                <label style={fieldLabel}>Kategori</label>
+                <span style={{ position: "relative", display: "block" }}>
+                  <select
+                    value={oiCategory}
+                    onChange={(e) => setOiCategory(e.target.value)}
+                    className="plr-select"
+                    style={{ ...inputBase, appearance: "none", WebkitAppearance: "none", padding: "11px 36px 11px 14px", cursor: "pointer" }}
+                  >
+                    {OI_CATEGORIES.map((c) => (
+                      <option key={c.value} value={c.value}>{c.label}</option>
+                    ))}
+                  </select>
+                  <span style={{ position: "absolute", right: 12, top: "50%", transform: "translateY(-50%)", pointerEvents: "none", color: "var(--emerald-dark)", fontSize: 11 }}>▾</span>
+                </span>
+              </div>
               {oiCategory === "tiket_platform_lain" && (
-                <select
-                  value={oiPlatform}
-                  onChange={(e) => setOiPlatform(e.target.value)}
-                  className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 focus:border-emerald-500 focus:outline-none focus:ring-1 focus:ring-emerald-500/30 sm:w-44"
-                >
-                  {EXTERNAL_PLATFORMS.map((p) => (
-                    <option key={p} value={p}>{p}</option>
-                  ))}
-                </select>
+                <div style={{ width: 160, flexShrink: 0 }}>
+                  <label style={fieldLabel}>Platform</label>
+                  <span style={{ position: "relative", display: "block" }}>
+                    <select
+                      value={oiPlatform}
+                      onChange={(e) => setOiPlatform(e.target.value)}
+                      className="plr-select"
+                      style={{ ...inputBase, appearance: "none", WebkitAppearance: "none", padding: "11px 36px 11px 14px", cursor: "pointer" }}
+                    >
+                      {EXTERNAL_PLATFORMS.map((p) => (
+                        <option key={p} value={p}>{p}</option>
+                      ))}
+                    </select>
+                    <span style={{ position: "absolute", right: 12, top: "50%", transform: "translateY(-50%)", pointerEvents: "none", color: "var(--emerald-dark)", fontSize: 11 }}>▾</span>
+                  </span>
+                </div>
               )}
-              <input
-                type="text"
-                value={oiDescription}
-                onChange={(e) => setOiDescription(e.target.value)}
-                placeholder="Deskripsi (mis: Kaos band, Donasi komunitas)"
-                className="min-w-[200px] flex-1 rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 placeholder:text-slate-400 focus:border-emerald-500 focus:outline-none focus:ring-1 focus:ring-emerald-500/30"
-              />
-              <input
-                type="text"
-                inputMode="numeric"
-                value={oiAmount ? Number(oiAmount).toLocaleString("id-ID") : ""}
-                onChange={(e) => setOiAmount(e.target.value.replace(/[^0-9]/g, ""))}
-                placeholder="Nominal"
-                className="w-40 rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 placeholder:text-slate-400 focus:border-emerald-500 focus:outline-none focus:ring-1 focus:ring-emerald-500/30"
-              />
+              <div style={{ flex: 1, minWidth: 200 }}>
+                <label style={fieldLabel}>Deskripsi</label>
+                <input
+                  type="text"
+                  value={oiDescription}
+                  onChange={(e) => setOiDescription(e.target.value)}
+                  placeholder="mis. Kaos band, Donasi komunitas"
+                  className="plr-input"
+                  style={inputBase}
+                />
+              </div>
+              <div style={{ width: 150, flexShrink: 0 }}>
+                <label style={fieldLabel}>Nominal</label>
+                <input
+                  type="text"
+                  inputMode="numeric"
+                  value={oiAmount ? Number(oiAmount).toLocaleString("id-ID") : ""}
+                  onChange={(e) => setOiAmount(e.target.value.replace(/[^0-9]/g, ""))}
+                  placeholder="5.000.000"
+                  className="plr-input"
+                  style={{ ...inputBase, fontFamily: "var(--font-mono)" }}
+                />
+              </div>
               <button
                 type="submit"
                 disabled={oiSubmitting}
-                className="flex items-center gap-1.5 rounded-xl bg-emerald-800 px-4 py-2 text-sm font-bold text-white hover:bg-emerald-900 disabled:opacity-60"
+                className="plr-btn plr-btn-solid"
+                style={{ display: "inline-flex", alignItems: "center", gap: 8, fontFamily: "var(--font-display)", fontWeight: 700, fontSize: 13, padding: "11px 18px", borderRadius: 12, background: "var(--emerald)", color: "#fff", border: "none", cursor: "pointer" }}
               >
-                <Plus className="size-4" /> Tambah
+                <Plus size={16} weight="bold" color="#fff" /> Tambah
               </button>
             </form>
             {plData.income.other.items.length === 0 ? (
-              <p className="text-sm text-slate-400">Belum ada pemasukan lain.</p>
+              <div style={{ font: "400 13px/1.5 var(--font-body)", color: "var(--text-faint)", padding: "14px 0", borderTop: "1px solid var(--line-soft)" }}>Belum ada pemasukan lain yang dicatat.</div>
             ) : (
-              <ul className="divide-y divide-slate-100">
-                {plData.income.other.items.map((item) => (
-                  <li key={item.id} className="flex items-center justify-between py-2.5">
-                    <div>
-                      <div className="flex flex-wrap items-center gap-2">
-                        <p className="text-sm font-medium text-slate-900">{item.description}</p>
-                        <span className={`rounded-full px-2 py-0.5 text-[10px] font-semibold ${item.category === "tiket_platform_lain" ? "bg-sky-100 text-sky-700" : "bg-slate-100 text-slate-600"}`}>
-                          {item.category === "tiket_platform_lain" && item.platform
-                            ? `Tiket Platform Lain — ${item.platform}`
-                            : item.categoryLabel}
-                        </span>
-                      </div>
-                      <p className="text-xs text-slate-400">{new Date(item.date).toLocaleDateString("id-ID")}</p>
+              plData.income.other.items.map((item) => (
+                <div key={item.id} style={{ display: "flex", alignItems: "center", gap: 12, padding: "13px 0", borderTop: "1px solid var(--line-soft)" }}>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+                      <span style={{ fontFamily: "var(--font-display)", fontWeight: 600, fontSize: 14, color: "var(--ink)" }}>{item.description}</span>
+                      <Tag color={item.category === "tiket_platform_lain" ? "amber" : "neutral"}>
+                        {item.category === "tiket_platform_lain" && item.platform ? `Tiket Platform Lain — ${item.platform}` : item.categoryLabel}
+                      </Tag>
                     </div>
-                    <div className="flex items-center gap-3">
-                      <p className="text-sm font-semibold text-emerald-800">{IDR.format(item.amount)}</p>
-                      <button onClick={() => handleDeleteOtherIncome(item.id)} className="text-slate-300 hover:text-red-500">
-                        <X className="size-4" />
-                      </button>
-                    </div>
-                  </li>
-                ))}
-              </ul>
+                    <div style={{ fontFamily: "var(--font-mono)", fontSize: 11, color: "var(--text-faint)", marginTop: 3 }}>{new Date(item.date).toLocaleDateString("id-ID")}</div>
+                  </div>
+                  <span style={{ fontFamily: "var(--font-mono)", fontWeight: 700, fontSize: 15, color: "var(--emerald-dark)" }}>{IDR.format(item.amount)}</span>
+                  <button
+                    onClick={() => handleDeleteOtherIncome(item.id)}
+                    aria-label="Hapus"
+                    className="plr-iconbtn"
+                    style={{ width: 34, height: 34, display: "inline-flex", alignItems: "center", justifyContent: "center", borderRadius: 10, border: "none", background: "transparent", cursor: "pointer" }}
+                  >
+                    <X size={16} weight="bold" color="var(--text-faint)" />
+                  </button>
+                </div>
+              ))
             )}
-          </div>
+          </Card>
 
-          {/* Detail Tables */}
-          <div className="flex flex-col gap-4">
-
-            {/* Sponsor deals */}
-            <div className="rounded-xl border border-slate-200 bg-white">
-              <button
-                onClick={() => setShowSponsorDetail((v) => !v)}
-                className="flex w-full items-center justify-between px-5 py-4"
-              >
-                <div>
-                  <p className="text-sm font-semibold text-slate-900">Sponsor Deal</p>
-                  <p className="text-xs text-slate-500">
-                    {plData.income.sponsor.items.length} deal · Total {IDR.format(plData.income.sponsor.total)}
-                  </p>
-                </div>
-                {showSponsorDetail ? <ChevronUp className="size-4 text-slate-400" /> : <ChevronDown className="size-4 text-slate-400" />}
-              </button>
-              {showSponsorDetail && (
-                <div className="border-t border-slate-100 overflow-x-auto">
-                  <table className="w-full text-sm">
-                    <thead className="bg-slate-50 text-xs text-slate-500">
-                      <tr>
-                        <th className="px-5 py-3 text-left font-medium">Nama Sponsor</th>
-                        <th className="px-5 py-3 text-left font-medium">Tier</th>
-                        <th className="px-5 py-3 text-right font-medium">Nilai</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-slate-100">
-                      {plData.income.sponsor.items.length === 0 ? (
-                        <tr><td colSpan={3} className="px-5 py-4 text-center text-slate-400">Tidak ada data.</td></tr>
-                      ) : plData.income.sponsor.items.map((s, i) => (
-                        <tr key={i} className="hover:bg-slate-50">
-                          <td className="px-5 py-3 font-medium text-slate-900">{s.sponsorName}</td>
-                          <td className="px-5 py-3 text-slate-500">{s.tier}</td>
-                          <td className="px-5 py-3 text-right font-semibold text-emerald-800">{IDR.format(s.totalValue)}</td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              )}
+          {/* Rincian Transaksi */}
+          <section>
+            <h2 style={{ ...h2Style, marginBottom: 12 }}>Rincian Transaksi</h2>
+            <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+              {sections.map((sec) => (
+                <Card key={sec.key} padding={0} radius={16}>
+                  <button
+                    onClick={sec.onToggle}
+                    className="plr-accordion"
+                    style={{ display: "flex", alignItems: "center", gap: 14, width: "100%", padding: "16px 20px", background: "transparent", border: "none", borderRadius: 16, cursor: "pointer", textAlign: "left", fontFamily: "var(--font-body)" }}
+                  >
+                    <div style={{ width: 36, height: 36, borderRadius: 10, background: "var(--emerald-tint)", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+                      <sec.Icon size={18} weight="duotone" color="var(--emerald-dark)" />
+                    </div>
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ fontFamily: "var(--font-display)", fontWeight: 700, fontSize: 15, color: "var(--ink)" }}>{sec.title}</div>
+                      <div style={{ fontFamily: "var(--font-mono)", fontSize: 11, color: "var(--text-muted)", marginTop: 3 }}>{sec.sub}</div>
+                    </div>
+                    <div style={{ transform: sec.open ? "rotate(180deg)" : "rotate(0deg)", transition: "transform 160ms cubic-bezier(0.22,1,0.36,1)" }}>
+                      <CaretDown size={16} weight="bold" color="var(--text-faint)" />
+                    </div>
+                  </button>
+                  {sec.open && (
+                    <div style={{ padding: "0 20px 6px" }}>
+                      <TearLine notchColor="var(--surface-card)" />
+                      {sec.rows.length === 0 ? (
+                        <div style={{ font: "400 13px/1.5 var(--font-body)", color: "var(--text-faint)", padding: "14px 0" }}>{sec.empty}</div>
+                      ) : (
+                        sec.rows.map((row, i) => (
+                          <div key={i} style={{ display: "flex", alignItems: "center", gap: 12, padding: "13px 0", borderTop: "1px solid var(--line-soft)" }}>
+                            <div style={{ flex: 1, minWidth: 0 }}>
+                              <div style={{ fontFamily: "var(--font-display)", fontWeight: 600, fontSize: 14, color: "var(--ink)" }}>{row.name}</div>
+                              <div style={{ fontFamily: "var(--font-mono)", fontSize: 11, color: "var(--text-faint)", marginTop: 3 }}>{row.meta}</div>
+                            </div>
+                            {row.badge ? <Badge status="neutral">{row.badge}</Badge> : null}
+                            <span style={{ fontFamily: "var(--font-mono)", fontWeight: 700, fontSize: 15, minWidth: 110, textAlign: "right", color: sec.key === "sponsor" ? "var(--emerald-dark)" : "var(--status-danger)" }}>{row.amount}</span>
+                          </div>
+                        ))
+                      )}
+                    </div>
+                  )}
+                </Card>
+              ))}
             </div>
+          </section>
 
-            {/* Promotor expenses */}
-            <div className="rounded-xl border border-slate-200 bg-white">
-              <button
-                onClick={() => setShowPromoExpDetail((v) => !v)}
-                className="flex w-full items-center justify-between px-5 py-4"
-              >
-                <div>
-                  <p className="text-sm font-semibold text-slate-900">Pengeluaran Promotor</p>
-                  <p className="text-xs text-slate-500">
-                    {plData.expense.promotor.items.length} item · Total {IDR.format(plData.expense.promotor.total)}
-                  </p>
-                </div>
-                {showPromoExpDetail ? <ChevronUp className="size-4 text-slate-400" /> : <ChevronDown className="size-4 text-slate-400" />}
-              </button>
-              {showPromoExpDetail && (
-                <div className="border-t border-slate-100 overflow-x-auto">
-                  <table className="w-full text-sm">
-                    <thead className="bg-slate-50 text-xs text-slate-500">
-                      <tr>
-                        <th className="px-5 py-3 text-left font-medium">Deskripsi</th>
-                        <th className="px-5 py-3 text-left font-medium">Kategori</th>
-                        <th className="px-5 py-3 text-right font-medium">Nominal</th>
-                        <th className="px-5 py-3 text-right font-medium">Tanggal</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-slate-100">
-                      {plData.expense.promotor.items.length === 0 ? (
-                        <tr><td colSpan={4} className="px-5 py-4 text-center text-slate-400">Tidak ada data.</td></tr>
-                      ) : plData.expense.promotor.items.map((e, i) => (
-                        <tr key={i} className="hover:bg-slate-50">
-                          <td className="px-5 py-3 text-slate-900">{e.description}</td>
-                          <td className="px-5 py-3 text-slate-500">{e.category}</td>
-                          <td className="px-5 py-3 text-right font-semibold text-red-600">{IDR.format(e.amount)}</td>
-                          <td className="px-5 py-3 text-right text-slate-400">{new Date(e.date).toLocaleDateString("id-ID")}</td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              )}
-            </div>
-
-            {/* Crew expenses */}
-            <div className="rounded-xl border border-slate-200 bg-white">
-              <button
-                onClick={() => setShowCrewExpDetail((v) => !v)}
-                className="flex w-full items-center justify-between px-5 py-4"
-              >
-                <div>
-                  <p className="text-sm font-semibold text-slate-900">Pengeluaran Crew Lapangan</p>
-                  <p className="text-xs text-slate-500">
-                    {plData.expense.crew.items.length} transaksi · Total {IDR.format(plData.expense.crew.total)}
-                  </p>
-                </div>
-                {showCrewExpDetail ? <ChevronUp className="size-4 text-slate-400" /> : <ChevronDown className="size-4 text-slate-400" />}
-              </button>
-              {showCrewExpDetail && (
-                <div className="border-t border-slate-100 overflow-x-auto">
-                  <table className="w-full text-sm">
-                    <thead className="bg-slate-50 text-xs text-slate-500">
-                      <tr>
-                        <th className="px-5 py-3 text-left font-medium">Deskripsi</th>
-                        <th className="px-5 py-3 text-left font-medium">Divisi</th>
-                        <th className="px-5 py-3 text-right font-medium">Nominal</th>
-                        <th className="px-5 py-3 text-right font-medium">Tanggal</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-slate-100">
-                      {plData.expense.crew.items.length === 0 ? (
-                        <tr><td colSpan={4} className="px-5 py-4 text-center text-slate-400">Belum ada pengeluaran lapangan.</td></tr>
-                      ) : plData.expense.crew.items.map((t, i) => (
-                        <tr key={i} className="hover:bg-slate-50">
-                          <td className="px-5 py-3 text-slate-900">{t.description}</td>
-                          <td className="px-5 py-3 text-slate-500">{t.division}</td>
-                          <td className="px-5 py-3 text-right font-semibold text-red-600">{IDR.format(t.amount)}</td>
-                          <td className="px-5 py-3 text-right text-slate-400">{new Date(t.createdAt).toLocaleDateString("id-ID")}</td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              )}
-            </div>
-          </div>
+          <div style={{ height: 8 }} />
         </>
       )}
-    </div>
+    </Shell>
   )
 }

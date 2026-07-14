@@ -569,6 +569,12 @@ Keputusan final:
     `/dashboard/event-summary`. Schema `Event.finishedAt` SUDAH di-push ke Supabase (additive nullable).
     Halaman P&L Report (`/dashboard/pl-report`) punya tombol "Laporan Akhir Event" di header yang link langsung
     ke `/dashboard/event-summary` (link polos tanpa query param — event-summary pilih event via dropdown sendiri).
+    **Redesign visual (Task C part 2, 2026-07-14)**: halaman P&L Report memakai design-system nexEvent (palet warm
+    cream/emerald/coral, font Sora/Space Grotesk/JetBrains Mono via `next/font/google`, ikon Phosphor Duotone via
+    `@phosphor-icons/react`, kartu shadow warm-ink tanpa border, tear-line divider, kartu hero Laba/Rugi gelap;
+    panel "Pemasukan vs Pengeluaran" = progress bar horizontal, donut "Komposisi Pengeluaran" tetap recharts).
+    Struktur data & fungsi TIDAK berubah. Font/ikon baru baru dipakai di halaman INI (halaman lain masih font lama;
+    rollout app-wide = pekerjaan terpisah). Lihat known-bugs.md entry [2026-07-14] redesign P&L.
 16. CRON Job booking timeout (sudah ada — verifikasi)
 
 **Belum pernah dibangun (dari PRD awal, TIDAK ada status terlacak — founder perlu putuskan):**
