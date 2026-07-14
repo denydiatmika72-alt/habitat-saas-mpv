@@ -1771,3 +1771,14 @@ File ini adalah log permanen bug yang sudah pernah terjadi di project ini besert
 - Fix: Tambah item nav baru `{ label: "RAB Builder", icon: ClipboardList, href: "/dashboard", group: "Perencanaan" }` (import `ClipboardList` dari lucide-react). Karena RAB per-event butuh event ID, href diarahkan ke `/dashboard` — hub Perencanaan tempat promotor pilih event lalu buka RAB-nya via Document Table (sesuai reorg 2026-07-13). **TANPA `badge: "Pro"`** (RAB gratis). "Simulasi Harga Tiket" TIDAK disentuh — tetap `badge: "Pro"` + group "Perencanaan". Tidak ada perubahan Pro-gating di halaman RAB / backend — murni penambahan navigasi sidebar. Grouping bersifat tematik, bukan proxy tier harga: satu group boleh berisi item free (RAB) dan Pro (Simulasi) sekaligus.
 - Verifikasi: `npx tsc --noEmit` di `client/` exit 0. Grep konfirmasi: "RAB Builder" punya `group: "Perencanaan"` dan TIDAK punya `badge: "Pro"`; "Simulasi Harga Tiket" tetap `badge: "Pro"` di group "Perencanaan".
 - Tag: #ui #sidebar #rab #perencanaan #free-tier #badge
+
+---
+
+## [2026-07-14] P&L Report diberi link langsung ke Laporan Akhir Event (Task C part 1)
+
+- Gejala: Halaman Laporan Laba/Rugi (`/dashboard/pl-report`) tidak punya link langsung ke halaman Laporan Akhir Event (`/dashboard/event-summary`), sehingga promotor harus kembali ke sidebar untuk menemukannya — padahal keduanya sama-sama bagian alur pelaporan keuangan akhir event. Ini adalah "Task C part 1" dari rencana redesign Dashboard Keuangan. Redesign visual halaman itu sendiri ("Task C part 2") SENGAJA ditunda ke sesi terpisah di masa depan, menunggu arahan desain dari founder.
+- Root cause: **Bukan bug — navigasi tambahan, bagian kecil dari rencana redesign Dashboard Keuangan (Task C).**
+- File terkait: `client/src/app/dashboard/pl-report/page.tsx`
+- Fix: Tambah SATU `<Link>` di header P&L Report berlabel "Laporan Akhir Event" (ikon `FileCheck`), dibungkus bersama tombol "Export PDF" yang sudah ada dalam wrapper flex, memakai class tombol primary emerald-800 yang sama (tidak memperkenalkan pola visual baru). Karena `event-summary/page.tsx` TIDAK mendukung penerimaan `eventId` via query param (tidak ada `useSearchParams` — user memilih event lagi dari dropdown di halaman itu), link diarahkan polos ke `/dashboard/event-summary` TANPA query param, dan `event-summary/page.tsx` TIDAK disentuh (menghindari scope creep). Import `FileCheck` ditambahkan ke lucide-react. TIDAK ada perubahan lain di pl-report: data-fetching, kalkulasi, dan seluruh elemen UI existing tetap apa adanya.
+- Verifikasi: `npx tsc --noEmit` di `client/` exit 0. Grep konfirmasi link menargetkan `/dashboard/event-summary`. Frontend-only.
+- Tag: #ui #pl-report #navigation #event-summary #dashboard-keuangan

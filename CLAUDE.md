@@ -567,6 +567,8 @@ Keputusan final:
     hutang fee, ringkasan petty cash, status pencairan) → PDF lampiran email saat "Tandai Event Selesai".
     Pro-only. Endpoint `POST /api/events/:eventId/finish` + `GET /api/events/:eventId/summary-pdf`; UI di
     `/dashboard/event-summary`. Schema `Event.finishedAt` SUDAH di-push ke Supabase (additive nullable).
+    Halaman P&L Report (`/dashboard/pl-report`) punya tombol "Laporan Akhir Event" di header yang link langsung
+    ke `/dashboard/event-summary` (link polos tanpa query param — event-summary pilih event via dropdown sendiri).
 16. CRON Job booking timeout (sudah ada — verifikasi)
 
 **Belum pernah dibangun (dari PRD awal, TIDAK ada status terlacak — founder perlu putuskan):**

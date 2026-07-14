@@ -1,7 +1,7 @@
 "use client"
 
 import { useEffect, useState } from "react"
-import { Lock, TrendingUp, TrendingDown, ArrowDownLeft, ArrowUpRight, FileDown, Plus, X, ChevronDown, ChevronUp } from "lucide-react"
+import { Lock, TrendingUp, TrendingDown, ArrowDownLeft, ArrowUpRight, FileDown, FileCheck, Plus, X, ChevronDown, ChevronUp } from "lucide-react"
 import Link from "next/link"
 import { useUser } from "@/hooks/useUser"
 import {
@@ -238,16 +238,25 @@ export default function PLReportPage() {
             <p className="mt-0.5 text-sm text-slate-500">Laporan P&amp;L otomatis dari seluruh sumber pemasukan dan pengeluaran event.</p>
           </div>
         </div>
-        {selectedEventId && plData && (
-          <button
-            onClick={handleExportPDF}
-            disabled={exportingPdf}
-            className="flex items-center gap-2 rounded-xl bg-emerald-800 px-4 py-2.5 text-sm font-bold text-white transition-colors hover:bg-emerald-900 disabled:opacity-60"
+        <div className="flex flex-wrap items-center gap-3">
+          <Link
+            href="/dashboard/event-summary"
+            className="flex items-center gap-2 rounded-xl bg-emerald-800 px-4 py-2.5 text-sm font-bold text-white transition-colors hover:bg-emerald-900"
           >
-            <FileDown className="size-4" />
-            {exportingPdf ? "Generating..." : "Export PDF"}
-          </button>
-        )}
+            <FileCheck className="size-4" />
+            Laporan Akhir Event
+          </Link>
+          {selectedEventId && plData && (
+            <button
+              onClick={handleExportPDF}
+              disabled={exportingPdf}
+              className="flex items-center gap-2 rounded-xl bg-emerald-800 px-4 py-2.5 text-sm font-bold text-white transition-colors hover:bg-emerald-900 disabled:opacity-60"
+            >
+              <FileDown className="size-4" />
+              {exportingPdf ? "Generating..." : "Export PDF"}
+            </button>
+          )}
+        </div>
       </div>
 
       {/* Event Selector */}
