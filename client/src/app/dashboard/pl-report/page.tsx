@@ -50,17 +50,6 @@ type PLData = {
 // ── Helpers ────────────────────────────────────────────────────────────────────
 const IDR = new Intl.NumberFormat("id-ID", { style: "currency", currency: "IDR", maximumFractionDigits: 0 })
 
-// Short label used only for the donut center value ("Rp 11 jt").
-const fmtShort = (n: number) => {
-  const abs = Math.abs(n)
-  if (abs >= 1_000_000) {
-    const jt = abs / 1_000_000
-    return "Rp " + (jt % 1 ? jt.toFixed(1).replace(".", ",") : jt) + " jt"
-  }
-  if (abs >= 1_000) return "Rp " + Math.round(abs / 1_000) + " rb"
-  return IDR.format(abs)
-}
-
 const getToken = () => typeof window !== "undefined" ? (localStorage.getItem("token") ?? "") : ""
 const authHeaders = () => ({ Authorization: `Bearer ${getToken()}`, "Content-Type": "application/json" })
 
@@ -534,19 +523,15 @@ export default function PLReportPage() {
               {expenseChartData.length > 0 ? (
                 <>
                   <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 18, flexWrap: "wrap", padding: "6px 0 12px" }}>
-                    <div style={{ position: "relative", width: 160, height: 160, flexShrink: 0 }}>
+                    <div style={{ width: 160, height: 160, flexShrink: 0 }}>
                       <PieChart width={160} height={160}>
-                        <Pie data={expenseChartData} cx="50%" cy="50%" innerRadius={54} outerRadius={76} paddingAngle={2.5} dataKey="value" stroke="none">
+                        <Pie data={expenseChartData} cx="50%" cy="50%" innerRadius={40} outerRadius={76} paddingAngle={2.5} dataKey="value" stroke="none">
                           {expenseChartData.map((_, i) => (
                             <Cell key={i} fill={DESIGN_PIE[i % DESIGN_PIE.length]} />
                           ))}
                         </Pie>
                         <Tooltip formatter={(v) => IDR.format(Number(v))} />
                       </PieChart>
-                      <div style={{ position: "absolute", inset: 0, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", pointerEvents: "none" }}>
-                        <span style={{ fontFamily: "var(--font-mono)", fontWeight: 700, fontSize: 20, color: "var(--ink)" }}>{fmtShort(totalExpense)}</span>
-                        <span style={{ fontFamily: "var(--font-body)", fontSize: 11, color: "var(--text-muted)", marginTop: 2 }}>total</span>
-                      </div>
                     </div>
                     <div style={{ display: "flex", flexDirection: "column", gap: 8, minWidth: 140 }}>
                       {expenseChartData.map((d, i) => (
