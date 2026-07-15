@@ -929,9 +929,11 @@ export default function TicketsPage() {
       )}
 
       {selectedEventId && event && (
-        <div className="grid gap-6 lg:grid-cols-5">
-          {/* Left column: ticket types + storefront settings */}
-          <div className="flex flex-col gap-6 lg:col-span-3">
+        <div className="grid gap-6 lg:grid-cols-2 lg:items-start">
+          {/* Desktop: 2 kolom seimbang — kiri "katalog jualan", kanan "storefront & pesanan".
+              Di bawah lg semua tetap menumpuk vertikal dengan urutan DOM yang sama seperti sebelumnya. */}
+          {/* Kolom kiri: katalog yang dijual (tiket, merch, bundling) */}
+          <div className="flex flex-col gap-6">
             {/* Ticket types */}
             <div className="rounded-xl border border-slate-200 bg-white p-5">
               <p className="mb-4 text-sm font-semibold text-slate-900">Jenis Tiket</p>
@@ -1495,6 +1497,10 @@ export default function TicketsPage() {
               </div>
             </div>
 
+          </div>
+
+          {/* Kolom kanan: etalase + operasional + data live (pesanan) */}
+          <div className="flex flex-col gap-6">
             {/* Banner + Logo upload */}
             <div className="rounded-xl border border-slate-200 bg-white p-5">
               <p className="mb-4 text-sm font-semibold text-slate-900">Tampilan Storefront</p>
@@ -1839,10 +1845,8 @@ export default function TicketsPage() {
                 <p className="mt-2 text-xs text-red-600">{ticketBoxError}</p>
               )}
             </div>
-          </div>
 
-          {/* Right column: orders */}
-          <div className="lg:col-span-2">
+            {/* Pesanan — tetap paling akhir supaya daftar yang panjang tidak mendorong seksi lain */}
             <div className="rounded-xl border border-slate-200 bg-white p-5">
               <p className="mb-4 text-sm font-semibold text-slate-900">Pesanan ({orders.length})</p>
               {orders.length === 0 ? (

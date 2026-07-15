@@ -1821,3 +1821,32 @@ File ini adalah log permanen bug yang sudah pernah terjadi di project ini besert
   - Grep konfirmasi: sidebar tidak lagi punya item "Laporan Akhir Event" & label "Dashboard Keuangan" ada di href `/dashboard/pl-report`; kedua halaman detail punya `router.replace("/dashboard/pl-report")` + tombol "Kembali ke Dashboard Keuangan"; hub menaut ke `expenses?eventId=` & `event-summary?eventId=`.
   - **Belum diverifikasi runtime di browser** (butuh login + backend Express + event ber-data). Alur yang perlu dites founder: pilih event di Dashboard Keuangan → klik Expense Tracker/Laporan Akhir Event → cek data event yang benar termuat & tombol Kembali balik ke hub dgn event masih terpilih; buka `/dashboard/expenses` langsung tanpa param → harus redirect ke hub.
 - Tag: #ui #navigation #dashboard-keuangan #hub-pattern #pilot
+
+---
+
+## [2026-07-15] Hapus Expense Tracker dari sidebar (konsistensi hub) + rebalance layout Manajemen Tiket jadi 2 kolom seimbang
+
+- Gejala:
+  1. **Sidebar**: "Expense Tracker" masih jadi link langsung di sidebar padahal sejak commit `91c8a2e` halaman itu sudah dicapai lewat tombol di Dashboard Keuangan — redundan & tidak konsisten dgn pola hub (halaman turunan kategori TIDAK jadi item sidebar sendiri).
+  2. **Manajemen Tiket** (`/dashboard/tickets`): butuh scroll berlebihan di desktop.
+- Root cause: **Bukan bug — task 1: konsistensi pola hub Dashboard Keuangan; task 2: perbaikan UX layout desktop.**
+- **KOREKSI premis task 2**: task menyebut halaman Manajemen Tiket "single long vertical column". **Itu TIDAK akurat** — halaman ini SUDAH 2 kolom sejak awal (`grid gap-6 lg:grid-cols-5`, kiri `lg:col-span-3` / kanan `lg:col-span-2`). Masalah scroll-nya nyata tapi penyebabnya beda: **distribusi timpang** — kolom kiri memuat 7 seksi bertumpuk (Jenis Tiket, Merchandise, Paket Bundling, Tampilan Storefront, Informasi Storefront, Pengaturan Storefront, Ticket Box Offline) sementara kolom kanan cuma 1 seksi (Pesanan), sehingga rail kanan kosong melompong di bawah daftar pesanan dan kolom kiri jadi sangat panjang. Fix = **rebalance**, bukan bikin split dari nol.
+- File terkait:
+  - `client/src/components/dashboard/sidebar.tsx` — hapus item `{ label: "Expense Tracker", href: "/dashboard/expenses", badge: "Pro", group: "Keuangan" }` dari array `nav` + import `Wallet` (jadi unused). Halaman `/dashboard/expenses` TIDAK disentuh. Item nav lain tidak disentuh.
+  - `client/src/app/dashboard/tickets/page.tsx` — **hanya 3 hunk, semuanya baris container** (10 insertions / 6 deletions):
+    1. `lg:grid-cols-5` → `lg:grid-cols-2 lg:items-start`; kolom kiri `lg:col-span-3` → tanpa col-span.
+    2. Tutup kolom kiri setelah Paket Bundling, buka kolom kanan sebelum Tampilan Storefront.
+    3. Buang pembungkus `<div className="lg:col-span-2">` lama; kartu Pesanan jadi sibling terakhir di kolom kanan.
+- Fix — pembagian kolom (desktop `lg:` ke atas, 50/50):
+  - **Kiri = "katalog jualan"** (apa yang dijual, semua berpola list + form tambah): Jenis Tiket, Merchandise, Paket Bundling.
+  - **Kanan = "storefront & operasional + data live"**: Tampilan Storefront, Informasi Storefront, Pengaturan Storefront, Ticket Box Offline, Pesanan.
+  - **Pesanan sengaja ditaruh PALING AKHIR di kolom kanan** — daftar pesanan panjangnya tak terbatas; kalau ditaruh di atas, ia akan mendorong seksi konfigurasi jauh ke bawah. Sebagai elemen terakhir, pertumbuhannya tidak mengganggu apa pun (jadi tidak perlu dibatasi max-height/scroll internal).
+  - **Urutan DOM di mobile IDENTIK dengan sebelumnya** (Tiket → Merch → Bundling → Tampilan → Informasi → Pengaturan → Ticket Box → Pesanan) karena urutan seksi dipertahankan persis; di bawah `lg` grid runtuh jadi 1 kolom seperti semula → pengalaman mobile nol perubahan.
+  - `lg:items-start` supaya kedua kolom tidak saling meregang mengikuti kolom yang lebih tinggi.
+  - MURNI restrukturisasi container. Data-fetching, state, handler, API call, gate `canEditStock`, dan gaya visual tiap komponen (warna/font/border) TIDAK disentuh. Tidak ada elemen/form/tombol yang dihapus atau ditambah. Backend TIDAK disentuh.
+- Verifikasi:
+  - `npx tsc --noEmit` di `client/` exit 0. (Sempat gagal sekali: komentar JSX ditaruh sebagai sibling kedua di dalam `{cond && ( ... )}` → TS1005 "')' expected", karena JSX hanya boleh satu root element. Komentar dipindah ke DALAM div grid.)
+  - `npm run build` exit 0 — `/dashboard/tickets` tetap prerender static.
+  - `git diff -U1` dikonfirmasi hanya menyentuh baris wrapper/container — tidak ada baris konten yang hilang.
+  - **Belum diverifikasi visual di browser** (butuh login + event ber-data). Founder tes manual di production.
+- Tag: #ui #sidebar #tickets #layout #split-layout #desktop

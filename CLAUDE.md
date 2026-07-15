@@ -602,12 +602,23 @@ Founder berencana suatu saat mengubah nexEvent dari web app menjadi aplikasi mob
   balik ke dashboard-nya. Halaman detail turunan TIDAK lagi jadi item sidebar sendiri (dicapai lewat tombol di dashboard).
   **Status: Dashboard Keuangan (`/dashboard/pl-report`, label sidebar "Dashboard Keuangan") = pilot** — dikerjakan duluan
   untuk memvalidasi pola sebelum direplikasi ke 4 kategori lain. Turunannya: Expense Tracker (`/dashboard/expenses`) +
-  Laporan Akhir Event (`/dashboard/event-summary`). Lihat known-bugs entry [2026-07-15].
+  Laporan Akhir Event (`/dashboard/event-summary`) — keduanya **bukan item sidebar**, hanya dicapai lewat tombol di hub.
+  **✅ Pola SUDAH divalidasi manual oleh founder di production (2026-07-15) — jalan sesuai harapan, siap direplikasi ke 4
+  kategori sisanya.** Lihat known-bugs entry [2026-07-15].
 - **Layer 3 — Master dashboard**: ringkasan highlight dari kelima dashboard kategori. Dikerjakan PALING AKHIR, setelah
   kelima Layer-2 selesai & polanya tervalidasi. **Belum dimulai.**
 
 Catatan implementasi: `useSearchParams` (Next 16) WAJIB dibungkus `<Suspense>` — kalau tidak, build gagal / halaman jatuh ke
 dynamic rendering. Pola wrapper + `*Inner` sudah dipakai di `invoice`, `upgrade`, `pl-report`, `expenses`, `event-summary`.
+
+## Layout Halaman Manajemen Tiket
+
+`client/src/app/dashboard/tickets/page.tsx` pakai **2 kolom seimbang di desktop** (`lg:grid-cols-2 lg:items-start`; di bawah
+`lg` menumpuk 1 kolom seperti biasa): **kiri = katalog jualan** (Jenis Tiket, Merchandise, Paket Bundling), **kanan =
+storefront & operasional** (Tampilan Storefront, Informasi Storefront, Pengaturan Storefront, Ticket Box Offline, Pesanan).
+**Pesanan sengaja paling akhir** di kolom kanan — daftarnya tak terbatas, kalau di atas ia mendorong seksi konfigurasi ke
+bawah. Sebelumnya `lg:grid-cols-5` (kiri `col-span-3` isi 7 seksi, kanan `col-span-2` isi Pesanan saja) → timpang & kolom
+kiri kepanjangan. Lihat known-bugs entry [2026-07-15].
 
 ## Aturan Tambahan
 
