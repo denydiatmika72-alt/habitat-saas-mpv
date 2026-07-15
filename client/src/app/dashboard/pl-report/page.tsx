@@ -1,7 +1,8 @@
 "use client"
 
-import { useEffect, useState } from "react"
+import { Suspense, useEffect, useState } from "react"
 import Link from "next/link"
+import { useSearchParams } from "next/navigation"
 import { useUser } from "@/hooks/useUser"
 import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip } from "recharts"
 import {
@@ -18,6 +19,7 @@ import {
   UsersThree,
   CaretDown,
   Lock,
+  Wallet,
 } from "@phosphor-icons/react/dist/ssr"
 
 // ── Types ──────────────────────────────────────────────────────────────────────
@@ -158,10 +160,21 @@ const inputBase: React.CSSProperties = { width: "100%", fontFamily: "var(--font-
 
 // ── Component ─────────────────────────────────────────────────────────────────
 export default function PLReportPage() {
+  return (
+    <Suspense fallback={<div className="p-10 text-center text-slate-400">Memuat...</div>}>
+      <PLReportPageInner />
+    </Suspense>
+  )
+}
+
+function PLReportPageInner() {
   const { isPro, loading: userLoading } = useUser()
+  const searchParams = useSearchParams()
 
   const [events, setEvents] = useState<Event[]>([])
-  const [selectedEventId, setSelectedEventId] = useState("")
+  // Halaman ini adalah pintu utama kategori Keuangan: event bisa datang dari
+  // query param saat user kembali dari Expense Tracker / Laporan Akhir Event.
+  const [selectedEventId, setSelectedEventId] = useState(searchParams.get("eventId") ?? "")
   const [plData, setPlData] = useState<PLData | null>(null)
   const [loading, setLoading] = useState(false)
   const [exportingPdf, setExportingPdf] = useState(false)
@@ -380,14 +393,27 @@ export default function PLReportPage() {
       <div style={{ display: "flex", flexWrap: "wrap", gap: 16, alignItems: "flex-end", justifyContent: "space-between" }}>
         <PageHeader />
         <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
-          <Link
-            href="/dashboard/event-summary"
-            className="plr-btn plr-btn-secondary"
-            style={{ display: "inline-flex", alignItems: "center", gap: 8, fontFamily: "var(--font-display)", fontWeight: 700, fontSize: 13, padding: "10px 18px", borderRadius: 12, background: "var(--surface-card)", color: "var(--ink)", border: "1.5px solid var(--line)", textDecoration: "none" }}
-          >
-            <Files size={18} weight="duotone" color="var(--emerald-dark)" />
-            Laporan Akhir Event
-          </Link>
+          {/* Halaman turunan kategori Keuangan mewarisi event lewat query param. */}
+          {selectedEventId && (
+            <>
+              <Link
+                href={`/dashboard/expenses?eventId=${selectedEventId}`}
+                className="plr-btn plr-btn-secondary"
+                style={{ display: "inline-flex", alignItems: "center", gap: 8, fontFamily: "var(--font-display)", fontWeight: 700, fontSize: 13, padding: "10px 18px", borderRadius: 12, background: "var(--surface-card)", color: "var(--ink)", border: "1.5px solid var(--line)", textDecoration: "none" }}
+              >
+                <Wallet size={18} weight="duotone" color="var(--emerald-dark)" />
+                Expense Tracker
+              </Link>
+              <Link
+                href={`/dashboard/event-summary?eventId=${selectedEventId}`}
+                className="plr-btn plr-btn-secondary"
+                style={{ display: "inline-flex", alignItems: "center", gap: 8, fontFamily: "var(--font-display)", fontWeight: 700, fontSize: 13, padding: "10px 18px", borderRadius: 12, background: "var(--surface-card)", color: "var(--ink)", border: "1.5px solid var(--line)", textDecoration: "none" }}
+              >
+                <Files size={18} weight="duotone" color="var(--emerald-dark)" />
+                Laporan Akhir Event
+              </Link>
+            </>
+          )}
           {selectedEventId && plData && (
             <button
               onClick={handleExportPDF}

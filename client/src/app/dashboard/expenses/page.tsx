@@ -1,8 +1,9 @@
 "use client"
 
-import { useEffect, useState } from "react"
-import { Lock, Plus, Receipt, TrendingDown, X } from "lucide-react"
+import { Suspense, useEffect, useState } from "react"
+import { ArrowLeft, Lock, Plus, Receipt, X } from "lucide-react"
 import Link from "next/link"
+import { useRouter, useSearchParams } from "next/navigation"
 import { useUser } from "@/hooks/useUser"
 
 type Event = { id: string; title: string }
@@ -30,10 +31,22 @@ const authHeaders = () => ({
 })
 
 export default function ExpensesPage() {
+  return (
+    <Suspense fallback={<div className="p-10 text-center text-slate-400">Memuat...</div>}>
+      <ExpensesPageInner />
+    </Suspense>
+  )
+}
+
+function ExpensesPageInner() {
   const { isPro, loading: userLoading } = useUser()
+  const router = useRouter()
+  const searchParams = useSearchParams()
+
+  // Event diwarisi dari Dashboard Keuangan — halaman ini bukan pintu masuk sendiri.
+  const selectedEventId = searchParams.get("eventId") ?? ""
 
   const [events, setEvents] = useState<Event[]>([])
-  const [selectedEventId, setSelectedEventId] = useState("")
   const [expenses, setExpenses] = useState<Expense[]>([])
   const [fetchingExpenses, setFetchingExpenses] = useState(false)
 
@@ -42,6 +55,11 @@ export default function ExpensesPage() {
   const [amount, setAmount] = useState("")
   const [category, setCategory] = useState(DEFAULT_CATEGORIES[0])
   const [submitting, setSubmitting] = useState(false)
+
+  // Tanpa konteks event, kembalikan ke pintu utama kategori Keuangan.
+  useEffect(() => {
+    if (!selectedEventId) router.replace("/dashboard/pl-report")
+  }, [selectedEventId, router])
 
   // Fetch events on mount
   useEffect(() => {
@@ -115,6 +133,7 @@ export default function ExpensesPage() {
   }
 
   const total = expenses.reduce((sum, e) => sum + e.amount, 0)
+  const selectedEvent = events.find((ev) => ev.id === selectedEventId) || null
 
   if (userLoading) {
     return (
@@ -123,6 +142,9 @@ export default function ExpensesPage() {
       </div>
     )
   }
+
+  // Redirect sedang berjalan — jangan render konten halaman.
+  if (!selectedEventId) return null
 
   if (!isPro) {
     return (
@@ -169,6 +191,17 @@ export default function ExpensesPage() {
 
   return (
     <div className="mx-auto flex w-full max-w-7xl flex-col gap-6">
+      {/* Kembali ke pintu utama kategori Keuangan (event dipertahankan) */}
+      <div>
+        <Link
+          href={`/dashboard/pl-report?eventId=${selectedEventId}`}
+          className="inline-flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm font-semibold text-slate-700 transition-colors hover:bg-slate-50"
+        >
+          <ArrowLeft className="size-4" />
+          Kembali ke Dashboard Keuangan
+        </Link>
+      </div>
+
       {/* Header */}
       <div className="flex items-start gap-4">
         <div className="flex size-11 items-center justify-center rounded-xl bg-emerald-50 text-emerald-800">
@@ -193,37 +226,14 @@ export default function ExpensesPage() {
         </div>
       </div>
 
-      {/* Event selector */}
+      {/* Event aktif — dipilih di Dashboard Keuangan, bukan di sini */}
       <div>
-        <label className="mb-1.5 block text-sm font-medium text-slate-700">Pilih Event</label>
-        <select
-          value={selectedEventId}
-          onChange={(e) => {
-            setSelectedEventId(e.target.value)
-            setExpenses([])
-          }}
-          className="max-w-sm truncate rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-700 outline-none transition-colors focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500/30"
-        >
-          <option value="">-- Pilih event --</option>
-          {events.map((ev) => (
-            <option key={ev.id} value={ev.id}>
-              {ev.title}
-            </option>
-          ))}
-        </select>
+        <p className="mb-1.5 text-sm font-medium text-slate-700">Event</p>
+        <p className="text-sm font-semibold text-slate-900">{selectedEvent?.title ?? "Memuat event..."}</p>
       </div>
 
-      {/* No event selected */}
-      {!selectedEventId && (
-        <div className="rounded-xl border border-slate-200 bg-white py-14 text-center">
-          <TrendingDown className="mx-auto mb-3 size-10 text-slate-300" />
-          <p className="text-sm text-slate-400">Pilih event untuk mulai mencatat pengeluaran.</p>
-        </div>
-      )}
-
       {/* Content area */}
-      {selectedEventId && (
-          <div className="grid gap-6 lg:grid-cols-5">
+      <div className="grid gap-6 lg:grid-cols-5">
             {/* Left: summary + form */}
             <div className="space-y-4 lg:col-span-2">
               {/* Summary */}
@@ -345,8 +355,7 @@ export default function ExpensesPage() {
                 )}
               </div>
             </div>
-          </div>
-      )}
+      </div>
     </div>
   )
 }

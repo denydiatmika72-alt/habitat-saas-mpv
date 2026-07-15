@@ -172,6 +172,7 @@ Pencatatan pengeluaran event yang diinput promotor sendiri, TERPISAH dari petty 
 - Kategori diambil dari kategori RAB event (`GET /api/expenses/budget-categories?eventId=`), fallback ke default kalau event belum punya RAB.
 - Model `Expense` (eventId, userId, description, amount, category, receiptUrl?, date).
 - Gate: fitur Pro (lock UI Starter via `useUser`). Di Laporan P&L masuk sebagai "Pengeluaran Langsung (Promotor)" — digabung dengan petty cash crew type:"expense".
+- Navigasi (sejak 2026-07-15): halaman `/dashboard/expenses` mewarisi event dari Dashboard Keuangan via `?eventId=` — tidak ada dropdown pilih event lagi, dan dibuka tanpa `eventId` → redirect ke `/dashboard/pl-report`. Lihat section "Roadmap Navigasi 3-Lapis".
 
 ## Petty Cash System — Aturan Akuntansi (WAJIB DIBACA SEBELUM CODING)
 
@@ -567,8 +568,9 @@ Keputusan final:
     hutang fee, ringkasan petty cash, status pencairan) → PDF lampiran email saat "Tandai Event Selesai".
     Pro-only. Endpoint `POST /api/events/:eventId/finish` + `GET /api/events/:eventId/summary-pdf`; UI di
     `/dashboard/event-summary`. Schema `Event.finishedAt` SUDAH di-push ke Supabase (additive nullable).
-    Halaman P&L Report (`/dashboard/pl-report`) punya tombol "Laporan Akhir Event" di header yang link langsung
-    ke `/dashboard/event-summary` (link polos tanpa query param — event-summary pilih event via dropdown sendiri).
+    Sejak 2026-07-15 halaman ini BUKAN item sidebar lagi — dicapai lewat tombol "Laporan Akhir Event" di header
+    Dashboard Keuangan (`/dashboard/pl-report`), yang mengoper `?eventId=` sehingga event tidak perlu dipilih ulang;
+    dibuka tanpa `eventId` → redirect ke Dashboard Keuangan. Lihat section "Roadmap Navigasi 3-Lapis".
     **Redesign visual (Task C part 2, 2026-07-14)**: halaman P&L Report memakai design-system nexEvent (palet warm
     cream/emerald/coral, font Sora/Space Grotesk/JetBrains Mono via `next/font/google`, ikon Phosphor Duotone via
     `@phosphor-icons/react`, kartu shadow warm-ink tanpa border, tear-line divider, kartu hero Laba/Rugi gelap;
@@ -590,6 +592,22 @@ _Update bagian ini setiap prioritas berubah, supaya Claude Code dan Claude.ai se
 Founder berencana suatu saat mengubah nexEvent dari web app menjadi aplikasi mobile yang bisa di-download (App Store / Play Store). **Ini adalah item PALING TERAKHIR** — baru dikerjakan setelah SEMUA fitur web selesai dan produk siap go-to-market.
 
 **Aturan sampai saat itu tiba:** SEMUA fitur baru (termasuk Ticket Scanner) dibangun **web-based only** — tidak ada pertimbangan native mobile wrapping di tahap ini. Catatan ini hanya placeholder perencanaan, bukan tugas aktif.
+
+## Roadmap Navigasi 3-Lapis
+
+- **Layer 1 — Halaman detail** (RAB, Sponsor, Expense, P&L, Tiket, dll): SUDAH ada semua. Tidak dibangun ulang.
+- **Layer 2 — 5 dashboard kategori** (Perencanaan, Kerjasama, Operasional, Keuangan, Tiket & Pencairan): tiap dashboard jadi
+  **SATU-SATUNYA pintu masuk** ke halaman detail bertema sama. Pola: event/konteks dipilih SEKALI di level dashboard →
+  diturunkan ke halaman detail via query param (`?eventId=`); halaman detail yang dibuka TANPA konteks itu `router.replace`
+  balik ke dashboard-nya. Halaman detail turunan TIDAK lagi jadi item sidebar sendiri (dicapai lewat tombol di dashboard).
+  **Status: Dashboard Keuangan (`/dashboard/pl-report`, label sidebar "Dashboard Keuangan") = pilot** — dikerjakan duluan
+  untuk memvalidasi pola sebelum direplikasi ke 4 kategori lain. Turunannya: Expense Tracker (`/dashboard/expenses`) +
+  Laporan Akhir Event (`/dashboard/event-summary`). Lihat known-bugs entry [2026-07-15].
+- **Layer 3 — Master dashboard**: ringkasan highlight dari kelima dashboard kategori. Dikerjakan PALING AKHIR, setelah
+  kelima Layer-2 selesai & polanya tervalidasi. **Belum dimulai.**
+
+Catatan implementasi: `useSearchParams` (Next 16) WAJIB dibungkus `<Suspense>` — kalau tidak, build gagal / halaman jatuh ke
+dynamic rendering. Pola wrapper + `*Inner` sudah dipakai di `invoice`, `upgrade`, `pl-report`, `expenses`, `event-summary`.
 
 ## Aturan Tambahan
 

@@ -1,8 +1,9 @@
 "use client"
 
-import { useEffect, useState } from "react"
-import { Lock, FileCheck, FileDown, CheckCircle2, Loader2, Mail, AlertTriangle } from "lucide-react"
+import { Suspense, useEffect, useState } from "react"
+import { ArrowLeft, Lock, FileCheck, FileDown, CheckCircle2, Loader2, Mail, AlertTriangle } from "lucide-react"
 import Link from "next/link"
+import { useRouter, useSearchParams } from "next/navigation"
 import { useUser } from "@/hooks/useUser"
 
 type EventItem = { id: string; title: string; finishedAt: string | null }
@@ -13,13 +14,30 @@ const fmtDate = (d: string | null) =>
   d ? new Date(d).toLocaleDateString("id-ID", { day: "numeric", month: "long", year: "numeric" }) : "-"
 
 export default function EventSummaryPage() {
+  return (
+    <Suspense fallback={<div className="p-10 text-center text-slate-400">Memuat...</div>}>
+      <EventSummaryPageInner />
+    </Suspense>
+  )
+}
+
+function EventSummaryPageInner() {
   const { isPro, loading: userLoading } = useUser()
+  const router = useRouter()
+  const searchParams = useSearchParams()
+
+  // Event diwarisi dari Dashboard Keuangan — halaman ini bukan pintu masuk sendiri.
+  const selectedEventId = searchParams.get("eventId") ?? ""
 
   const [events, setEvents] = useState<EventItem[]>([])
-  const [selectedEventId, setSelectedEventId] = useState("")
   const [finishing, setFinishing] = useState(false)
   const [downloading, setDownloading] = useState(false)
   const [message, setMessage] = useState<{ type: "success" | "error"; text: string } | null>(null)
+
+  // Tanpa konteks event, kembalikan ke pintu utama kategori Keuangan.
+  useEffect(() => {
+    if (!selectedEventId) router.replace("/dashboard/pl-report")
+  }, [selectedEventId, router])
 
   useEffect(() => {
     fetch("/api/events", { headers: authHeaders() })
@@ -97,6 +115,9 @@ export default function EventSummaryPage() {
     )
   }
 
+  // Redirect sedang berjalan — jangan render konten halaman.
+  if (!selectedEventId) return null
+
   // ── Lock UI (Starter) ──
   if (!isPro) {
     return (
@@ -121,20 +142,25 @@ export default function EventSummaryPage() {
   // ── Main ──
   return (
     <div className="mx-auto flex w-full max-w-3xl flex-col gap-6">
+      {/* Kembali ke pintu utama kategori Keuangan (event dipertahankan) */}
+      <div>
+        <Link
+          href={`/dashboard/pl-report?eventId=${selectedEventId}`}
+          className="inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-bold text-slate-700 transition-colors hover:bg-slate-50"
+        >
+          <ArrowLeft className="size-4" />
+          Kembali ke Dashboard Keuangan
+        </Link>
+      </div>
+
       <Header />
 
+      {/* Event aktif — dipilih di Dashboard Keuangan, bukan di sini */}
       <div>
-        <label className="mb-1.5 block text-sm font-medium text-slate-700">Pilih Event</label>
-        <select
-          value={selectedEventId}
-          onChange={(e) => { setSelectedEventId(e.target.value); setMessage(null) }}
-          className="w-full max-w-sm rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm text-slate-900 focus:border-emerald-500 focus:outline-none focus:ring-1 focus:ring-emerald-500/30"
-        >
-          <option value="">-- Pilih event --</option>
-          {events.map((ev) => (
-            <option key={ev.id} value={ev.id}>{ev.title}{ev.finishedAt ? "  (selesai)" : ""}</option>
-          ))}
-        </select>
+        <p className="mb-1.5 text-sm font-medium text-slate-700">Event</p>
+        <p className="text-sm font-semibold text-slate-900">
+          {selectedEvent ? `${selectedEvent.title}${selectedEvent.finishedAt ? "  (selesai)" : ""}` : "Memuat event..."}
+        </p>
       </div>
 
       {selectedEvent && (

@@ -16,7 +16,6 @@ import {
   Ticket,
   Banknote,
   TrendingUp,
-  FileCheck,
   ChevronDown,
 } from "lucide-react"
 import { cn } from "@/lib/utils"
@@ -48,8 +47,7 @@ const nav: NavItem[] = [
   { label: "Field Crew", icon: Users, href: "/dashboard/crew", badge: "Pro", group: "Operasional" },
   { label: "Manajemen Tiket", icon: Ticket, href: "/dashboard/tickets", group: "Tiket & Pencairan" },
   { label: "Pencairan Dana", icon: Banknote, href: "/dashboard/payout", group: "Tiket & Pencairan" },
-  { label: "Laporan P&L", icon: BarChart2, href: "/dashboard/pl-report", badge: "Pro", group: "Keuangan" },
-  { label: "Laporan Akhir Event", icon: FileCheck, href: "/dashboard/event-summary", badge: "Pro", group: "Keuangan" },
+  { label: "Dashboard Keuangan", icon: BarChart2, href: "/dashboard/pl-report", badge: "Pro", group: "Keuangan" },
   { label: "Approve User", icon: ShieldCheck, href: "/dashboard/admin", adminOnly: true },
   { label: "Pendapatan Platform", icon: TrendingUp, href: "/dashboard/admin/revenue", adminOnly: true },
 ]
