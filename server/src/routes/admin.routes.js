@@ -19,11 +19,26 @@ const {
   approveBundle,
   rejectBundle,
 } = require('../../controllers/bundle.controller');
+const {
+  setCategoryFee,
+  getEventCategories,
+  deactivateCategory,
+  deleteCategory,
+} = require('../../controllers/category-fee.controller');
 
 router.get('/users', protect, requireAdmin, getPendingUsers);
 router.patch('/users/:id/approve', protect, requireAdmin, approveUser);
 
-// Kelola fee event kapanpun (independen dari flow approval).
+// ── Fee PER-KATEGORI (arsitektur 2026-07-15) — jalur fee yang BENAR ──
+// Fee di-set sekali per kategori lalu dikunci permanen. Ini yang menggerakkan harga di checkout.
+router.get('/events/:eventId/categories', protect, requireAdmin, getEventCategories);
+router.patch('/categories/:categoryType/:id/fee', protect, requireAdmin, setCategoryFee);
+router.patch('/categories/:categoryType/:id/deactivate', protect, requireAdmin, deactivateCategory);
+router.delete('/categories/:categoryType/:id', protect, requireAdmin, deleteCategory);
+
+// ⚠️ DEPRECATED — fee level Event. Dipertahankan sementara supaya klien lama tidak pecah, TAPI
+// nilainya sudah TIDAK berpengaruh ke harga sama sekali (checkout baca fee per-kategori).
+// UI "Kelola Fee Event" sudah dicabut dari admin panel. Kandidat hapus di pembersihan berikutnya.
 // '/events-fees' harus di atas '/events/:eventId/fees' — beda path, tidak ketubruk, tapi jaga urutan.
 router.get('/events-fees', protect, requireAdmin, getEventsWithFees);
 router.patch('/events/:eventId/fees', protect, requireAdmin, updateEventFees);

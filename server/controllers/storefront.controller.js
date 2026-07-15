@@ -1,6 +1,6 @@
 const prisma = require('../src/lib/prisma');
 const { snap } = require('../services/midtrans.service');
-const { countTicketsForNik, MAX_TICKETS_PER_NIK, computeFeeAndTax, DEFAULT_FEE_PERCENT } = require('../services/ticket.service');
+const { countTicketsForNik, MAX_TICKETS_PER_NIK, computeOrderFeeAndTax, requireCategoryFee, isSellable } = require('../services/ticket.service');
 const { parseNik } = require('../services/nik-parser.service');
 
 const BOOKING_MINUTES = 15;
@@ -42,13 +42,19 @@ const getEventStorefront = async (req, res) => {
       return res.json({ success: true, event, status: 'ended', message: 'Penjualan tiket telah berakhir.' });
     }
 
-    const ticketTypesWithAvailability = event.ticketTypes.map((tt) => ({
+    // ── Gating fee per-kategori (2026-07-15) ──
+    // Kategori yang fee-nya belum ditetapkan admin (feePercent null) TIDAK BOLEH tampil sebagai
+    // barang yang bisa dibeli: checkout-nya PASTI ditolak (fail-closed di createOrder), jadi
+    // menampilkannya cuma bikin pembeli mentok di akhir. Difilter total (bukan "coming soon")
+    // supaya konsisten dgn pola isActive/approvalStatus yang juga menyaring di query, bukan menandai.
+    // Promotor tetap melihat kategorinya di dashboard-nya sendiri dgn badge "Menunggu Setup Fee".
+    const ticketTypesWithAvailability = event.ticketTypes.filter(isSellable).map((tt) => ({
       ...tt,
       available: tt.quota - tt.sold,
       isSoldOut: tt.sold >= tt.quota,
     }));
 
-    const merchWithAvailability = event.merchItems.map((item) => ({
+    const merchWithAvailability = event.merchItems.filter(isSellable).map((item) => ({
       ...item,
       variants: item.variants.map((v) => ({
         ...v,
@@ -66,7 +72,7 @@ const getEventStorefront = async (req, res) => {
       include: { variants: true },
     });
 
-    const bundlePackages = event.bundlePackages.map((b) => {
+    const bundlePackages = event.bundlePackages.filter(isSellable).map((b) => {
       const items = b.items.map((it) => {
         if (it.itemType === 'ticket') {
           const tt = allTicketTypes.find((t) => t.id === it.ticketTypeId);
@@ -107,10 +113,10 @@ const getEventStorefront = async (req, res) => {
         ticketTypes: ticketTypesWithAvailability,
         merchItems: merchWithAvailability,
         bundlePackages,
-        // feePercent legacy (fallback umum); fee per tipe order di-resolve frontend/backend
-        // via chain: fee spesifik → platformFeePercent → 3.5. Field ticketFeePercent /
-        // merchFeePercent / bundlingFeePercent sudah ikut ter-spread dari ...event.
-        feePercent: event.platformFeePercent || DEFAULT_FEE_PERCENT,
+        // Fee % TIDAK lagi dikirim di level event — sudah tidak ada satu angka yang mewakili
+        // (tiap kategori punya feePercent sendiri, ikut ter-spread di tiap ticketTypes/merchItems/
+        // bundlePackages di atas). Field event.*FeePercent yang lama masih ter-spread dari ...event
+        // tapi DEPRECATED & tidak boleh dipakai frontend untuk hitung harga.
         feeBearer: event.feeBearer,
         taxEnabled: event.taxEnabled,
       },
@@ -241,9 +247,11 @@ const createOrder = async (req, res) => {
     try {
       order = await prisma.$transaction(async (tx) => {
         const itemDetails = [];
-        // Subtotal dipisah: pajak 10% HANYA kena subtotal tiket, merch TIDAK pernah kena pajak.
-        let ticketSubtotal = 0;
-        let merchSubtotal = 0;
+        // Baris fee per-kategori: tiap baris bawa fee% KATEGORI-nya sendiri (bukan lagi satu %
+        // per tipe dari Event). Subtotal tetap dipisah karena pajak 10% HANYA kena porsi tiket.
+        const ticketLines = [];
+        const merchLines = [];
+        const bundleLines = [];
 
         // ===== Tiket =====
         for (const item of ticketItems) {
@@ -251,6 +259,9 @@ const createOrder = async (req, res) => {
           if (!ticketType || ticketType.eventId !== event.id || !ticketType.isActive) {
             throw new Error('Jenis tiket tidak tersedia.');
           }
+          // Fail-closed: kategori tanpa fee sah TIDAK bisa dijual. Storefront sudah menyaringnya,
+          // ini jaring pengaman untuk request yang dibuat langsung ke API.
+          const ttFee = requireCategoryFee(ticketType, 'Jenis tiket');
           if (ticketType.sold + Number(item.quantity) > ticketType.quota) {
             throw new Error(`Tiket ${ticketType.name} tidak tersedia dalam jumlah yang diminta.`);
           }
@@ -258,7 +269,7 @@ const createOrder = async (req, res) => {
             where: { id: item.ticketTypeId },
             data: { sold: { increment: Number(item.quantity) } },
           });
-          ticketSubtotal += ticketType.price * Number(item.quantity);
+          ticketLines.push({ subtotal: ticketType.price * Number(item.quantity), feePercent: ttFee });
           itemDetails.push({
             id: item.ticketTypeId,
             price: ticketType.price,
@@ -274,6 +285,8 @@ const createOrder = async (req, res) => {
           if (!variant || variant.item.eventId !== event.id || !variant.item.isActive || variant.item.approvalStatus !== 'approved') {
             throw new Error('Varian merchandise tidak tersedia.');
           }
+          // Fee melekat di PRODUK (MerchItem), bukan varian/size.
+          const merchFeePct = requireCategoryFee(variant.item, 'Merchandise');
           if (variant.sold + Number(m.quantity) > variant.stock) {
             throw new Error(`Stok ${variant.item.name} (${variant.size}) tidak cukup.`);
           }
@@ -281,7 +294,7 @@ const createOrder = async (req, res) => {
             where: { id: variant.id },
             data: { sold: { increment: Number(m.quantity) } },
           });
-          merchSubtotal += variant.item.price * Number(m.quantity);
+          merchLines.push({ subtotal: variant.item.price * Number(m.quantity), feePercent: merchFeePct });
           merchCreate.push({
             merchItemId: variant.item.id,
             variantId: variant.id,
@@ -298,7 +311,6 @@ const createOrder = async (req, res) => {
 
         // ===== Paket Bundling (kurasi) =====
         const bundleCreate = [];
-        let bundleSubtotal = 0;
         // Nilai tiket di dalam paket (pakai harga face tiket) — dasar pajak, sesuai aturan
         // "pajak hanya dari porsi tiket". Bundle price dari promotor tidak diitemisasi, jadi
         // porsi tiket diambil dari harga tiket aslinya (didokumentasikan sebagai simplifikasi MVP).
@@ -308,6 +320,9 @@ const createOrder = async (req, res) => {
           if (!bundle || bundle.eventId !== event.id || !bundle.isActive || bundle.approvalStatus !== 'approved') {
             throw new Error('Paket bundling tidak tersedia.');
           }
+          // Fee paket dihitung dari HARGA PAKET. Fee tiket/merch yang jadi ISI paket sengaja TIDAK
+          // ikut dikenakan (kalau ikut = dobel) — jadi isi paket boleh fee-nya belum di-set.
+          const bundleFeePct = requireCategoryFee(bundle, 'Paket bundling');
           const qty = Number(bi.quantity);
           const sizeSelections = Array.isArray(bi.merchSizeSelections) ? bi.merchSizeSelections : [];
           // Size merch yang benar-benar dipakai (dari pilihan pembeli) — disimpan agar stok bisa
@@ -340,18 +355,18 @@ const createOrder = async (req, res) => {
               merchSelections.push({ merchItemId: item.merchItemId, variantId: variant.id, quantity: needed });
             }
           }
-          bundleSubtotal += bundle.price * qty;
+          bundleLines.push({ subtotal: bundle.price * qty, feePercent: bundleFeePct });
           bundleCreate.push({ bundleId: bundle.id, quantity: qty, price: bundle.price, merchSelections });
           itemDetails.push({ id: bundle.id, price: bundle.price, quantity: qty, name: `Paket ${bundle.name}`.slice(0, 50) });
         }
 
-        const subtotal = ticketSubtotal + merchSubtotal + bundleSubtotal;
+        // Fee + pajak lewat helper bersama (services/ticket.service.js) supaya identik dengan Ticket
+        // Box. Fee kini dari fee% MASING-MASING kategori (sudah diresolusi & divalidasi di loop di
+        // atas); pajak 10% tetap hanya dari porsi tiket & hanya kalau event.taxEnabled.
+        const { ticketFee, merchFee, bundleFee, feeAmount, taxAmount, ticketSubtotal, merchSubtotal, bundleSubtotal } =
+          computeOrderFeeAndTax(event, { ticketLines, merchLines, bundleLines, bundleTicketValue });
 
-        // Fee (terpisah per komponen) + pajak dihitung lewat helper bersama (services/ticket.service.js)
-        // supaya identik dengan Ticket Box. Fallback chain fee spesifik → platformFeePercent → 3.5;
-        // pajak 10% hanya dari porsi tiket & hanya kalau event.taxEnabled.
-        const { ticketFeePercent, merchFeePercent, bundlingFeePercent, ticketFee, merchFee, bundleFee, feeAmount, taxAmount } =
-          computeFeeAndTax(event, { ticketSubtotal, merchSubtotal, bundleSubtotal, bundleTicketValue });
+        const subtotal = ticketSubtotal + merchSubtotal + bundleSubtotal;
 
         const feeBearer = event.feeBearer === 'audience' ? 'audience' : 'promotor';
 
@@ -393,10 +408,13 @@ const createOrder = async (req, res) => {
         });
 
         // Fee ditampilkan sebagai baris terpisah per komponen (kalau ditanggung penonton) supaya transparan.
+        // Persentase TIDAK lagi dicantumkan di label: fee sekarang per-kategori, jadi satu baris agregat
+        // (mis. gabungan VIP 2% + Reguler 3%) tidak bisa diwakili satu angka % yang jujur. Nominal Rp-nya
+        // tetap persis dan itu yang dibayar pembeli.
         if (feeBearer === 'audience') {
-          if (ticketFee > 0) itemDetails.push({ id: 'fee-ticket', price: ticketFee, quantity: 1, name: `Biaya Layanan Tiket (${ticketFeePercent}%)` });
-          if (merchFee > 0) itemDetails.push({ id: 'fee-merch', price: merchFee, quantity: 1, name: `Biaya Layanan Merch (${merchFeePercent}%)` });
-          if (bundleFee > 0) itemDetails.push({ id: 'fee-bundle', price: bundleFee, quantity: 1, name: `Biaya Layanan Paket (${bundlingFeePercent}%)` });
+          if (ticketFee > 0) itemDetails.push({ id: 'fee-ticket', price: ticketFee, quantity: 1, name: 'Biaya Layanan Tiket' });
+          if (merchFee > 0) itemDetails.push({ id: 'fee-merch', price: merchFee, quantity: 1, name: 'Biaya Layanan Merch' });
+          if (bundleFee > 0) itemDetails.push({ id: 'fee-bundle', price: bundleFee, quantity: 1, name: 'Biaya Layanan Paket' });
         }
         if (taxAmount > 0) {
           itemDetails.push({ id: 'tax', price: taxAmount, quantity: 1, name: 'Pajak Tiket (10%)' });

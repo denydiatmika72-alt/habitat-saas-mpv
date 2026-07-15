@@ -79,11 +79,19 @@ model Event {
   bannerUrl          String?  @map("banner_url")
   logoUrl            String?  @map("logo_url")
   taxEnabled         Boolean  @default(false) @map("tax_enabled")
+  // feeBearer TETAP di level Event (siapa yang MENANGGUNG fee = kebijakan 1 event, bukan per kategori).
+  // Yang pindah ke kategori hanya BESARAN fee (%).
   feeBearer          String?  @map("fee_bearer")
-  platformFeePercent Float?   @map("platform_fee_percent") // legacy/fallback — dipertahankan untuk event lama
-  ticketFeePercent   Float?   @map("ticket_fee_percent")   // fee % order tiket only
-  merchFeePercent    Float?   @map("merch_fee_percent")    // fee % order merch only
-  bundlingFeePercent Float?   @map("bundling_fee_percent") // fee % order bundling tiket+merch
+  // ⚠️ DEPRECATED (2026-07-15) — keempat field fee % di bawah TIDAK LAGI dipakai untuk hitung harga.
+  // Fee sekarang per-KATEGORI: TicketType.feePercent / MerchItem.feePercent / BundlePackage.feePercent,
+  // dikunci permanen via feeLockedAt. Field ini sengaja BELUM dihapus supaya kode/endpoint lama yang masih
+  // menulisnya (approveStorefront, updateEventFees) tidak pecah selama masa transisi — TAPI nilainya sudah
+  // TIDAK berpengaruh ke checkout sama sekali. JANGAN pakai untuk perhitungan uang baru.
+  // Lihat CLAUDE.md "Fee Per-Kategori" + known-bugs entry [2026-07-15].
+  platformFeePercent Float?   @map("platform_fee_percent") // DEPRECATED — dulu legacy/fallback
+  ticketFeePercent   Float?   @map("ticket_fee_percent")   // DEPRECATED — dulu fee % order tiket only
+  merchFeePercent    Float?   @map("merch_fee_percent")    // DEPRECATED — dulu fee % order merch only
+  bundlingFeePercent Float?   @map("bundling_fee_percent") // DEPRECATED — dulu fee % order bundling
 
   description        String?
   facilities         Json?
@@ -123,6 +131,13 @@ model TicketType {
   quota       Int
   sold        Int      @default(0)
   isActive    Boolean  @default(true) @map("is_active")
+  // Fee platform % untuk KATEGORI INI. null = admin belum menetapkan → kategori TIDAK BOLEH dijual
+  // (disembunyikan dari storefront + checkout menolak). Sekali di-set, feeLockedAt ikut terisi dan
+  // nilai ini TIDAK BISA diubah lagi selamanya (dijaga di backend, bukan cuma UI).
+  feePercent  Float?    @map("fee_percent")
+  // Non-null = fee terkunci permanen. Kategori dgn fee salah TIDAK diedit & TIDAK dihapus —
+  // dinonaktifkan (isActive:false), lalu promotor bikin kategori baru dgn fee benar.
+  feeLockedAt DateTime? @map("fee_locked_at")
   createdAt   DateTime @default(now()) @map("created_at")
 
   event       Event    @relation(fields: [eventId], references: [id], onDelete: Cascade)
@@ -172,6 +187,10 @@ model MerchItem {
   isActive    Boolean          @default(true) @map("is_active")
   approvalStatus String        @default("pending") @map("approval_status") // "pending" | "approved" | "rejected"
   approvalNote   String?       @map("approval_note")
+  // Fee per-kategori — semantik SAMA dgn TicketType.feePercent/feeLockedAt (lihat komentar di sana).
+  // Fee melekat di PRODUK (MerchItem), bukan di varian/size — semua size satu produk = satu fee.
+  feePercent  Float?           @map("fee_percent")
+  feeLockedAt DateTime?        @map("fee_locked_at")
   createdAt   DateTime         @default(now()) @map("created_at")
   updatedAt   DateTime         @updatedAt      @map("updated_at")
 
@@ -258,6 +277,12 @@ model BundlePackage {
   isActive       Boolean  @default(true) @map("is_active")
   approvalStatus String   @default("pending") @map("approval_status") // "pending" | "approved" | "rejected"
   approvalNote   String?  @map("approval_note")
+  // Fee per-kategori — semantik SAMA dgn TicketType.feePercent/feeLockedAt (lihat komentar di sana).
+  // Fee paket dihitung dari HARGA PAKET. Fee tiket/merch yang jadi ISI paket TIDAK ikut dikenakan
+  // (kalau ikut = dobel). Konsekuensi disengaja: isi paket boleh saja fee-nya belum di-set — paket
+  // tetap sah dijual karena fee-nya diatur di level paket.
+  feePercent     Float?    @map("fee_percent")
+  feeLockedAt    DateTime? @map("fee_locked_at")
   createdAt      DateTime @default(now()) @map("created_at")
   updatedAt      DateTime @updatedAt      @map("updated_at")
 

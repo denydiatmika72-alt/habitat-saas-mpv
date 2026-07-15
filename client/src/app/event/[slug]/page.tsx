@@ -31,6 +31,9 @@ type TicketType = {
   sold: number
   available: number
   isSoldOut: boolean
+  // Fee per-kategori. Backend hanya mengirim kategori yang fee-nya sudah di-set (yang null
+  // difilter dari storefront), tapi tipe dibiarkan nullable supaya cocok dgn bentuk data DB.
+  feePercent: number | null
 }
 
 type Facility = { id: string; name: string; isCustom?: boolean }
@@ -51,6 +54,7 @@ type MerchItem = {
   price: number
   imageUrl: string | null
   variants: MerchVariant[]
+  feePercent: number | null
 }
 
 type BundleMerchVariant = { id: string; size: string; available: number }
@@ -75,6 +79,7 @@ type BundlePackage = {
   imageUrl: string | null
   isAvailable: boolean
   items: BundlePackageItem[]
+  feePercent: number | null
 }
 
 type EventData = {
@@ -225,14 +230,28 @@ export default function EventStorefrontPage() {
   const requiresNik = totalTicketQty > 0 || bundleTicketValue > 0
 
   const feeBearer = event?.feeBearer === "audience" ? "audience" : "promotor"
-  // Fee dihitung TERPISAH per komponen (harus sama dengan backend): tiket→ticketFee, merch→merchFee,
-  // paket→bundlingFee. Beli tiket + merch biasa BUKAN bundling (fee sendiri-sendiri).
-  const ticketFeePercent = event?.ticketFeePercent ?? event?.platformFeePercent ?? 3.5
-  const merchFeePercent = event?.merchFeePercent ?? event?.platformFeePercent ?? 3.5
-  const bundlingFeePercent = event?.bundlingFeePercent ?? event?.platformFeePercent ?? 3.5
-  const ticketFee = Math.round(ticketSubtotal * (ticketFeePercent / 100))
-  const merchFee = Math.round(merchSubtotal * (merchFeePercent / 100))
-  const bundleFee = Math.round(bundleSubtotal * (bundlingFeePercent / 100))
+  // Fee per-KATEGORI (arsitektur 2026-07-15): tiap jenis tiket / produk merch / paket punya
+  // feePercent sendiri. Harus PERSIS sama dengan backend (computeOrderFeeAndTax) supaya angka yang
+  // dilihat pembeli = angka yang ditagih Midtrans:
+  //   - satu baris = satu entri keranjang (tiket: per jenis; merch: per (produk,size); paket: per paket)
+  //   - pembulatan PER BARIS, lalu dijumlahkan — bukan bulatkan totalnya
+  // Kategori tanpa fee tidak pernah sampai ke sini (backend sudah menyaringnya dari storefront),
+  // `?? 0` hanya penjaga tipe supaya tidak ada NaN kalau data tak terduga.
+  const ticketFee = selectedItems.reduce((sum, item) => {
+    const tt = event?.ticketTypes.find((t) => t.id === item.ticketTypeId)
+    if (!tt) return sum
+    return sum + Math.round(tt.price * item.quantity * ((tt.feePercent ?? 0) / 100))
+  }, 0)
+  const merchFee = selectedMerch.reduce((sum, item) => {
+    const mi = event?.merchItems.find((m) => m.id === item.itemId)
+    if (!mi) return sum
+    return sum + Math.round(mi.price * item.quantity * ((mi.feePercent ?? 0) / 100))
+  }, 0)
+  const bundleFee = selectedBundles.reduce((sum, sb) => {
+    const b = event?.bundlePackages.find((x) => x.id === sb.bundleId)
+    if (!b) return sum
+    return sum + Math.round(b.price * sb.quantity * ((b.feePercent ?? 0) / 100))
+  }, 0)
   const feeAmount = ticketFee + merchFee + bundleFee
   // Pajak 10% HANYA dari porsi tiket (tiket langsung + porsi tiket dalam paket) — merch tidak pernah kena pajak.
   const taxableTicketValue = ticketSubtotal + bundleTicketValue
@@ -860,21 +879,24 @@ export default function EventStorefrontPage() {
 
                   {feeBearer === "audience" && feeAmount > 0 && (
                     <div className="mt-2 space-y-1 border-t border-slate-700 pt-2 text-sm">
+                      {/* Persentase tidak dicantumkan lagi: fee sekarang per-kategori, jadi satu baris
+                          agregat (mis. VIP 2% + Reguler 3%) tidak bisa diwakili satu angka % yang jujur.
+                          Nominal Rp-nya tetap persis sama dengan yang ditagih backend. */}
                       {ticketFee > 0 && (
                         <div className="flex justify-between">
-                          <span className="text-slate-400">Biaya layanan tiket ({ticketFeePercent}%)</span>
+                          <span className="text-slate-400">Biaya layanan tiket</span>
                           <span className="text-white">{IDR.format(ticketFee)}</span>
                         </div>
                       )}
                       {merchFee > 0 && (
                         <div className="flex justify-between">
-                          <span className="text-slate-400">Biaya layanan merch ({merchFeePercent}%)</span>
+                          <span className="text-slate-400">Biaya layanan merch</span>
                           <span className="text-white">{IDR.format(merchFee)}</span>
                         </div>
                       )}
                       {bundleFee > 0 && (
                         <div className="flex justify-between">
-                          <span className="text-slate-400">Biaya layanan paket ({bundlingFeePercent}%)</span>
+                          <span className="text-slate-400">Biaya layanan paket</span>
                           <span className="text-white">{IDR.format(bundleFee)}</span>
                         </div>
                       )}

@@ -78,6 +78,26 @@ type TicketType = {
   quota: number
   sold: number
   isActive: boolean
+  // Fee per-kategori (arsitektur 2026-07-15): null = admin belum menetapkan → belum bisa dijual.
+  feePercent: number | null
+  feeLockedAt: string | null
+}
+
+// Badge status fee untuk kategori (tiket/merch/paket). Dipakai supaya promotor paham kenapa
+// kategorinya belum tampil di storefront — bukan karena error, tapi menunggu admin set fee.
+function FeeStatusBadge({ feePercent }: { feePercent: number | null }) {
+  if (feePercent === null) {
+    return (
+      <span className="rounded-full bg-amber-100 px-1.5 py-0.5 text-[9px] font-bold text-amber-700">
+        Menunggu Setup Fee — belum bisa dijual
+      </span>
+    )
+  }
+  return (
+    <span className="rounded-full bg-emerald-100 px-1.5 py-0.5 text-[9px] font-bold text-emerald-700">
+      Fee {feePercent}%
+    </span>
+  )
 }
 
 type Order = {
@@ -110,6 +130,8 @@ type MerchItem = {
   approvalStatus: "pending" | "approved" | "rejected"
   approvalNote: string | null
   variants: MerchVariant[]
+  feePercent: number | null
+  feeLockedAt: string | null
 }
 
 type BundleItemDraft = {
@@ -129,6 +151,8 @@ type Bundle = {
   isActive: boolean
   approvalStatus: "pending" | "approved" | "rejected"
   approvalNote: string | null
+  feePercent: number | null
+  feeLockedAt: string | null
   items: {
     id: string
     itemType: "ticket" | "merch"
@@ -1019,6 +1043,7 @@ export default function TicketsPage() {
                             <div className="flex items-center gap-2">
                               <p className="truncate text-sm font-semibold text-slate-900">{tt.name}</p>
                               {!tt.isActive && <span className="rounded-full bg-slate-200 px-1.5 py-0.5 text-[9px] font-bold text-slate-500">Nonaktif</span>}
+                              <FeeStatusBadge feePercent={tt.feePercent} />
                             </div>
                             <p className="text-xs text-slate-500">{IDR.format(tt.price)} · {tt.sold}/{tt.quota} terjual</p>
                           </div>
@@ -1132,6 +1157,7 @@ export default function TicketsPage() {
                           <div className="flex items-center justify-between gap-2">
                             <p className="truncate text-sm font-bold text-slate-900">{item.name}</p>
                             <div className="flex shrink-0 items-center gap-2">
+                              <FeeStatusBadge feePercent={item.feePercent} />
                               <ToggleSwitch checked={item.isActive} onChange={() => handleToggleMerchActive(item.id, !item.isActive)} />
                               <button onClick={() => handleDeleteMerch(item.id)} className="flex size-7 items-center justify-center rounded-md text-slate-400 hover:bg-red-50 hover:text-red-500">
                                 <Trash2 className="size-3.5" />
@@ -1336,6 +1362,7 @@ export default function TicketsPage() {
                           <div className="flex items-center justify-between gap-2">
                             <p className="truncate text-sm font-bold text-slate-900">{b.name}</p>
                             <div className="flex shrink-0 items-center gap-2">
+                              <FeeStatusBadge feePercent={b.feePercent} />
                               <ToggleSwitch checked={b.isActive} onChange={() => handleToggleBundleActive(b.id, !b.isActive)} />
                               <button onClick={() => handleDeleteBundle(b.id)} className="flex size-7 items-center justify-center rounded-md text-slate-400 hover:bg-red-50 hover:text-red-500">
                                 <Trash2 className="size-3.5" />

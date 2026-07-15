@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from "react"
 import { useRouter } from "next/navigation"
-import { CheckCircle, Clock, Phone, Mail, User, Ticket, XCircle, Wallet, Package, Receipt, ChevronDown, ChevronUp } from "lucide-react"
+import { CheckCircle, Clock, Phone, Mail, User, Ticket, XCircle, Wallet, Package, Receipt, ChevronDown, ChevronUp, Lock, EyeOff, Eye } from "lucide-react"
 import { useUser } from "@/hooks/useUser"
 
 const API_BASE = "/api"
@@ -37,11 +37,11 @@ interface MerchRequest {
   price: number
   imageUrl: string | null
   variants: { id: string; size: string; stock: number }[]
+  // Fee per-kategori: melekat di produk ini, bukan di event.
+  feePercent: number | null
   event: {
     id: string
     title: string
-    merchFeePercent: number | null
-    platformFeePercent: number | null
     promotor: { name: string; email: string }
   }
 }
@@ -70,7 +70,30 @@ interface FeeEvent {
   _count: { ticketTypes: number; merchItems: number }
 }
 
-type FeeEdit = { ticket?: string; merch?: string; bundling?: string }
+// (type FeeEdit dihapus — dulu dipakai section "Kelola Fee Event" yang sudah dicabut.)
+
+// ── Fee per-kategori (arsitektur 2026-07-15) ──
+// categoryType dikirim backend supaya frontend tidak menebak URL endpoint-nya.
+type CategoryType = "ticket-types" | "merch-items" | "bundling-packages"
+
+type AdminCategory = {
+  id: string
+  name: string
+  price: number
+  isActive: boolean
+  feePercent: number | null
+  feeLockedAt: string | null
+  categoryType: CategoryType
+  quota?: number
+  sold?: number
+  approvalStatus?: string
+}
+
+type EventCategories = {
+  ticketTypes: AdminCategory[]
+  merchItems: AdminCategory[]
+  bundlePackages: AdminCategory[]
+}
 
 interface FeeDebtPromoter {
   promotorId: string
@@ -141,8 +164,11 @@ export default function AdminUsersPage() {
 
   const [feeEvents, setFeeEvents] = useState<FeeEvent[]>([])
   const [loadingFees, setLoadingFees] = useState(true)
-  const [editedFees, setEditedFees] = useState<Record<string, FeeEdit>>({})
-  const [savingFeeId, setSavingFeeId] = useState<string | null>(null)
+  // Fee per-kategori: kategori di-lazy-load per event saat panelnya dibuka.
+  const [openFeeEventId, setOpenFeeEventId] = useState<string | null>(null)
+  const [eventCategories, setEventCategories] = useState<Record<string, EventCategories>>({})
+  const [categoryFeeDraft, setCategoryFeeDraft] = useState<Record<string, string>>({})
+  const [busyCategoryId, setBusyCategoryId] = useState<string | null>(null)
 
   const [feeDebts, setFeeDebts] = useState<FeeDebtPromoter[]>([])
   const [loadingFeeDebts, setLoadingFeeDebts] = useState(true)
@@ -389,43 +415,98 @@ export default function AdminUsersPage() {
     finally { setLoadingFees(false) }
   }
 
-  async function handleSaveFees(eventId: string) {
-    const edits = editedFees[eventId]
-    const ev = feeEvents.find((e) => e.id === eventId)
-    if (!edits || !ev) return
-    // Untuk field yang tidak disentuh, kirim nilai existing agar tidak ter-reset ke null.
-    const pick = (edited: string | undefined, current: number | null) =>
-      edited !== undefined ? edited : current
-    setSavingFeeId(eventId)
+  // ── Fee per-kategori ──────────────────────────────────────────────────────────
+  async function fetchEventCategories(eventId: string) {
     try {
-      const res = await fetch(`${API_BASE}/admin/events/${eventId}/fees`, {
+      const res = await fetch(`${API_BASE}/admin/events/${eventId}/categories`, { headers: authHeaders() })
+      const json = await res.json()
+      if (json.success) setEventCategories((prev) => ({ ...prev, [eventId]: json.categories }))
+    } catch {
+      /* ignore */
+    }
+  }
+
+  function toggleEventCategories(eventId: string) {
+    const next = openFeeEventId === eventId ? null : eventId
+    setOpenFeeEventId(next)
+    if (next) fetchEventCategories(next)
+  }
+
+  async function handleLockCategoryFee(eventId: string, c: AdminCategory) {
+    const raw = categoryFeeDraft[c.id]
+    const val = Number(raw)
+    if (!raw || !Number.isFinite(val) || val < 1 || val > 5) {
+      alert("Fee wajib diisi angka antara 1.0 dan 5.0.")
+      return
+    }
+    // Konfirmasi keras: aksi ini permanen & menyangkut uang promotor.
+    const ok = window.confirm(
+      `Kunci fee ${val}% untuk "${c.name}"?\n\n` +
+        `TIDAK BISA DIBATALKAN. Fee ini permanen dan tidak akan bisa diubah lagi oleh siapa pun, ` +
+        `termasuk admin.\n\nKalau nanti ternyata salah, satu-satunya jalan adalah menonaktifkan ` +
+        `kategori ini lalu minta promotor membuat kategori baru.`
+    )
+    if (!ok) return
+
+    setBusyCategoryId(c.id)
+    try {
+      const res = await fetch(`${API_BASE}/admin/categories/${c.categoryType}/${c.id}/fee`, {
         method: "PATCH",
         headers: authHeaders(),
-        body: JSON.stringify({
-          ticketFeePercent: pick(edits.ticket, ev.ticketFeePercent),
-          merchFeePercent: pick(edits.merch, ev.merchFeePercent),
-          bundlingFeePercent: pick(edits.bundling, ev.bundlingFeePercent),
-        }),
+        body: JSON.stringify({ feePercent: val }),
       })
       const json = await res.json()
       if (json.success) {
-        setEditedFees((prev) => {
-          const next = { ...prev }
-          delete next[eventId]
-          return next
+        setCategoryFeeDraft((p) => {
+          const n = { ...p }
+          delete n[c.id]
+          return n
         })
-        await fetchFeeEvents()
-        await fetchMerchRequests()
-        alert("Fee event berhasil disimpan. Berlaku untuk transaksi berikutnya.")
+        await fetchEventCategories(eventId)
+        alert(`Fee "${c.name}" dikunci di ${val}%. Kategori ini sekarang bisa dijual.`)
       } else {
-        alert(json.message || "Gagal menyimpan fee")
+        alert(json.message || "Gagal mengunci fee")
+        await fetchEventCategories(eventId) // sinkronkan — mungkin sudah terkunci di tab lain
       }
     } catch {
       alert("Tidak dapat menghubungi server.")
     } finally {
-      setSavingFeeId(null)
+      setBusyCategoryId(null)
     }
   }
+
+  async function handleToggleCategoryActive(eventId: string, c: AdminCategory) {
+    const activating = !c.isActive
+    if (!activating) {
+      const ok = window.confirm(
+        `Nonaktifkan "${c.name}"?\n\n` +
+          `Kategori hilang dari storefront dan tidak bisa dibeli lagi. Order & tiket yang SUDAH ada ` +
+          `tetap utuh dan tetap valid — tidak ada yang dihapus.\n\n` +
+          `Pakai ini kalau fee-nya terlanjur salah: nonaktifkan, lalu minta promotor membuat kategori ` +
+          `baru dengan fee yang benar.`
+      )
+      if (!ok) return
+    }
+    setBusyCategoryId(c.id)
+    try {
+      const res = await fetch(`${API_BASE}/admin/categories/${c.categoryType}/${c.id}/deactivate`, {
+        method: "PATCH",
+        headers: authHeaders(),
+        body: JSON.stringify({ isActive: activating }),
+      })
+      const json = await res.json()
+      if (json.success) await fetchEventCategories(eventId)
+      else alert(json.message || "Gagal mengubah status kategori")
+    } catch {
+      alert("Tidak dapat menghubungi server.")
+    } finally {
+      setBusyCategoryId(null)
+    }
+  }
+
+  // handleSaveFees (PATCH /admin/events/:id/fees) DIHAPUS bersama section "Kelola Fee Event".
+  // Itu jalur yang membuat fee bisa diubah admin kapan saja pada event yang sudah live — persis
+  // celah yang ditutup perubahan 2026-07-15. Fee sekarang lewat handleLockCategoryFee (sekali kunci).
 
   async function fetchFeeDebts() {
     setLoadingFeeDebts(true)
@@ -821,10 +902,10 @@ export default function AdminUsersPage() {
                   </button>
                 </div>
               </div>
-              {m.event.merchFeePercent === null && (
+              {m.feePercent === null && (
                 <p className="rounded-lg bg-amber-50 p-2 text-xs text-amber-600">
-                  ⚠️ Fee merchandise untuk event ini belum diset — akan pakai fallback{" "}
-                  {m.event.platformFeePercent ?? 3.5}%. Atur di section &quot;Kelola Fee Event&quot; di bawah.
+                  ⚠️ Fee produk ini belum diatur. Menyetujui saja TIDAK membuatnya bisa dijual — tidak ada
+                  lagi fallback otomatis. Kunci fee-nya di section &quot;Kelola Fee per Kategori&quot; di bawah.
                 </p>
               )}
               {merchRejectFor === m.id && (
@@ -930,11 +1011,14 @@ export default function AdminUsersPage() {
         </div>
       )}
 
-      {/* Kelola Fee Event */}
+      {/* Kelola Fee per Kategori — menggantikan "Kelola Fee Event" (arsitektur 2026-07-15).
+          Fee di-set SEKALI per kategori lalu dikunci permanen; tidak ada jalan edit setelahnya. */}
       <div>
-        <h2 className="text-xl font-semibold text-slate-900">Kelola Fee Event</h2>
+        <h2 className="text-xl font-semibold text-slate-900">Kelola Fee per Kategori</h2>
         <p className="mt-1 text-sm text-slate-500">
-          Edit fee kapanpun — berlaku untuk transaksi berikutnya. Kosongkan untuk pakai fallback default.
+          Fee ditetapkan per jenis tiket / produk merch / paket bundling. Sekali dikunci,{" "}
+          <strong>tidak bisa diubah selamanya</strong> — termasuk oleh admin. Kategori yang fee-nya belum
+          diatur tidak muncul di storefront dan tidak bisa dijual.
         </p>
       </div>
 
@@ -949,12 +1033,12 @@ export default function AdminUsersPage() {
       ) : (
         <div className="space-y-3">
           {feeEvents.map((ev) => {
-            const edit = editedFees[ev.id]
-            const feeInputs: [string, keyof FeeEdit, number | null][] = [
-              ["Fee Tiket", "ticket", ev.ticketFeePercent],
-              ["Fee Merch", "merch", ev.merchFeePercent],
-              ["Fee Bundling", "bundling", ev.bundlingFeePercent],
-            ]
+            const cats = eventCategories[ev.id]
+            const isOpen = openFeeEventId === ev.id
+            const allCats = cats
+              ? [...cats.ticketTypes, ...cats.merchItems, ...cats.bundlePackages]
+              : []
+            const pendingCount = allCats.filter((c) => !c.feeLockedAt).length
             return (
               <div key={ev.id} className="rounded-xl border border-slate-200 bg-white p-4">
                 <div className="mb-3 flex items-start justify-between gap-2">
@@ -976,40 +1060,52 @@ export default function AdminUsersPage() {
                   </span>
                 </div>
 
-                <div className="grid grid-cols-3 gap-2">
-                  {feeInputs.map(([label, key, current]) => (
-                    <div key={key}>
-                      <label className="mb-1 block text-xs text-slate-500">{label}</label>
-                      <div className="flex items-center gap-1">
-                        <input
-                          type="number"
-                          min="1"
-                          max="5"
-                          step="0.5"
-                          value={edit?.[key] ?? (current ?? "")}
-                          onChange={(e) =>
-                            setEditedFees((prev) => ({
-                              ...prev,
-                              [ev.id]: { ...prev[ev.id], [key]: e.target.value },
-                            }))
-                          }
-                          placeholder="3.5"
-                          className="w-full rounded-lg border border-slate-200 px-2 py-1.5 text-sm outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500/30"
-                        />
-                        <span className="text-xs text-slate-400">%</span>
-                      </div>
-                    </div>
-                  ))}
-                </div>
+                <button
+                  onClick={() => toggleEventCategories(ev.id)}
+                  className="w-full rounded-xl border border-slate-200 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50"
+                >
+                  {isOpen ? "Tutup" : "Kelola Fee Kategori"}
+                  {cats && pendingCount > 0 ? ` (${pendingCount} belum diatur)` : ""}
+                </button>
 
-                {edit && (
-                  <button
-                    onClick={() => handleSaveFees(ev.id)}
-                    disabled={savingFeeId === ev.id}
-                    className="mt-3 w-full rounded-xl bg-emerald-800 py-2 text-sm font-bold text-white hover:bg-emerald-900 disabled:opacity-50"
-                  >
-                    {savingFeeId === ev.id ? "Menyimpan..." : "Simpan Fee"}
-                  </button>
+                {isOpen && (
+                  <div className="mt-3 space-y-4">
+                    {!cats ? (
+                      <p className="py-4 text-center text-xs text-slate-400">Memuat kategori...</p>
+                    ) : allCats.length === 0 ? (
+                      <p className="py-4 text-center text-xs text-slate-400">
+                        Event ini belum punya kategori apa pun.
+                      </p>
+                    ) : (
+                      ([
+                        ["Jenis Tiket", cats.ticketTypes],
+                        ["Merchandise", cats.merchItems],
+                        ["Paket Bundling", cats.bundlePackages],
+                      ] as [string, AdminCategory[]][]).map(([groupLabel, list]) =>
+                        list.length === 0 ? null : (
+                          <div key={groupLabel}>
+                            <p className="mb-2 text-xs font-bold uppercase tracking-wide text-slate-400">
+                              {groupLabel}
+                            </p>
+                            <div className="space-y-2">
+                              {list.map((c) => (
+                                <CategoryFeeRow
+                                  key={c.id}
+                                  category={c}
+                                  eventId={ev.id}
+                                  draft={categoryFeeDraft[c.id] ?? ""}
+                                  busy={busyCategoryId === c.id}
+                                  onDraft={(v) => setCategoryFeeDraft((p) => ({ ...p, [c.id]: v }))}
+                                  onLock={() => handleLockCategoryFee(ev.id, c)}
+                                  onToggleActive={() => handleToggleCategoryActive(ev.id, c)}
+                                />
+                              ))}
+                            </div>
+                          </div>
+                        )
+                      )
+                    )}
+                  </div>
                 )}
               </div>
             )
@@ -1304,6 +1400,116 @@ export default function AdminUsersPage() {
           )}
         </div>
       )}
+    </div>
+  )
+}
+
+// ── Baris kategori di panel "Kelola Fee per Kategori" ────────────────────────────
+// Dua kondisi tegas:
+//   feeLockedAt null  → input fee + tombol "Kunci Fee" (sekali pakai, ada confirm)
+//   feeLockedAt terisi → teks read-only + ikon gembok + tanggal kunci. TIDAK ada jalan edit —
+//                        bukan sekadar disabled: backend juga menolak (lihat category-fee.controller).
+function CategoryFeeRow({
+  category,
+  draft,
+  busy,
+  onDraft,
+  onLock,
+  onToggleActive,
+}: {
+  category: AdminCategory
+  eventId: string
+  draft: string
+  busy: boolean
+  onDraft: (v: string) => void
+  onLock: () => void
+  onToggleActive: () => void
+}) {
+  const locked = !!category.feeLockedAt
+  return (
+    <div
+      className={`rounded-lg border p-3 ${
+        category.isActive ? "border-slate-200 bg-white" : "border-slate-200 bg-slate-50"
+      }`}
+    >
+      <div className="mb-2 flex items-start justify-between gap-2">
+        <div className="min-w-0">
+          <div className="flex items-center gap-2">
+            <p className={`truncate text-sm font-medium ${category.isActive ? "text-slate-900" : "text-slate-400"}`}>
+              {category.name}
+            </p>
+            {!category.isActive && (
+              <span className="shrink-0 rounded-full bg-slate-200 px-2 py-0.5 text-[10px] font-bold text-slate-600">
+                Nonaktif
+              </span>
+            )}
+          </div>
+          <p className="text-xs text-slate-400">
+            {IDR.format(category.price)}
+            {typeof category.sold === "number" ? ` · ${category.sold} terjual` : ""}
+          </p>
+        </div>
+
+        {locked ? (
+          <span className="flex shrink-0 items-center gap-1.5 rounded-full bg-emerald-100 px-2.5 py-1 text-xs font-bold text-emerald-700">
+            <Lock className="size-3" />
+            {category.feePercent}%
+          </span>
+        ) : (
+          <span className="shrink-0 rounded-full bg-amber-100 px-2.5 py-1 text-xs font-bold text-amber-700">
+            Fee belum diatur
+          </span>
+        )}
+      </div>
+
+      {locked ? (
+        <p className="text-xs text-slate-400">
+          Dikunci {new Date(category.feeLockedAt as string).toLocaleDateString("id-ID", { day: "numeric", month: "long", year: "numeric" })}
+          {" · "}permanen, tidak bisa diubah.
+        </p>
+      ) : (
+        <div className="flex items-center gap-2">
+          <div className="flex flex-1 items-center gap-1">
+            <input
+              type="number"
+              min="1"
+              max="5"
+              step="0.5"
+              value={draft}
+              onChange={(e) => onDraft(e.target.value)}
+              placeholder="mis. 2.5"
+              disabled={busy}
+              className="w-full rounded-lg border border-slate-200 px-2 py-1.5 text-sm outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500/30 disabled:opacity-50"
+            />
+            <span className="text-xs text-slate-400">%</span>
+          </div>
+          <button
+            onClick={onLock}
+            disabled={busy}
+            className="shrink-0 rounded-lg bg-emerald-800 px-3 py-1.5 text-xs font-bold text-white hover:bg-emerald-900 disabled:opacity-50"
+          >
+            {busy ? "..." : "Kunci Fee"}
+          </button>
+        </div>
+      )}
+
+      <button
+        onClick={onToggleActive}
+        disabled={busy}
+        className="mt-2 flex w-full items-center justify-center gap-1.5 rounded-lg border border-slate-200 py-1.5 text-xs font-semibold text-slate-600 hover:bg-slate-50 disabled:opacity-50"
+      >
+        {category.isActive ? (
+          <>
+            <EyeOff className="size-3" />
+            Nonaktifkan Kategori
+          </>
+        ) : (
+          <>
+            <Eye className="size-3" />
+            Aktifkan Kembali
+          </>
+        )}
+      </button>
     </div>
   )
 }

@@ -1850,3 +1850,170 @@ File ini adalah log permanen bug yang sudah pernah terjadi di project ini besert
   - `git diff -U1` dikonfirmasi hanya menyentuh baris wrapper/container — tidak ada baris konten yang hilang.
   - **Belum diverifikasi visual di browser** (butuh login + event ber-data). Founder tes manual di production.
 - Tag: #ui #sidebar #tickets #layout #split-layout #desktop
+
+---
+
+## [2026-07-15] Dashboard Tiket & Pencairan — hub Layer-2 kedua (dibangun dari 0)
+
+- Gejala: kategori "Tiket & Pencairan" belum punya halaman lobby/ringkasan. Promotor yang mau sekadar tahu "penjualan hari ini berapa?" terpaksa masuk langsung ke **Manajemen Tiket** — halaman "dapur" berisi form/konfigurasi/daftar pesanan mentah — tanpa satu pun ringkasan penjualan real-time. Tidak ada tempat melihat tren penjualan atau saldo pencairan sekilas.
+- Root cause: **bukan bug — membangun Dashboard Tiket & Pencairan dari 0, Layer 2 kedua dari roadmap navigasi (setelah Dashboard Keuangan).** Beda dari Dashboard Keuangan yang meng-upgrade halaman P&L yang sudah ada, di sini tidak ada halaman untuk ditumpangi → frontend baru + endpoint agregasi baru.
+
+### KEPUTUSAN DATA PALING PENTING — angka Rp = KOTOR per line-item (jangan "diperbaiki" jadi net)
+
+Temuan saat audit skema (di-flag ke founder sebelum coding, dijawab "lanjut" 2026-07-15):
+
+- `TicketOrder.feeAmount` hanya disimpan sebagai **agregat per-order**. `computeFeeAndTax()` (`services/ticket.service.js`) MEMANG menghitung `ticketFee`/`merchFee`/`bundleFee` terpisah saat checkout, tapi ketiganya **dijumlahkan dan split-nya tidak dipersist**.
+- Akibatnya untuk order `orderType:"mixed"` (tiket + merch dalam 1 order) **tidak ada cara tersimpan** untuk tahu berapa porsi fee milik merch.
+- Recompute dari `Event.*FeePercent` **TIDAK aman**: admin bisa mengubah fee setelah order terjadi (`PATCH /api/admin/events/:eventId/fees`) → hasil recompute bisa beda dari `feeAmount` historis.
+- **Pola lama adalah jebakan di sini**: `payout.controller.js` (statement PDF) & `platform-revenue.controller.js:99-107` sama-sama group by `orderType` dan melempar `"mixed"` ke bucket **ticket**. Aman untuk tujuan mereka (payout hanya total account-wide; platform-revenue hanya memecah fee milik nexEvent sendiri) — TAPI kalau ditiru di sini, kartu **"Total Merchandise Terjual" akan melaporkan Rp 0** untuk merch yang laku di dalam order mixed, dan diam-diam mengkreditkannya ke tiket.
+- **Keputusan**: kartu memakai **SUM(quantity × price) dari tabel line-item** (`TicketOrderItem`/`MerchOrderItem`/`BundleOrderItem` — ketiganya tabel terpisah, jadi atribusi per kategori EKSAK termasuk mixed). Dilabeli "penjualan kotor" di UI + ada catatan eksplisit yang menautkan ke P&L/Payout untuk angka bersih.
+- **Konsekuensi DISENGAJA**: angka di halaman ini **beda dari P&L & Saldo Payout**. Kotor tidak memotong fee platform dan tidak memasukkan pajak/fee-audience (keduanya hidup di `TicketOrder.totalAmount`, bukan di line item). Ini BUKAN inkonsistensi yang perlu difix.
+- **Skema TIDAK disentuh** (keputusan founder): tidak ada kolom `ticketFee`/`merchFee`/`bundleFee` baru, tidak ada `db push`, `createOrder` tidak disentuh. Kalau suatu saat butuh net per-kategori yang eksak, itu butuh kolom baru + hanya akan terisi untuk order ke depan (backfill tidak akurat karena fee bisa sudah diedit admin).
+
+### File terkait
+
+- `server/controllers/ticket-dashboard.controller.js` (**BARU**) — 2 handler read-only. Catatan panjang soal keputusan kotor-vs-net ada di kepala file.
+  - `getDashboardSummary` — `GET /api/tickets/dashboard-summary?eventId=`
+  - `getSalesTrend` — `GET /api/tickets/sales-trend?eventId=[&weekOf=YYYY-MM-DD]`
+  - Ownership: `event.promotor_id === req.user.id`, else **404** (pola sama `getOrdersByEvent`).
+  - `fetchPaidOrders()` dipakai BERSAMA oleh kedua endpoint → mustahil angkanya menyimpang.
+  - **Hari dipotong menurut WIB (`Asia/Jakarta`), bukan UTC** — kalau UTC, order jam 00:30 WIB jatuh ke tanggal kemarin di grafik. Setelah jadi kunci `"YYYY-MM-DD"`, semua aritmetika tanggal di anchor UTC (`parseKey`/`keyOf`) supaya tidak kena geser tz dua kali.
+  - Granularitas server-side: span ≤ **45 hari** (`DAILY_MAX_DAYS`) → titik harian; > 45 → agregat mingguan (bucket **Senin**) + `weekOf` untuk drill-down 7 titik harian. `weekOf` dinormalisasi ke awal minggu (kirim hari tengah minggu pun tetap dapat minggu yang benar).
+  - Hari/minggu kosong tetap dikirim sbg titik `revenue: 0` (garis tren tidak "melompat").
+- `server/routes/ticket.routes.js` — mount 2 route di ATAS wildcard `/types/:id` (sesuai komentar yang sudah ada di file).
+- `client/src/app/dashboard/ticketing/page.tsx` (**BARU**) — hub. Pola `<Suspense>` + `*Inner` (WAJIB untuk `useSearchParams` di Next 16). Design-system nexEvent (token/font/ikon Phosphor) mengikuti `pl-report`. Kartu Saldo Payout **lintas-event** (payout memang bukan per-event) → `/api/payout/balance`, tidak ikut `selectedEventId`. Drill-down via state lokal `drilldownWeek` (null = mingguan). Bar mingguan clickable, bar harian tidak.
+- `client/src/components/dashboard/sidebar.tsx` — +1 item `{ label: "Dashboard Tiket & Pencairan", icon: BarChart2, href: "/dashboard/ticketing", group: "Tiket & Pencairan" }` sbg item **pertama** di group. Tanpa badge Pro (kategori ini non-Pro).
+
+### Beda DISENGAJA dari pola Dashboard Keuangan
+
+Di Keuangan, halaman turunan (Expense Tracker, Laporan Akhir Event) **dihapus dari sidebar** — hub jadi satu-satunya pintu. Di sini **TIDAK**: "Manajemen Tiket" & "Pencairan Dana" **tetap di sidebar**, tombol di hub adalah pintu masuk **TAMBAHAN**. Alasan: dua halaman itu adalah tujuan kerja harian yang berdiri sendiri (dan payout lintas-event, tidak butuh konteks event dari hub), beda dari turunan Keuangan yang memang butuh `?eventId=` dari hub-nya.
+
+### Verifikasi
+
+- **E2E controller nyata ke DB Supabase** (data test terisolasi, dihapus setelahnya): **32/32 PASS**. Skenario: order ticket(2 tiket) + mixed(1 tiket+3 kaos) + bundling(2 paket) + merch(1 kaos) + 1 order `pending`.
+  - Order `pending` **dikecualikan** (`orderCount` 4, bukan 5); tiket count 3 / gross 300k (mixed ikut).
+  - **Assertion inti: merch count 4 & gross 200.000 — BUKAN 0, dan BUKAN 50.000** (angka yang akan keluar kalau pakai pola group-by-`orderType` lama). Ini yang membuktikan atribusi mixed benar.
+  - `totalRevenue` 900k = 300k+200k+400k; **total titik trend rekonsiliasi persis dengan summary** (900k) — properti yang dijaga karena keduanya pakai `fetchPaidOrders` yang sama.
+  - Mingguan: order +60 hari memaksa span > 45 → `granularity:"weekly"`, semua bucket mulai Senin, total 1.000.000; **drill-down total == nilai bar mingguannya** (450k); `weekOf` hari tengah minggu ternormalisasi ke Senin.
+  - Ownership: promotor lain → **404** di kedua endpoint. `weekOf` format ngawur → 400. Tanpa `eventId` → 400. Event tanpa penjualan → nol & tidak crash.
+- **Unit tanggal 14/14 PASS** — termasuk bukti rollover WIB: `2026-07-15T17:00Z` → `2026-07-16` (UTC naif akan bilang 15), Senin sebagai awal minggu, lintas bulan/tahun/leap-day, bucket mingguan menutup seluruh rentang.
+- Smoke route: `dashboard-summary` & `sales-trend` tanpa token → **401 (bukan 404)** = route termount; route ngawur → 404.
+- `node --check` lolos; `npx tsc --noEmit` client **exit 0**; `npm run build` **exit 0** — `/dashboard/ticketing` prerender **static** (bukti pembungkus `<Suspense>` benar; tanpa itu jatuh ke dynamic).
+- **JEBAKAN CLEANUP (penting untuk skrip E2E berikutnya)**: `prisma.event.delete()` **TIDAK cukup** untuk membersihkan data test order. Event cascade ke `TicketType`, tapi `TicketOrderItem.ticketType` adalah FK **tanpa** `onDelete: Cascade` → restrict → delete event GAGAL. Kalau error-nya di-`.catch(()=>{})`, kegagalan itu **senyap** dan data test tertinggal di DB production (kejadian di sesi ini: 6 order sempat tertinggal, lalu dibersihkan tuntas — diverifikasi sisa 0). **Urutan benar: hapus `ticketOrder` DULU (cascade ke line item + tickets), baru `event`, baru `user`.**
+- Belum diverifikasi visual di browser (butuh login + event ber-data penjualan). Founder tes manual.
+- Tag: #ui #ticketing #dashboard #new-feature #sales-trend #drilldown
+
+---
+
+## [2026-07-15] Fee pindah dari Event ke KATEGORI + dikunci permanen — tutup celah fee bisa diubah admin kapan saja
+
+- Gejala (temuan audit keamanan, sesi investigasi sebelumnya): fee platform disimpan di level **Event**
+  (`ticketFeePercent`/`merchFeePercent`/`bundlingFeePercent`/`platformFeePercent`) dan **bisa diubah admin KAPAN SAJA
+  tanpa guard apa pun** — termasuk pada event yang sudah **live dan sedang jualan**. `updateEventFees`
+  (`PATCH /api/admin/events/:eventId/fees`) hanya memvalidasi rentang 1.0–5.0 lalu menulis; **tidak ada** pengecekan
+  apakah event sudah punya order berbayar. Lebih jauh: `getEventsWithFees` **sengaja** melist event
+  `storefrontStatus: 'approved'` (= live) untuk diedit, dan admin panel punya **tombol khusus** untuk itu — jadi ini
+  bukan celah yang perlu "diakali", ada UI-nya. Akibatnya nexEvent bisa (sengaja/tidak) menaikkan fee di bawah kaki
+  promotor setelah promotor menetapkan harga tiketnya. Promotor tidak punya kendali & tidak diberi tahu.
+  Satu-satunya yang selama ini melindungi: `TicketOrder.feeAmount` adalah **snapshot** saat checkout → order LAMA
+  tidak ikut berubah. Yang terekspos adalah semua transaksi BERIKUTNYA.
+- Root cause: **bukan bug ditemukan sebelumnya — perbaikan arsitektur keamanan: fee dipindah dari level Event ke level
+  kategori (TicketType/MerchItem/BundlePackage), dikunci permanen sekali di-set admin (`feeLockedAt`), mencegah
+  perubahan fee sepihak pada kategori yang sudah berjalan.** Perilaku "fee editable after live" yang dulu
+  didokumentasikan sebagai DISENGAJA di CLAUDE.md:325-326 **secara resmi DIBALIK** oleh perubahan ini.
+
+### Koreksi penamaan (task menyebut nama model yang tidak ada)
+
+Task menulis `MerchandiseItem` & `BundlingPackage`; model sebenarnya **`MerchItem`** & **`BundlePackage`**. Task juga
+menyebut `bundleFeePercent`; nama sebenarnya `bundlingFeePercent`. Dipakai nama yang benar sesuai schema.
+
+### Model baru
+
+- Tiap `TicketType`/`MerchItem`/`BundlePackage` punya `feePercent Float?` + `feeLockedAt DateTime?`.
+- `feePercent = null` → kategori **TIDAK BISA DIJUAL**: disembunyikan dari storefront publik & Ticket Box, dan
+  checkout menolaknya (fail-closed). **TIDAK ADA fallback ke 3.5% lagi** — fallback diam-diam justru bagian dari
+  masalah lama (promotor tak pernah tahu fee-nya berapa).
+- `feeLockedAt` terisi → **permanen**. Tidak ada endpoint edit, tidak ada force flag.
+- Kategori yang fee-nya terlanjur salah: **dinonaktifkan** (`isActive:false`), **bukan dihapus** → order & tiket
+  pembeli tetap utuh; promotor bikin kategori BARU dengan fee benar.
+- **`isActive` dipakai (BUKAN quota/stok=0)** seperti opsi di task: flag `isActive` sudah ada & sudah dipakai
+  storefront untuk menyaring, sedangkan menurunkan quota ke 0 akan **bentrok dengan guard existing** "kuota tidak
+  boleh kurang dari jumlah terjual" (`updateTicketType`) dan merusak data stok.
+- **Fee bundling dihitung dari HARGA PAKET saja**; fee tiket/merch yang jadi ISI paket TIDAK ikut dikenakan (kalau
+  ikut = dobel). Konsekuensi disengaja: isi paket boleh fee-nya belum di-set — paket tetap sah dijual.
+
+### File terkait
+
+- `server/prisma/schema.prisma` — +`feePercent`/`feeLockedAt` di `TicketType`, `MerchItem`, `BundlePackage`.
+  Field fee level-`Event` **ditandai DEPRECATED lewat komentar tapi TIDAK dihapus** (sesuai instruksi, supaya kode
+  lama yang masih menulisnya tidak pecah) — nilainya sudah **tidak berpengaruh ke harga sama sekali**.
+  Applied via `npx prisma db push` (additive nullable, tanpa data loss).
+- `server/services/ticket.service.js` — **sumber tunggal** math fee. `resolveFeePercents` & `computeFeeAndTax(event,
+  {subtotals})` **DIHAPUS**, diganti `computeOrderFeeAndTax(event, { ticketLines, merchLines, bundleLines,
+  bundleTicketValue })` di mana tiap line = `{ subtotal, feePercent }`. Tambah `isValidFeePercent`,
+  `requireCategoryFee` (fail-closed, melempar), `isSellable` (gating), `lineFee`, `FEE_MIN/MAX_PERCENT`.
+  **Pembulatan PER BARIS lalu dijumlah** (bukan bulatkan total) — wajib karena tiap kategori bisa beda %.
+- `server/controllers/category-fee.controller.js` (**BARU**) — endpoint admin. Satu controller melayani 3 tipe lewat
+  registry `CATEGORY_TYPES` supaya aturan kunci **mustahil beda antar tipe**.
+- `server/src/routes/admin.routes.js` — route baru (`protect + requireAdmin`). Route fee level-Event lama ditandai
+  DEPRECATED tapi dibiarkan (kandidat hapus berikutnya).
+- `server/controllers/storefront.controller.js` — `createOrder` resolve fee per line + `requireCategoryFee`;
+  `getEventStorefront` **filter** kategori tanpa fee (`isSellable`).
+- `server/controllers/ticket-box.controller.js` — sama, jalur offline **tidak dikecualikan**.
+- `client/src/app/event/[slug]/page.tsx` + `client/src/app/ticket-box/[eventId]/page.tsx` — **KRITIS**: kedua halaman
+  ini MENIRU rumus fee backend untuk menampilkan total ke pembeli. Ikut diubah ke per-kategori dengan pembulatan
+  per-baris yang IDENTIK — kalau tidak, pembeli lihat harga X tapi ditagih Y.
+- `client/src/app/dashboard/admin/page.tsx` — section "Kelola Fee Event" **DICABUT** (beserta `handleSaveFees`,
+  `editedFees`, `savingFeeId`, `FeeEdit` yang jadi dead code), diganti "Kelola Fee per Kategori" + komponen
+  `CategoryFeeRow` (input+"Kunci Fee" dgn confirm keras / read-only+gembok+tanggal) + tombol Nonaktifkan/Aktifkan.
+  Peringatan lama di panel approval merch ("akan pakai fallback 3.5%, atur di Kelola Fee Event") ikut diperbaiki —
+  isinya sudah salah setelah fallback dihapus.
+- `client/src/app/dashboard/tickets/page.tsx` — komponen `FeeStatusBadge`: badge "Menunggu Setup Fee — belum bisa
+  dijual" (amber) / "Fee X%" (emerald) di tiap jenis tiket, merch, & paket.
+
+### Endpoint baru (semua `protect + requireAdmin`)
+
+- `GET    /api/admin/events/:eventId/categories` — semua kategori 1 event + status fee-nya.
+- `PATCH  /api/admin/categories/:categoryType/:id/fee` — body `{ feePercent }`. Sekali sukses → kunci permanen.
+- `PATCH  /api/admin/categories/:categoryType/:id/deactivate` — body `{ isActive? }` (default false).
+- `DELETE /api/admin/categories/:categoryType/:id` — hanya kalau 0 order berbayar.
+- `categoryType` salah satu dari: `ticket-types` | `merch-items` | `bundling-packages`.
+
+### Detail penting
+
+- **Penguncian ATOMIK**: pakai `updateMany({ where: { id, feeLockedAt: null } })`. Cek `if (feeLockedAt)` di atasnya
+  hanya untuk pesan error yang enak dibaca; yang benar-benar menjamin sekali-kunci adalah kondisi di `where` —
+  terbukti lewat tes race 5 request paralel (tepat 1 sukses).
+- **Guard hapus**: `TicketOrderItem.ticketType` adalah FK **tanpa cascade** → tanpa guard eksplisit, hapus kategori
+  ber-order gagal dgn FK error mentah (P2003 → 500 tak informatif). Sekarang dicek duluan → 400 + jumlah order.
+  Hanya order `paid` yang memblokir; `pending` tidak (booking tak dibayar di-release cron 15 menit).
+- **Label % dicabut dari rincian harga** (storefront, Ticket Box, item_details Midtrans): fee sekarang per-kategori,
+  jadi satu baris agregat (mis. VIP 2% + Reguler 3%) **tidak bisa diwakili satu angka % yang jujur**. Nominal Rp-nya
+  tetap persis.
+- **DAMPAK LANGSUNG SAAT DEPLOY**: seluruh kategori existing punya `feePercent = null` → **langsung tidak bisa
+  dijual** sampai admin mengunci fee-nya. Saat deploy hanya ada 1 event live ("Throne Party": 1 jenis tiket + 1 merch)
+  dengan **0 order berbayar** — jadi tidak ada uang/pembeli yang terdampak. Founder WAJIB mengunci fee kedua kategori
+  itu lewat admin panel sebelum storefront-nya berguna lagi.
+
+### Verifikasi
+
+- **E2E fee-lock ke DB Supabase asli (data terisolasi, dihapus): 34/34 PASS.** Termasuk:
+  - **kunci kedua pada kategori yang sama DITOLAK** (400, pesan persis "Fee sudah dikunci dan tidak dapat diubah."),
+    `feePercent` **tetap 2.5 bukan 5.0**, `feeLockedAt` **tidak ter-refresh** — tes yang diminta eksplisit di task.
+  - **race 5 request kunci paralel → tepat 1 sukses** (bukti guard atomik, bukan cuma cek-lalu-tulis).
+  - merch & bundling ikut aturan sama; fee di luar 1.0–5.0 / bukan angka / kosong ditolak & fee **tetap null**;
+    tipe kategori ngawur 400; id tak ada 404.
+  - nonaktifkan → `isActive:false` & **fee tetap terkunci**; bisa diaktifkan lagi; hapus tanpa order 200;
+    **hapus kategori ber-order berbayar DITOLAK** + kategori tetap ada.
+- **E2E checkout/gating: 30/30 PASS.** Termasuk:
+  - fee 2 jenis tiket ber-% BEDA dijumlah per baris (9000) — **hal yang mustahil dinyatakan di model lama**;
+  - pajak 10% tetap **hanya dari porsi tiket** (merch tidak kena) — aturan lama tidak berubah;
+  - storefront publik & Ticket Box **hanya menampilkan kategori ber-fee**;
+  - **serangan API langsung**: beli tiket tanpa fee via `createTicketBoxOrder` → **400 & stok TIDAK berkurang**
+    (transaksi rollback);
+  - jalur sah: `feeAmount` 4000 & `totalAmount` 204000 persis sesuai fee per-kategori;
+  - **paritas rumus frontend == backend** (angka fee identik) — penjaga agar preview harga tidak beda dari tagihan.
+- `node --check` semua file server OK; `npx tsc --noEmit` client **exit 0**; `npm run build` client **exit 0**.
+- DB diverifikasi bersih setelah tes: 0 sisa data test; data nyata utuh (2 user, 2 event, 1 tiket, 1 merch, 0 order).
+- **Belum diverifikasi di browser** — founder tes manual, khususnya flow kunci fee (menyentuh logika uang langsung).
+- Tag: #security #fee #architecture #ticket-type #merchandise #bundling #immutable #admin

@@ -2,7 +2,7 @@ const prisma = require('../src/lib/prisma');
 const QRCode = require('qrcode');
 const { snap } = require('../services/midtrans.service');
 const { sendOrderEmail } = require('../services/email.service');
-const { generateTicketsForOrderItems, countTicketsForNik, MAX_TICKETS_PER_NIK, computeFeeAndTax, resolveFeePercents } = require('../services/ticket.service');
+const { generateTicketsForOrderItems, countTicketsForNik, MAX_TICKETS_PER_NIK, computeOrderFeeAndTax, requireCategoryFee, isSellable } = require('../services/ticket.service');
 const { parseNik } = require('../services/nik-parser.service');
 
 const PAYMENT_METHODS = ['cash', 'transfer'];
@@ -45,20 +45,18 @@ const getTicketBoxEvent = async (req, res) => {
     });
     if (!event) return res.status(404).json({ success: false, message: 'Event tidak ditemukan.' });
 
-    const ticketTypes = event.ticketTypes.map((tt) => ({
+    // Gating fee per-kategori — sama dgn online storefront: jenis tiket yang fee-nya belum
+    // ditetapkan admin TIDAK ditawarkan (checkout-nya pasti ditolak). feePercent ikut dikirim
+    // supaya panitia bisa lihat rincian harga SEBELUM pembeli pilih metode bayar.
+    const ticketTypes = event.ticketTypes.filter(isSellable).map((tt) => ({
       id: tt.id,
       name: tt.name,
       description: tt.description,
       price: tt.price,
       available: tt.quota - tt.sold,
       isSoldOut: tt.sold >= tt.quota,
+      feePercent: tt.feePercent,
     }));
-
-    // Fee & pajak: Ticket Box pakai setting event yang SAMA dengan online storefront
-    // (satu setting per event). feeBearer + taxEnabled + fee % (tiket) dikirim ke frontend
-    // supaya rincian harga bisa ditampilkan SEBELUM pembeli pilih metode bayar.
-    // Ticket Box ticket-only → yang relevan cuma ticketFeePercent (fallback chain via resolveFeePercents).
-    const { ticketFeePercent } = resolveFeePercents(event);
 
     return res.json({
       success: true,
@@ -71,7 +69,8 @@ const getTicketBoxEvent = async (req, res) => {
         logoUrl: event.logoUrl,
         feeBearer: event.feeBearer,
         taxEnabled: event.taxEnabled,
-        ticketFeePercent,
+        // ticketFeePercent level-event DIHAPUS dari response — fee sekarang per jenis tiket
+        // (ada di tiap entri ticketTypes di atas).
       },
       ticketTypes,
     });
@@ -140,6 +139,7 @@ const createTicketBoxOrder = async (req, res) => {
       created = await prisma.$transaction(async (tx) => {
         let subtotal = 0;
         const createItems = [];
+        const ticketLines = []; // { subtotal, feePercent } per jenis tiket — dasar hitung fee
         const itemDetails = []; // untuk Snap — hanya dipakai kalau transfer
         for (const item of ticketItems) {
           const tt = await tx.ticketType.findUnique({ where: { id: item.ticketTypeId } });
@@ -153,15 +153,19 @@ const createTicketBoxOrder = async (req, res) => {
           }
           // Stok di-reserve untuk KEDUA metode. Kalau transfer tak dibayar, cron ticket-booking (15 menit)
           // mengembalikan stok — sama persis dengan online storefront.
+          // Fail-closed: jenis tiket tanpa fee sah TIDAK bisa dijual — termasuk lewat Ticket Box.
+          // Aturan identik dgn online storefront (jangan bikin pengecualian untuk penjualan offline).
+          const ttFee = requireCategoryFee(tt, 'Jenis tiket');
           await tx.ticketType.update({ where: { id: tt.id }, data: { sold: { increment: qty } } });
           subtotal += tt.price * qty;
+          ticketLines.push({ subtotal: tt.price * qty, feePercent: ttFee });
           createItems.push({ ticketTypeId: tt.id, quantity: qty, price: tt.price });
           itemDetails.push({ id: tt.id, price: tt.price, quantity: qty, name: `${tt.name}`.slice(0, 50) });
         }
 
-        // Fee & pajak dihitung dengan helper bersama yang sama persis dengan online checkout.
-        // Ticket Box HANYA menjual TicketType (tanpa merch/bundle) → cukup kirim ticketSubtotal.
-        const { feeAmount, taxAmount, ticketFeePercent } = computeFeeAndTax(event, { ticketSubtotal: subtotal });
+        // Fee & pajak lewat helper bersama yang sama persis dengan online checkout — fee kini dari
+        // fee% masing-masing jenis tiket. Ticket Box HANYA menjual TicketType (tanpa merch/bundle).
+        const { feeAmount, taxAmount } = computeOrderFeeAndTax(event, { ticketLines });
 
         // Ticket Box mengikuti setting feeBearer event yang SAMA dengan online storefront — satu setting per
         // event yang sudah dipilih promotor & disetujui admin (event.feeBearer). Tidak ada setting fee khusus
@@ -173,7 +177,7 @@ const createTicketBoxOrder = async (req, res) => {
         //     diserap promotor (tidak ditagih ke pembeli).
         //   - PAJAK 10% SELALU ditagih ke pembeli kalau event.taxEnabled — TIDAK tergantung feeBearer sama sekali.
         // feeAmount & taxAmount TETAP dipersist ke order apa pun kasusnya (untuk P&L + rekonsiliasi hutang fee #4).
-        // Pakai angka mentah computeFeeAndTax, TANPA pembulatan tambahan.
+        // Pakai angka mentah computeOrderFeeAndTax, TANPA pembulatan tambahan.
         const totalAmount = subtotal + (feeBearer === 'audience' ? feeAmount : 0) + (event.taxEnabled ? taxAmount : 0);
 
         const orderId = `nexevent-ticketbox-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
@@ -211,7 +215,8 @@ const createTicketBoxOrder = async (req, res) => {
           // Fee jadi baris terpisah kalau ditanggung penonton; pajak selalu jadi baris kalau ada — supaya
           // gross_amount == jumlah item_details (syarat Midtrans).
           if (feeBearer === 'audience' && feeAmount > 0) {
-            itemDetails.push({ id: 'fee-ticket', price: feeAmount, quantity: 1, name: `Biaya Layanan Tiket (${ticketFeePercent}%)`.slice(0, 50) });
+            // Persentase tidak dicantumkan: fee per-kategori, satu baris agregat tak bisa diwakili satu %.
+            itemDetails.push({ id: 'fee-ticket', price: feeAmount, quantity: 1, name: 'Biaya Layanan Tiket' });
           }
           if (event.taxEnabled && taxAmount > 0) {
             itemDetails.push({ id: 'tax', price: taxAmount, quantity: 1, name: 'Pajak Tiket (10%)' });

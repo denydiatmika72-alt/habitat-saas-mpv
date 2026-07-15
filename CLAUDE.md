@@ -318,15 +318,52 @@ Data platform disimpan di DB untuk analytics internal.
 > Bagian ini dulu berjudul "Pending". Kelima item SUDAH live per 2026-07-02 s/d 2026-07-06 — JANGAN bangun ulang.
 > Deskripsi di bawah adalah PERILAKU FINAL (beberapa berubah dari rencana awal saat implementasi).
 
-#### 1. Fee Platform — ✅ IMPLEMENTED (2026-07-02, direvisi 2026-07-05)
-- **PERUBAHAN PENTING dari rencana awal**: fee BUKAN lagi satu angka. Sekarang **3 persentase terpisah** di Event:
+#### 1. Fee Platform — ✅ IMPLEMENTED (2026-07-02, direvisi 2026-07-05) — ⚠️ **DIGANTIKAN 2026-07-15, lihat "Fee Per-Kategori"**
+> **BAGIAN INI SUDAH TIDAK BERLAKU** untuk cara fee dihitung. Fee level-Event + fallback chain **sudah dimatikan**
+> (lihat section "Fee Per-Kategori (Dikunci Permanen)" di bawah). Disimpan sebagai catatan sejarah saja.
+- ~~**PERUBAHAN PENTING dari rencana awal**: fee BUKAN lagi satu angka. Sekarang **3 persentase terpisah** di Event:
   `ticketFeePercent`, `merchFeePercent`, `bundlingFeePercent` (Float?). `platformFeePercent` DIPERTAHANKAN sebagai
-  fallback legacy untuk event lama. Fallback chain di `createOrder`: fee spesifik per orderType → `platformFeePercent` → `DEFAULT_FEE_PERCENT` (3.5).
-- Diset Admin per event saat approval storefront (validasi 1.0–5.0 per fee) + bisa diedit terpisah setelah live via
-  Admin Panel "Kelola Fee Event" (`PATCH /api/admin/events/:eventId/fees`).
-- **Siapa menanggung** (`Event.feeBearer`, wajib diisi promotor sebelum bisa ajukan approval): `"audience"` (fee ditambah ke harga, tampil transparan) atau `"promotor"` (pembeli bayar bersih, promotor terima dikurangi fee).
+  fallback legacy untuk event lama. Fallback chain di `createOrder`: fee spesifik per orderType → `platformFeePercent` → `DEFAULT_FEE_PERCENT` (3.5).~~
+- ~~Diset Admin per event saat approval storefront (validasi 1.0–5.0 per fee) + bisa diedit terpisah setelah live via
+  Admin Panel "Kelola Fee Event" (`PATCH /api/admin/events/:eventId/fees`).~~ **DIBALIK 2026-07-15**: kemampuan admin
+  mengedit fee setelah live adalah **celah keamanan** (audit menemukan tidak ada guard sama sekali — fee bisa diubah
+  sepihak di bawah kaki promotor yang sudah menetapkan harga). Fee sekarang **per-kategori & dikunci permanen**.
+- **Siapa menanggung** (`Event.feeBearer`, wajib diisi promotor sebelum bisa ajukan approval): `"audience"` (fee ditambah ke harga, tampil transparan) atau `"promotor"` (pembeli bayar bersih, promotor terima dikurangi fee). **`feeBearer` TETAP di level Event** — yang pindah ke kategori hanya BESARAN fee (%).
 - Setiap `TicketOrder` mencatat `feeAmount` + `feeBearer` terpisah. Fee nexEvent TIDAK dicampur revenue promotor. P&L & payout promotor tampilkan pendapatan NET setelah fee.
 - **Business rule pitching (masih berlaku)**: mulai 3.5% → turun ke 2% untuk volume besar → 1.5% kartu truf khusus. Promotor TIDAK bisa ubah fee, hanya pilih penanggung.
+
+### Fee Per-Kategori (Dikunci Permanen) — ✅ IMPLEMENTED 2026-07-15 — **ATURAN FEE YANG BERLAKU SEKARANG**
+
+Perbaikan keamanan yang **membalik** keputusan lama "fee boleh diedit admin kapan saja setelah live".
+
+- **Fee melekat di KATEGORI, bukan Event**: `TicketType.feePercent`, `MerchItem.feePercent`, `BundlePackage.feePercent`
+  (+ `feeLockedAt` di ketiganya). Jadi VIP bisa 2% sementara Reguler 3% di event yang sama — mustahil di model lama.
+- **Sekali kunci, permanen**: admin set fee sekali → `feeLockedAt` terisi → **tidak bisa diubah lagi oleh siapa pun**.
+  Tidak ada endpoint edit, tidak ada force flag. Ditegakkan di BACKEND (atomik via `updateMany where feeLockedAt: null`),
+  bukan cuma disembunyikan di UI.
+- **Fail-closed, TIDAK ada fallback**: `feePercent = null` → kategori **tidak muncul di storefront/Ticket Box & checkout
+  menolaknya**. `DEFAULT_FEE_PERCENT` 3.5 & fallback chain **sudah TIDAK dipakai** (fallback diam-diam = bagian dari
+  masalah lama). Konsekuensi: **kategori baru tidak bisa dijual sampai admin mengunci fee-nya**.
+- **Fee salah pada kategori yang sudah jalan**: **JANGAN hapus** — **nonaktifkan** (`isActive:false`, ada tombol di admin
+  panel) supaya order & tiket pembeli tetap utuh, lalu promotor bikin **kategori BARU** dgn fee benar. Hapus hanya boleh
+  untuk kategori **0 order berbayar** (dijaga backend → 400).
+- **Fee paket = dari HARGA PAKET saja**; fee tiket/merch yang jadi isi paket tidak ikut dikenakan (kalau ikut = dobel).
+- **Math**: `computeOrderFeeAndTax(event, { ticketLines, merchLines, bundleLines, bundleTicketValue })` di
+  `services/ticket.service.js` = **sumber tunggal** (dipakai storefront online + Ticket Box). Tiap line
+  `{ subtotal, feePercent }`; **bulatkan PER BARIS lalu jumlahkan**. `resolveFeePercents`/`computeFeeAndTax` lama
+  **sudah dihapus**. Aturan pajak 10% (hanya porsi tiket) TIDAK berubah.
+- **Endpoint admin** (`protect + requireAdmin`, `controllers/category-fee.controller.js`):
+  `GET /api/admin/events/:eventId/categories`, `PATCH /api/admin/categories/:categoryType/:id/fee`,
+  `PATCH /api/admin/categories/:categoryType/:id/deactivate`, `DELETE /api/admin/categories/:categoryType/:id`.
+  `categoryType` = `ticket-types` | `merch-items` | `bundling-packages`.
+- **UI**: admin panel section **"Kelola Fee per Kategori"** (menggantikan "Kelola Fee Event" yang sudah DICABUT);
+  promotor lihat badge **"Menunggu Setup Fee — belum bisa dijual"** di `/dashboard/tickets`.
+- **Field fee level-Event DEPRECATED tapi BELUM dihapus dari schema** (`platformFeePercent`, `ticketFeePercent`,
+  `merchFeePercent`, `bundlingFeePercent`) — sengaja dibiarkan supaya `approveStorefront`/`updateEventFees` yang masih
+  menulisnya tidak pecah selama transisi. **Nilainya sudah TIDAK berpengaruh ke harga sama sekali.** Endpoint
+  `PATCH /api/admin/events/:eventId/fees` masih ada tapi inert & tak punya UI — kandidat hapus di pembersihan berikutnya.
+  **JANGAN pakai field ini untuk perhitungan uang baru.**
+- Lihat known-bugs entry [2026-07-15] untuk detail audit, keputusan, & hasil verifikasi (64 tes E2E).
 
 #### 2. Pajak 10% (Opsional per Event) — ✅ IMPLEMENTED (2026-07-02)
 - `Event.taxEnabled Boolean @default(false)`. Kalau aktif → ditanggung pembeli.
@@ -605,6 +642,16 @@ Founder berencana suatu saat mengubah nexEvent dari web app menjadi aplikasi mob
   Laporan Akhir Event (`/dashboard/event-summary`) — keduanya **bukan item sidebar**, hanya dicapai lewat tombol di hub.
   **✅ Pola SUDAH divalidasi manual oleh founder di production (2026-07-15) — jalan sesuai harapan, siap direplikasi ke 4
   kategori sisanya.** Lihat known-bugs entry [2026-07-15].
+  **Layer-2 KEDUA — Dashboard Tiket & Pencairan (`/dashboard/ticketing`)**, dibangun dari 0 (2026-07-15, pending deploy):
+  hub kategori "Tiket & Pencairan" — 3 kartu (tiket/merch/bundling), grafik tren penjualan, kartu Saldo Payout lintas-event.
+  Endpoint BARU (read-only, `ticket-dashboard.controller.js`): `GET /api/tickets/dashboard-summary?eventId=` (count+Rp per
+  kategori) & `GET /api/tickets/sales-trend?eventId=[&weekOf=]` (span ≤45 hari → harian; >45 → mingguan bucket Senin +
+  drill-down `weekOf`; hari dipotong WIB).
+  **BEDA DISENGAJA dari pola Keuangan**: turunannya (Manajemen Tiket & Pencairan Dana) **TETAP item sidebar** — tombol di hub
+  cuma pintu masuk TAMBAHAN, bukan pengganti (keduanya tujuan kerja berdiri sendiri; payout malah lintas-event).
+  **Angka Rp di hub ini = KOTOR per line-item, SENGAJA beda dari P&L/Payout** — `TicketOrder.feeAmount` cuma agregat
+  per-order (split ticket/merch/bundle tidak dipersist), jadi net per-kategori mustahil untuk order `"mixed"`. Jangan
+  "perbaiki" jadi net tanpa baca catatan di kepala `ticket-dashboard.controller.js` + known-bugs entry [2026-07-15].
 - **Layer 3 — Master dashboard**: ringkasan highlight dari kelima dashboard kategori. Dikerjakan PALING AKHIR, setelah
   kelima Layer-2 selesai & polanya tervalidasi. **Belum dimulai.**
 

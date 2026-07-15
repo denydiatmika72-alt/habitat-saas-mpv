@@ -29,6 +29,9 @@ type TicketType = {
   price: number
   available: number
   isSoldOut: boolean
+  // Fee per-kategori (arsitektur 2026-07-15). Backend hanya mengirim jenis tiket yang fee-nya
+  // sudah di-set admin — yang null difilter sebelum sampai ke sini.
+  feePercent: number | null
 }
 
 type EventData = {
@@ -42,7 +45,7 @@ type EventData = {
   // sebelum pembeli commit metode bayar. feeBearer 'audience' → fee+pajak ditambahkan ke total.
   feeBearer: "audience" | "promotor" | null
   taxEnabled: boolean
-  ticketFeePercent: number
+  // ticketFeePercent level-event DIHAPUS — fee sekarang melekat di tiap TicketType (lihat feePercent di atas).
 }
 
 type ResultTicket = { id: string; ticketCode: string; typeName: string; qrDataUrl: string }
@@ -115,11 +118,16 @@ export default function TicketBoxPage() {
     return sum + (tt ? tt.price * i.quantity : 0)
   }, 0)
 
-  // Rincian harga mengikuti computeFeeAndTax di backend PERSIS (Ticket Box Offline = ticket-only):
-  // feeAmount = round(subtotal * ticketFeePercent/100); taxAmount = taxEnabled ? round(subtotal*0.1) : 0.
+  // Rincian harga mengikuti computeOrderFeeAndTax di backend PERSIS (Ticket Box Offline = ticket-only).
+  // Fee kini per-KATEGORI: tiap jenis tiket punya feePercent sendiri → bulatkan PER BARIS lalu jumlahkan
+  // (bukan bulatkan total), sama seperti backend. taxAmount = taxEnabled ? round(subtotal*0.1) : 0.
   // Backend tetap sumber kebenaran final — di sini hanya untuk tampilan sebelum bayar. TANPA pembulatan tambahan.
   const feeBearer = event?.feeBearer === "audience" ? "audience" : "promotor"
-  const feeAmount = Math.round(subtotal * ((event?.ticketFeePercent ?? 0) / 100))
+  const feeAmount = selectedItems.reduce((sum, i) => {
+    const tt = ticketTypes.find((t) => t.id === i.ticketTypeId)
+    if (!tt) return sum
+    return sum + Math.round(tt.price * i.quantity * ((tt.feePercent ?? 0) / 100))
+  }, 0)
   const taxAmount = event?.taxEnabled ? Math.round(subtotal * 0.1) : 0
   // Fee & pajak dua aturan TERPISAH (sama dgn backend): fee ditagih hanya kalau feeBearer 'audience';
   // pajak SELALU ditagih kalau taxEnabled (tak tergantung feeBearer). Backend tetap sumber kebenaran final.
@@ -379,7 +387,8 @@ export default function TicketBoxPage() {
           </div>
           {feeBearer === "audience" && (
             <div className="flex items-center justify-between text-slate-600">
-              <span>Biaya Layanan{event?.ticketFeePercent ? ` (${event.ticketFeePercent}%)` : ""}</span>
+              {/* Persentase tidak dicantumkan: fee per-kategori, satu baris agregat tak bisa diwakili satu %. */}
+              <span>Biaya Layanan</span>
               <span className="font-semibold text-slate-900">{IDR.format(feeAmount)}</span>
             </div>
           )}
