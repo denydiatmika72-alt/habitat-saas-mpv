@@ -653,6 +653,13 @@ Founder berencana suatu saat mengubah nexEvent dari web app menjadi aplikasi mob
   drill-down `weekOf`; hari dipotong WIB).
   **BEDA DISENGAJA dari pola Keuangan**: turunannya (Manajemen Tiket & Pencairan Dana) **TETAP item sidebar** — tombol di hub
   cuma pintu masuk TAMBAHAN, bukan pengganti (keduanya tujuan kerja berdiri sendiri; payout malah lintas-event).
+  **NAVIGASI = 1 PINTU PER HALAMAN DETAIL (konsolidasi 2026-07-16)**: `/dashboard/tickets` HANYA lewat tombol
+  **"Manajemen Tiket" di header**; `/dashboard/payout` HANYA lewat tombol **"Pencairan Dana" di header**. Header dipilih
+  karena SELALU ter-render — kartu/link lain hanya muncul setelah event dipilih & data termuat. Yang dihapus: tombol
+  "Lihat Detail" di kartu Saldo Payout (kartu jadi informasional; datanya utuh), kalimat berlink "Saldo yang bisa
+  dicairkan ada di…", dan seluruh seksi "Kelola" (2 kartu, murni navigasi tanpa data). Link "Laporan Laba/Rugi" →
+  `/dashboard/pl-report` BUKAN duplikat (tujuan beda, 1 jalan) — biarkan. **JANGAN tambah jalan kedua ke dua tujuan di
+  atas.** Lihat known-bugs entry [2026-07-16] konsolidasi navigasi.
   **Angka Rp di hub ini = NET, konsisten dengan P&L** (sejak 2026-07-16 — menggantikan batasan "kotor saja" yang lama).
   Dimungkinkan setelah migrasi fee per-kategori: fee terkunci permanen + line item simpan `price` historis → fee per
   baris bisa direproduksi persis seperti checkout, jadi net per kategori eksak (termasuk order `"mixed"`).

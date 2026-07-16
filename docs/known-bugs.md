@@ -2106,3 +2106,68 @@ Jadi fallback ke `feeAmount` tersimpan **tidak dibangun** sesuai instruksi. Teta
   tetap prerender **static**). DB bersih setelah tes (0 sisa).
 - **Belum diverifikasi di browser** — founder tes manual, membandingkan angka dashboard vs P&L untuk event yang sama.
 - Tag: #ui #ticketing #dashboard #fee #net-revenue #pl-consistency
+
+---
+
+## [2026-07-16] Dashboard Ticketing: konsolidasi navigasi — 1 pintu masuk per halaman detail
+
+- Gejala: Dashboard Ticketing (`/dashboard/ticketing`) punya **beberapa jalan navigasi redundan ke halaman detail yang
+  sama** (Manajemen Tiket, Pencairan Dana), ditambah bertahap lintas sesi tanpa cek tumpang tindih. Hasil inventaris:
+  **2 jalan** ke `/dashboard/tickets` dan **4 jalan** ke `/dashboard/payout` dalam satu halaman.
+- Root cause: **bukan bug — konsolidasi navigasi, sederhanakan jadi 1 pintu masuk per halaman detail.**
+
+### Inventaris SEBELUM (6 jalan navigasi, 2 tujuan)
+
+**→ `/dashboard/tickets` (2 jalan):**
+1. Tombol sekunder **"Manajemen Tiket"** di header (ikon Storefront) — **selalu** ter-render.
+2. Kartu **"Manajemen Tiket"** di seksi "Kelola" (bawah halaman) — hanya render kalau event dipilih & data termuat.
+
+**→ `/dashboard/payout` (4 jalan):**
+1. Tombol sekunder **"Pencairan Dana"** di header (ikon Wallet) — **selalu** ter-render.
+2. Tombol solid emerald **"Lihat Detail"** di dalam kartu Saldo Payout — **selalu** ter-render.
+3. Link teks inline **"Pencairan Dana"** di catatan rekonsiliasi ("Saldo yang bisa dicairkan ada di …") — hanya render
+   kalau event dipilih & data termuat.
+4. Kartu **"Pencairan Dana"** di seksi "Kelola" — hanya render kalau event dipilih & data termuat.
+
+**Bukan duplikat (dibiarkan):** link **"Laporan Laba/Rugi"** → `/dashboard/pl-report` di catatan rekonsiliasi — tujuan
+BERBEDA & satu-satunya jalan ke sana dari halaman ini.
+
+### Fix — yang DIPERTAHANKAN: dua tombol di HEADER
+
+- `/dashboard/tickets` → **hanya tombol "Manajemen Tiket" di header**
+- `/dashboard/payout` → **hanya tombol "Pencairan Dana" di header**
+
+**Kenapa header, bukan kartu "Kelola" yang lebih besar/deskriptif?** Karena seksi "Kelola" & catatan rekonsiliasi
+hanya ter-render di dalam `{selectedEventId && !loading && summary && (…)}`. Kalau yang dipertahankan kartu "Kelola",
+maka saat halaman baru dibuka (belum pilih event) **TIDAK ADA jalan sama sekali** ke Manajemen Tiket / Pencairan Dana —
+itu regresi keterjangkauan. Tombol header selalu ada, berlabel jelas + ikon, dan konsisten berpasangan.
+
+### Yang DIHAPUS
+
+- Tombol **"Lihat Detail"** di kartu Saldo Payout → kartu kini **informasional saja**. Sesuai arahan founder: boleh
+  tanpa click target selama masih ada satu tombol jelas ke `/dashboard/payout` di tempat lain (ada — di header).
+  **Data kartu (saldo available + baris "sedang diajukan/dicairkan") TIDAK disentuh sama sekali.**
+- Kalimat **"Saldo yang bisa dicairkan ada di [Pencairan Dana]"** di catatan rekonsiliasi (link duplikat). Kalimat
+  penjelas net/P&L + link Laporan Laba/Rugi tetap utuh.
+- **Seluruh seksi "Kelola"** (2 kartu) — keduanya duplikat tombol header dan seksi ini **tidak memuat data apa pun**
+  (murni navigasi), jadi dihapus utuh, bukan disisakan setengah.
+- Import ikon `ArrowRight` → jadi yatim setelah "Lihat Detail" & seksi "Kelola" hilang (dipakai hanya di dua tempat itu).
+  `Storefront`/`Wallet`/`h2Style` **tetap** dipakai (header + ikon kartu Saldo + judul seksi Tren) → tidak disentuh.
+
+### File terkait
+
+- `client/src/app/dashboard/ticketing/page.tsx` — satu-satunya file kode yang berubah. Ditambah komentar kontrak
+  navigasi di kepala file (daftar 1 pintu per tujuan + alasan header dipilih) supaya sesi berikutnya tidak
+  menambah duplikat lagi. Komentar penanda juga ditinggal persis di lokasi tiap elemen yang dihapus.
+- **TIDAK disentuh**: data-fetching (`fetchTrend`/summary/balance), kartu ringkasan, grafik tren, drill-down
+  mingguan→harian, pemilih event, dan seluruh backend.
+
+### Verifikasi
+
+- Grep: `href="/dashboard/tickets"` → **1**; `href="/dashboard/payout"` → **1**; `<Link href={\`/dashboard/pl-report…\`}`
+  → **1**. (Grep polos `dashboard/pl-report` sempat menunjukkan 3 — dua di antaranya baris KOMENTAR, dikonfirmasi
+  satu per satu; kode nyatanya tetap 1.)
+- `npx tsc --noEmit` client **exit 0** (membuktikan tidak ada import/variabel yatim tertinggal).
+- `npm run build` client **exit 0** — `/dashboard/ticketing` tetap prerender **static**.
+- **Belum diverifikasi visual di browser** — founder verifikasi manual di production.
+- Tag: #ui #ticketing #navigation #cleanup #dashboard

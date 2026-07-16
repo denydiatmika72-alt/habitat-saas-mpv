@@ -9,7 +9,6 @@ import {
   TShirt,
   Package,
   Wallet,
-  ArrowRight,
   ArrowLeft,
   ChartLineUp,
   Storefront,
@@ -18,6 +17,14 @@ import {
 // Dashboard Tiket & Pencairan — hub (Layer 2) kategori "Tiket & Pencairan".
 // Beda dari Dashboard Keuangan: halaman turunan (Manajemen Tiket & Pencairan Dana) TETAP ada di
 // sidebar. Tombol di sini adalah pintu masuk TAMBAHAN, bukan pengganti.
+//
+// NAVIGASI — SATU PINTU PER HALAMAN DETAIL (konsolidasi 2026-07-16):
+//   /dashboard/tickets  → HANYA tombol "Manajemen Tiket" di header
+//   /dashboard/payout   → HANYA tombol "Pencairan Dana" di header
+// Header dipilih karena SELALU ter-render; kartu/link lain hanya muncul setelah event dipilih &
+// data termuat. Sebelumnya ada 2 jalan ke /dashboard/tickets dan 4 ke /dashboard/payout karena
+// tombol ditambah bertahap lintas sesi tanpa cek tumpang tindih. JANGAN tambah jalan kedua.
+// (Link ke /dashboard/pl-report di catatan rekonsiliasi BUKAN duplikat — tujuan berbeda, 1 jalan.)
 
 // ── Types ──────────────────────────────────────────────────────────────────────
 type Event = { id: string; title: string }
@@ -280,14 +287,9 @@ function TicketingDashboardInner() {
               )}
             </div>
           </div>
-          <Link
-            href="/dashboard/payout"
-            className="tkd-btn tkd-btn-solid"
-            style={{ display: "inline-flex", alignItems: "center", gap: 8, fontFamily: "var(--font-display)", fontWeight: 700, fontSize: 13, padding: "10px 20px", borderRadius: 12, background: "var(--emerald)", color: "#fff", textDecoration: "none" }}
-          >
-            Lihat Detail
-            <ArrowRight size={16} weight="bold" color="#fff" />
-          </Link>
+          {/* Tombol "Lihat Detail" DIHAPUS (2026-07-16): duplikat tombol "Pencairan Dana" di header.
+              Kartu ini sengaja jadi INFORMASIONAL saja — datanya tetap utuh, navigasinya satu pintu
+              lewat header. Jangan tambah link ke /dashboard/payout di sini lagi. */}
         </div>
       </Card>
 
@@ -371,8 +373,9 @@ function TicketingDashboardInner() {
             )}{" "}
             Angka ini memakai dasar yang sama dengan{" "}
             <Link href={`/dashboard/pl-report?eventId=${selectedEventId}`} style={{ color: "var(--emerald-dark)", fontWeight: 600 }}>Laporan Laba/Rugi</Link>.
-            Saldo yang bisa dicairkan ada di{" "}
-            <Link href="/dashboard/payout" style={{ color: "var(--emerald-dark)", fontWeight: 600 }}>Pencairan Dana</Link>.
+            {/* Kalimat "Saldo yang bisa dicairkan ada di [Pencairan Dana]" DIHAPUS (2026-07-16):
+                link-nya duplikat tombol header. Link ke Laporan Laba/Rugi TETAP — tujuannya beda
+                dan ini satu-satunya jalan ke sana dari halaman ini. */}
           </div>
 
           {/* Tren penjualan */}
@@ -458,31 +461,10 @@ function TicketingDashboardInner() {
             </Card>
           </section>
 
-          {/* Pintu masuk turunan */}
-          <section>
-            <h2 style={{ ...h2Style, marginBottom: 12 }}>Kelola</h2>
-            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(260px, 1fr))", gap: 14 }}>
-              {[
-                { href: "/dashboard/tickets", Icon: Storefront, title: "Manajemen Tiket", sub: "Jenis tiket, merchandise, bundling, storefront & pesanan" },
-                { href: "/dashboard/payout", Icon: Wallet, title: "Pencairan Dana", sub: "Ajukan pencairan saldo & unduh laporan pencairan" },
-              ].map((n) => (
-                <Link key={n.href} href={n.href} style={{ textDecoration: "none" }}>
-                  <Card padding={0} radius={16}>
-                    <div className="tkd-nav" style={{ display: "flex", alignItems: "center", gap: 14, padding: "16px 18px", borderRadius: 16, transition: "background 120ms" }}>
-                      <div style={{ width: 38, height: 38, borderRadius: 11, background: "var(--emerald-tint)", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
-                        <n.Icon size={19} weight="duotone" color="var(--emerald-dark)" />
-                      </div>
-                      <div style={{ flex: 1, minWidth: 0 }}>
-                        <div style={{ fontFamily: "var(--font-display)", fontWeight: 700, fontSize: 15, color: "var(--ink)" }}>{n.title}</div>
-                        <div style={{ fontFamily: "var(--font-body)", fontSize: 12, color: "var(--text-muted)", marginTop: 3 }}>{n.sub}</div>
-                      </div>
-                      <ArrowRight size={16} weight="bold" color="var(--text-faint)" />
-                    </div>
-                  </Card>
-                </Link>
-              ))}
-            </div>
-          </section>
+          {/* Seksi "Kelola" DIHAPUS (2026-07-16): kedua kartunya (Manajemen Tiket & Pencairan Dana)
+              cuma menduplikasi tombol header, dan seksi ini tidak memuat data apa pun — murni
+              navigasi. Seksi ini juga hanya render setelah event dipilih & data termuat, sedangkan
+              tombol header selalu ada; jadi header yang dipertahankan. Jangan hidupkan lagi. */}
 
           <div style={{ height: 8 }} />
         </>
