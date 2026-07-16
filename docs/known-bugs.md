@@ -2171,3 +2171,97 @@ itu regresi keterjangkauan. Tombol header selalu ada, berlabel jelas + ikon, dan
 - `npm run build` client **exit 0** — `/dashboard/ticketing` tetap prerender **static**.
 - **Belum diverifikasi visual di browser** — founder verifikasi manual di production.
 - Tag: #ui #ticketing #navigation #cleanup #dashboard
+
+---
+
+## [2026-07-16] Dashboard Ticketing: breakdown penjualan per kategori (tiket per jenis, merch per size, bundling total)
+
+- Gejala: Dashboard Ticketing tidak punya visibilitas penjualan level kategori (per jenis tiket, per size merch) —
+  promotor harus buka Manajemen Tiket langsung untuk melihat progres per kategori. Halaman hub cuma punya total.
+- Root cause: **bukan bug — fitur baru: breakdown penjualan per kategori (tiket per jenis, merch per size, bundling
+  sebagai total) di Dashboard Ticketing.**
+
+### Temuan model data (diverifikasi ke schema, bukan asumsi)
+
+- **Merch: asumsi founder BENAR.** `MerchItem` (produk) → `MerchVariant[]`, tiap varian punya `size String` +
+  `stock Int` + `sold Int`, dengan `@@unique([merchItemId, size])`. Jadi stok per size memang tersimpan sebagai
+  record varian terpisah → bisa di-query persis seperti yang diminta. **Tidak perlu STOP.**
+  (Nama model sebenarnya `MerchItem`/`BundlePackage`, bukan `MerchandiseItem`/`BundlingPackage` seperti di task.)
+- **`BundlePackage` TIDAK punya field kuota** — konsisten dgn konfirmasi founder. Stoknya menumpang komponen.
+- **`TicketType.quota` adalah `Int` NOT NULL** → "kuota tak terbatas (null)" **tidak bisa dinyatakan** di schema.
+  Kasus null yang disebut task tidak akan pernah terjadi. Frontend tetap menangani `quota <= 0` (render tanpa bar)
+  sebagai jaring pengaman, bukan karena null mungkin.
+
+### KEPUTUSAN PENTING 1 — "terjual" = PAID, sengaja beda dgn kolom `sold`
+
+Kolom `TicketType.sold` / `MerchVariant.sold` **di-increment saat order DIBUAT (masih `pending`)** untuk menahan
+stok (`storefront.controller` di dalam `$transaction` createOrder), lalu **di-decrement** kalau booking kedaluwarsa
+(`ticket-booking.cron`, 15 menit) atau di-cancel (`payment.controller`). Jadi isinya **"terpesan + terbayar"**, bukan
+penjualan nyata.
+
+Breakdown ini memakai **paid-only** (konsisten dgn seluruh halaman: kartu ringkasan & grafik tren juga paid-only).
+**Konsekuensi yang HARUS diketahui**: halaman **Manajemen Tiket menampilkan kolom `sold`** (`{tt.sold}/{tt.quota}`),
+sehingga angkanya bisa **sedikit lebih tinggi** dari Dashboard ini selama ada booking belum dibayar. **Beda ini
+DISENGAJA, bukan bug**:
+- Manajemen Tiket → "berapa stok yang sudah tertahan" (operasional/ketersediaan)
+- Dashboard Ticketing → "berapa yang benar-benar terjual & menghasilkan uang" (penjualan)
+
+Selisihnya bersifat sementara (booking hangus dalam 15 menit), tapi bisa terlihat saat sale ramai.
+
+### KEPUTUSAN PENTING 2 — tiket/merch DALAM paket IKUT dihitung
+
+Task meminta catatan UI: *"Penjualan bundling sudah otomatis mengurangi stok tiket & merchandise komponennya —
+sudah tercermin di angka di atas."* Catatan itu hanya BENAR kalau kontribusi paket ikut dihitung di baris
+tiket/merch. Kalau `sold` diambil dari `TicketOrderItem` saja (bunyi literal task), tiket yang terjual **via paket
+tidak akan terhitung** → catatan jadi bohong dan promotor salah membaca sisa kuota. Karena itu:
+
+- **Tiket**: dihitung dari tabel `Ticket` (1 baris = 1 tiket), mencakup DUA jalur — `orderItem` (beli langsung) dan
+  `bundleOrderItem` (tiket di dalam paket). Keduanya menyimpan `ticketTypeId` (diverifikasi: `payment.controller`
+  mengisi `ticketTypeId` untuk tiket paket). Pola `OR: [{ orderItem: … }, { bundleOrderItem: … }]` **meniru preseden
+  `audience-report.controller`**. Baris `Ticket` hanya lahir untuk order berbayar → otomatis paid-only.
+- **Merch**: `MerchOrderItem` (beli langsung) **+** `BundleOrderItem.merchSelections` (JSON
+  `[{ merchItemId, variantId, quantity }]` — size yang dipilih pembeli untuk paketnya).
+
+### File terkait
+
+- `server/controllers/ticket-dashboard.controller.js` — endpoint baru `getCategoryBreakdown`. Loop agregasi di
+  `getDashboardSummary` **diekstrak** jadi `computeCategoryTotals(orders)` yang kini **dipakai bersama** oleh kartu
+  ringkasan DAN angka bundling di breakdown → kartu "Total Bundling Terjual" dan baris bundling **mustahil beda**
+  (di-assert di tes). Tidak ada fee math baru: revenue bundling tetap lewat `rollup`/`categoryNet` yang sudah ada.
+- `server/routes/ticket.routes.js` — `GET /api/tickets/category-breakdown` (`verifyToken`), di atas wildcard `/types/:id`.
+- `client/src/app/dashboard/ticketing/page.tsx` — tipe `BreakdownData`, state `breakdown`, fetch **paralel**
+  (`Promise.all`) bersama dashboard-summary (tidak menambah waterfall), komponen `BreakdownRow` (progress bar), dan
+  seksi baru **"Breakdown Penjualan per Kategori"** — ditaruh SETELAH kartu ringkasan & SEBELUM grafik tren
+  (total dulu → rincian → dimensi waktu).
+- **TIDAK disentuh**: kartu ringkasan, grafik tren + drill-down, kartu Saldo Payout, tombol navigasi, seluruh
+  logika stok/fee/checkout/write-path apa pun. Endpoint murni read-only. Schema TIDAK diubah.
+
+### Detail UI
+
+- Progress bar **mengikuti pola yang sudah ada di `/dashboard/pl-report`** (design-system sama): track
+  `var(--surface-sunken)`, isi `var(--emerald)` (warna brand), `borderRadius: 999`, transisi 200ms. Habis terjual →
+  `var(--emerald-dark)`. Persentase **di-clamp 0–100** supaya bar tidak meluber kalau data aneh.
+- Jenis tiket / produk yang **nonaktif tetap ditampilkan** (label "(nonaktif)" + teks redup) — riwayat penjualannya
+  tetap relevan; menyembunyikannya justru bikin angka tidak bisa direkonsiliasi.
+- Bundling: **satu kartu total** (tanpa bar) + catatan penjelas kenapa tidak ada bar.
+- Seksi hanya render kalau ada isinya (event tanpa kategori tidak menampilkan seksi kosong).
+
+### Verifikasi
+
+- **E2E ke DB Supabase asli (data terisolasi, dihapus): 22/22 PASS.** Skenario: paket berisi 1 tiket Reguler +
+  1 Kaos; order-1 PAID (2 tiket Reguler langsung + 3 Kaos size M); order-2 PAID (2 paket → 2 tiket Reguler +
+  2 Kaos size S lewat `merchSelections`); order-3 PENDING (9 VIP + 5 Kaos M) yang harus diabaikan.
+  - **`Reguler` terjual = 4** (2 langsung + **2 dari PAKET**) → membuktikan catatan "bundling sudah tercermin di
+    angka di atas" memang BENAR.
+  - **`Size S` terjual = 2** — murni dari paket, lewat parsing `merchSelections`.
+  - **`VIP` terjual = 0**, bukan 9 → order `pending` benar-benar diabaikan.
+  - Jenis tiket yang belum laku tetap tampil (0 terjual); merch dikelompokkan per produk.
+  - **Bukti beda `sold` vs paid**: `TicketType.sold` di-set 9 (simulasi booking pending) → breakdown **tetap 0**.
+  - **Konsistensi**: `bundlingTotal.sold`/`revenue` **=== kartu ringkasan** `bundling.count`/`revenue` (2 / 394.000).
+  - Tanpa `eventId` → 400; event promotor lain → **404**; event tanpa kategori → array kosong, tidak crash.
+- `node --check` OK; `npx tsc --noEmit` client **exit 0**; `npm run build` client **exit 0**
+  (`/dashboard/ticketing` tetap prerender **static**).
+- **Regresi navigasi dicek**: tetap **1** `href` ke `/dashboard/tickets` dan **1** ke `/dashboard/payout`
+  (aturan 1-pintu dari entry konsolidasi navigasi tidak rusak).
+- **Belum diverifikasi visual di browser** — founder verifikasi manual di production dgn data event nyata.
+- Tag: #ui #ticketing #dashboard #breakdown #new-feature

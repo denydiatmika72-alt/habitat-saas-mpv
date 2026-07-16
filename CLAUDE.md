@@ -653,6 +653,16 @@ Founder berencana suatu saat mengubah nexEvent dari web app menjadi aplikasi mob
   drill-down `weekOf`; hari dipotong WIB).
   **BEDA DISENGAJA dari pola Keuangan**: turunannya (Manajemen Tiket & Pencairan Dana) **TETAP item sidebar** — tombol di hub
   cuma pintu masuk TAMBAHAN, bukan pengganti (keduanya tujuan kerja berdiri sendiri; payout malah lintas-event).
+  **Seksi "Breakdown Penjualan per Kategori" (2026-07-16)**: tiket per JENIS & merch per SIZE dgn progress bar
+  (sold/kuota, sold/stok); bundling **hanya TOTAL tanpa bar** — `BundlePackage` memang TIDAK punya kuota sendiri,
+  stoknya menumpang tiket & merch komponennya. Sumber: endpoint baru `GET /api/tickets/category-breakdown?eventId=`
+  (`ticket-dashboard.controller.js`). **"Terjual" = paid-only** dan **sudah termasuk tiket/merch yang terjual lewat
+  paket** (tiket dihitung dari tabel `Ticket` lintas 2 jalur `orderItem`/`bundleOrderItem`; merch dari
+  `MerchOrderItem` + `BundleOrderItem.merchSelections`) — tanpa itu, catatan "bundling sudah tercermin di angka di
+  atas" jadi bohong. **Sengaja BUKAN kolom `TicketType.sold`/`MerchVariant.sold`** (kolom itu naik saat order masih
+  `pending` untuk menahan stok) → **angka di Manajemen Tiket bisa sedikit lebih tinggi; itu DISENGAJA**, bukan bug:
+  Manajemen Tiket = stok tertahan (operasional), Dashboard ini = penjualan nyata (uang). Angka bundling dipakai
+  bersama kartu ringkasan lewat `computeCategoryTotals` → mustahil beda.
   **NAVIGASI = 1 PINTU PER HALAMAN DETAIL (konsolidasi 2026-07-16)**: `/dashboard/tickets` HANYA lewat tombol
   **"Manajemen Tiket" di header**; `/dashboard/payout` HANYA lewat tombol **"Pencairan Dana" di header**. Header dipilih
   karena SELALU ter-render — kartu/link lain hanya muncul setelah event dipilih & data termuat. Yang dihapus: tombol

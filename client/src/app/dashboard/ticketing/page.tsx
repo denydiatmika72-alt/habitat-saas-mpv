@@ -46,6 +46,23 @@ type SummaryData = {
   totalNet: number
 }
 
+// ── Breakdown per kategori ──
+// "terjual" = unit dari order BERBAYAR saja (paid-only), sama seperti seluruh halaman ini —
+// sengaja BUKAN kolom `sold` yang juga menghitung booking pending (lihat catatan di
+// ticket-dashboard.controller.js). `quota`/`stock` NOT NULL di schema; <= 0 diperlakukan
+// "tanpa kuota" → dirender tanpa progress bar.
+type BreakdownTicketType = { id: string; name: string; isActive: boolean; sold: number; quota: number }
+type BreakdownVariant = { id: string; size: string; sold: number; stock: number }
+type BreakdownMerch = { id: string; productName: string; isActive: boolean; variants: BreakdownVariant[] }
+
+type BreakdownData = {
+  basis: "net"
+  ticketTypes: BreakdownTicketType[]
+  merchandise: BreakdownMerch[]
+  // Bundling TIDAK punya kuota sendiri (menumpang stok tiket & merch komponennya) → total saja.
+  bundlingTotal: { sold: number; revenue: number }
+}
+
 type TrendPoint = { date: string; weekEnd?: string; orderCount: number; revenue: number }
 
 type TrendData = {
@@ -135,6 +152,57 @@ function Card({ children, padding = 18, radius = 16, style }: { children: React.
   )
 }
 
+// Baris breakdown: nama + progress bar + "X terjual dari Y <satuan>".
+// Progress bar mengikuti pola yang sudah dipakai di /dashboard/pl-report (design-system yang sama):
+// track var(--surface-sunken), isi var(--emerald), radius 999, transisi 200ms.
+// `capacity <= 0` → tanpa bar, hanya "X terjual" (schema TIDAK punya kuota "unlimited"; ini jaring
+// pengaman kalau ada data 0/aneh, supaya tidak bagi-nol atau bar menyesatkan).
+function BreakdownRow({
+  label,
+  sold,
+  capacity,
+  capacityLabel,
+  muted = false,
+}: {
+  label: string
+  sold: number
+  capacity: number
+  capacityLabel: string
+  muted?: boolean
+}) {
+  const hasCap = capacity > 0
+  // Di-clamp 0–100: kalau sold entah bagaimana > kuota, bar mentok penuh (bukan meluber).
+  const pct = hasCap ? Math.min(100, Math.max(0, Math.round((sold / capacity) * 100))) : 0
+  const soldOut = hasCap && sold >= capacity
+  return (
+    <div style={{ padding: "10px 0" }}>
+      <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", gap: 12, marginBottom: 6 }}>
+        <span style={{ fontFamily: "var(--font-display)", fontWeight: 600, fontSize: 14, color: muted ? "var(--text-faint)" : "var(--ink)" }}>
+          {label}
+        </span>
+        <span style={{ fontFamily: "var(--font-mono)", fontSize: 12, color: "var(--text-muted)", whiteSpace: "nowrap" }}>
+          {hasCap
+            ? `${sold.toLocaleString("id-ID")} terjual dari ${capacity.toLocaleString("id-ID")} ${capacityLabel}`
+            : `${sold.toLocaleString("id-ID")} terjual`}
+        </span>
+      </div>
+      {hasCap && (
+        <div style={{ height: 8, background: "var(--surface-sunken)", borderRadius: 999, overflow: "hidden" }}>
+          <div
+            style={{
+              height: "100%",
+              width: `${pct}%`,
+              background: soldOut ? "var(--emerald-dark)" : "var(--emerald)",
+              borderRadius: 999,
+              transition: "width 200ms cubic-bezier(0.22,1,0.36,1)",
+            }}
+          />
+        </div>
+      )}
+    </div>
+  )
+}
+
 // ── Component ─────────────────────────────────────────────────────────────────
 export default function TicketingDashboardPage() {
   return (
@@ -150,6 +218,7 @@ function TicketingDashboardInner() {
   const [events, setEvents] = useState<Event[]>([])
   const [selectedEventId, setSelectedEventId] = useState(searchParams.get("eventId") ?? "")
   const [summary, setSummary] = useState<SummaryData | null>(null)
+  const [breakdown, setBreakdown] = useState<BreakdownData | null>(null)
   const [trend, setTrend] = useState<TrendData | null>(null)
   const [balance, setBalance] = useState<Balance | null>(null)
   const [loading, setLoading] = useState(false)
@@ -181,16 +250,21 @@ function TicketingDashboardInner() {
   }, [])
 
   useEffect(() => {
-    if (!selectedEventId) { setSummary(null); setTrend(null); return }
+    if (!selectedEventId) { setSummary(null); setBreakdown(null); setTrend(null); return }
     let cancelled = false
     setLoading(true)
     setDrilldownWeek(null)
     ;(async () => {
       try {
-        const res = await fetch(`/api/tickets/dashboard-summary?eventId=${selectedEventId}`, { headers: authHeaders() })
-        const data = await res.json()
+        const [sumRes, bdRes] = await Promise.all([
+          fetch(`/api/tickets/dashboard-summary?eventId=${selectedEventId}`, { headers: authHeaders() }),
+          fetch(`/api/tickets/category-breakdown?eventId=${selectedEventId}`, { headers: authHeaders() }),
+        ])
+        const data = await sumRes.json()
+        const bd = await bdRes.json()
         if (cancelled) return
         if (data.success) setSummary(data)
+        if (bd.success) setBreakdown(bd)
         await fetchTrend(selectedEventId, null)
       } catch {
         /* ignore */
@@ -377,6 +451,98 @@ function TicketingDashboardInner() {
                 link-nya duplikat tombol header. Link ke Laporan Laba/Rugi TETAP — tujuannya beda
                 dan ini satu-satunya jalan ke sana dari halaman ini. */}
           </div>
+
+          {/* Breakdown per kategori — ditaruh SETELAH kartu ringkasan (total dulu, baru rincian)
+              dan SEBELUM grafik tren (rincian "apa yang laku" lebih dekat ke angkanya daripada ke
+              dimensi waktu). */}
+          {breakdown && (breakdown.ticketTypes.length > 0 || breakdown.merchandise.length > 0 || breakdown.bundlingTotal.sold > 0) && (
+            <section>
+              <h2 style={{ ...h2Style, marginBottom: 12 }}>Breakdown Penjualan per Kategori</h2>
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))", gap: 14, alignItems: "start" }}>
+
+                {/* Tiket per jenis */}
+                {breakdown.ticketTypes.length > 0 && (
+                  <Card>
+                    <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 6 }}>
+                      <div style={{ width: 30, height: 30, borderRadius: 9, background: "var(--emerald-tint)", display: "flex", alignItems: "center", justifyContent: "center" }}>
+                        <Ticket size={16} weight="duotone" color="var(--emerald-dark)" />
+                      </div>
+                      <span style={monoLabel}>Tiket per Jenis</span>
+                    </div>
+                    {breakdown.ticketTypes.map((tt) => (
+                      <BreakdownRow
+                        key={tt.id}
+                        label={tt.isActive ? tt.name : `${tt.name} (nonaktif)`}
+                        sold={tt.sold}
+                        capacity={tt.quota}
+                        capacityLabel="kuota"
+                        muted={!tt.isActive}
+                      />
+                    ))}
+                  </Card>
+                )}
+
+                {/* Merchandise per size, dikelompokkan per produk */}
+                {breakdown.merchandise.length > 0 && (
+                  <Card>
+                    <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 6 }}>
+                      <div style={{ width: 30, height: 30, borderRadius: 9, background: "var(--coral-tint)", display: "flex", alignItems: "center", justifyContent: "center" }}>
+                        <TShirt size={16} weight="duotone" color="var(--coral)" />
+                      </div>
+                      <span style={monoLabel}>Merchandise per Size</span>
+                    </div>
+                    {breakdown.merchandise.map((m, i) => (
+                      <div key={m.id} style={{ marginTop: i === 0 ? 4 : 12 }}>
+                        <div style={{ fontFamily: "var(--font-display)", fontWeight: 700, fontSize: 13, color: m.isActive ? "var(--ink)" : "var(--text-faint)" }}>
+                          {m.isActive ? m.productName : `${m.productName} (nonaktif)`}
+                        </div>
+                        {m.variants.length === 0 ? (
+                          <div style={{ fontFamily: "var(--font-body)", fontSize: 12, color: "var(--text-faint)", padding: "8px 0" }}>
+                            Belum ada size untuk produk ini.
+                          </div>
+                        ) : (
+                          m.variants.map((v) => (
+                            <BreakdownRow
+                              key={v.id}
+                              label={`Size ${v.size}`}
+                              sold={v.sold}
+                              capacity={v.stock}
+                              capacityLabel="stok"
+                              muted={!m.isActive}
+                            />
+                          ))
+                        )}
+                      </div>
+                    ))}
+                  </Card>
+                )}
+
+                {/* Bundling — TOTAL saja, tanpa progress bar (tidak punya kuota sendiri) */}
+                <Card>
+                  <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 10 }}>
+                    <div style={{ width: 30, height: 30, borderRadius: 9, background: "var(--amber-tint)", display: "flex", alignItems: "center", justifyContent: "center" }}>
+                      <Package size={16} weight="duotone" color="#8A6100" />
+                    </div>
+                    <span style={monoLabel}>Bundling</span>
+                  </div>
+                  <div style={{ fontFamily: "var(--font-display)", fontWeight: 800, fontSize: 22, color: "var(--ink)", letterSpacing: "-0.01em" }}>
+                    {breakdown.bundlingTotal.sold.toLocaleString("id-ID")}{" "}
+                    <span style={{ fontSize: 13, fontWeight: 600, color: "var(--text-faint)" }}>paket terjual</span>
+                  </div>
+                  <div style={{ fontFamily: "var(--font-mono)", fontWeight: 700, fontSize: 15, color: "var(--emerald-dark)", marginTop: 4 }}>
+                    {IDR.format(breakdown.bundlingTotal.revenue)}
+                  </div>
+                  <div style={{ fontFamily: "var(--font-body)", fontSize: 11, color: "var(--text-faint)", marginTop: 2 }}>
+                    Pendapatan bersih
+                  </div>
+                  <div style={{ fontFamily: "var(--font-body)", fontSize: 11, lineHeight: 1.5, color: "var(--text-muted)", background: "var(--surface-sunken)", borderRadius: 8, padding: "8px 10px", marginTop: 10 }}>
+                    Penjualan bundling sudah otomatis mengurangi stok tiket &amp; merchandise komponennya —
+                    sudah tercermin di angka di atas. Paket tidak punya kuota sendiri, jadi tidak ada bar progres.
+                  </div>
+                </Card>
+              </div>
+            </section>
+          )}
 
           {/* Tren penjualan */}
           <section>

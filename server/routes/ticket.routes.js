@@ -14,7 +14,7 @@ const {
   getTicketsByOrder,
 } = require('../controllers/ticket.controller');
 const { generateTicketBoxQR } = require('../controllers/ticket-box.controller');
-const { getDashboardSummary, getSalesTrend } = require('../controllers/ticket-dashboard.controller');
+const { getDashboardSummary, getSalesTrend, getCategoryBreakdown } = require('../controllers/ticket-dashboard.controller');
 
 // Ticket Box: promotor generate QR untuk penjualan offline di lokasi.
 router.post('/ticket-box/generate-qr', verifyToken, generateTicketBoxQR);
@@ -22,6 +22,7 @@ router.post('/ticket-box/generate-qr', verifyToken, generateTicketBoxQR);
 // Dashboard Tiket & Pencairan (hub /dashboard/ticketing) — read-only.
 router.get('/dashboard-summary', verifyToken, getDashboardSummary);
 router.get('/sales-trend', verifyToken, getSalesTrend);
+router.get('/category-breakdown', verifyToken, getCategoryBreakdown);
 
 // Spesifik routes HARUS di atas /types/:id agar tidak ketubruk wildcard
 router.get('/types', verifyToken, getTicketTypes);

@@ -138,6 +138,40 @@ const categoryNet = (r, feeBearer) => r.subtotal - (feeBearer === 'promotor' ? r
 // tidak hilang diam-diam dari grafik.
 const orderDate = (o) => dayKey(o.paidAt ?? o.createdAt);
 
+// Agregasi net per kategori + pajak + totalNet dari sekumpulan order berbayar.
+// DIPAKAI BERSAMA `getDashboardSummary` (kartu ringkasan) DAN `getCategoryBreakdown` (angka
+// bundling) — supaya kartu "Total Bundling Terjual" dan baris bundling di breakdown MUSTAHIL beda.
+// `feeBearer` dibaca PER ORDER (snapshot saat checkout), bukan dari Event sekarang → diakumulasi
+// per order, bukan sekali di akhir.
+function computeCategoryTotals(orders) {
+  const acc = {
+    tickets: { count: 0, revenue: 0 },
+    merch: { count: 0, revenue: 0 },
+    bundling: { count: 0, revenue: 0 },
+  };
+  let taxTotal = 0;
+  let totalNet = 0;
+  let feeTotal = 0;
+
+  for (const o of orders) {
+    const bearer = o.feeBearer === 'audience' ? 'audience' : 'promotor';
+    const groups = {
+      tickets: rollup(o.items, (l) => l.ticketType?.feePercent),
+      merch: rollup(o.merchItems, (l) => l.item?.feePercent),
+      bundling: rollup(o.bundleItems, (l) => l.bundle?.feePercent),
+    };
+    for (const key of ['tickets', 'merch', 'bundling']) {
+      acc[key].count += groups[key].count;
+      acc[key].revenue += categoryNet(groups[key], bearer);
+      feeTotal += groups[key].fee;
+    }
+    taxTotal += safe(o.taxAmount);
+    totalNet += orderNet(o); // rumus P&L, dari nilai tersimpan
+  }
+
+  return { ...acc, taxTotal, feeTotal, totalNet };
+}
+
 // ── GET /api/tickets/dashboard-summary?eventId= ────────────────────────────────────────────────
 const getDashboardSummary = async (req, res) => {
   try {
@@ -148,42 +182,16 @@ const getDashboardSummary = async (req, res) => {
     if (!event) return res.status(404).json({ success: false, message: 'Event tidak ditemukan.' });
 
     const orders = await fetchPaidOrders(eventId);
-
-    // Fee bergantung feeBearer, dan feeBearer dicatat PER ORDER (snapshot saat checkout) — bukan
-    // dibaca dari Event sekarang. Jadi diakumulasi per order, bukan sekali di akhir.
-    const acc = {
-      tickets: { count: 0, revenue: 0 },
-      merch: { count: 0, revenue: 0 },
-      bundling: { count: 0, revenue: 0 },
-    };
-    let taxTotal = 0;
-    let totalNet = 0;
-    let feeTotal = 0;
-
-    for (const o of orders) {
-      const bearer = o.feeBearer === 'audience' ? 'audience' : 'promotor';
-      const groups = {
-        tickets: rollup(o.items, (l) => l.ticketType?.feePercent),
-        merch: rollup(o.merchItems, (l) => l.item?.feePercent),
-        bundling: rollup(o.bundleItems, (l) => l.bundle?.feePercent),
-      };
-      for (const key of ['tickets', 'merch', 'bundling']) {
-        acc[key].count += groups[key].count;
-        acc[key].revenue += categoryNet(groups[key], bearer);
-        feeTotal += groups[key].fee;
-      }
-      taxTotal += safe(o.taxAmount);
-      totalNet += orderNet(o); // rumus P&L, dari nilai tersimpan
-    }
+    const { tickets, merch, bundling, taxTotal, feeTotal, totalNet } = computeCategoryTotals(orders);
 
     return res.json({
       success: true,
       event,
       basis: 'net', // net setelah fee platform — lihat catatan di kepala file
       orderCount: orders.length,
-      tickets: acc.tickets,
-      merch: acc.merch,
-      bundling: acc.bundling,
+      tickets,
+      merch,
+      bundling,
       // Pajak dilaporkan utuh & terpisah: hak promotor, tapi bukan pendapatan kategori mana pun.
       taxTotal,
       feeTotal, // fee platform yang dihitung ulang dari fee% terkunci (audit/silang-cek)
@@ -311,4 +319,127 @@ const getSalesTrend = async (req, res) => {
   }
 };
 
-module.exports = { getDashboardSummary, getSalesTrend };
+// ── GET /api/tickets/category-breakdown?eventId= ───────────────────────────────────────────────
+// Breakdown penjualan per kategori: tiket per JENIS, merch per SIZE, bundling sebagai TOTAL.
+//
+// ── DEFINISI "TERJUAL" DI SINI (penting, baca sebelum ubah) ───────────────────────────────────
+// terjual = unit dari order **BERBAYAR** saja (`status:'paid'`), konsisten dgn seluruh halaman ini
+// (kartu ringkasan & grafik tren juga paid-only).
+//
+// **SENGAJA BUKAN kolom `TicketType.sold` / `MerchVariant.sold`.** Kolom itu di-increment saat order
+// DIBUAT (masih `pending`) untuk menahan stok, lalu di-decrement kalau booking kedaluwarsa (cron 15
+// menit) — jadi isinya "terpesan + terbayar", bukan penjualan nyata. Halaman Manajemen Tiket memang
+// menampilkan kolom `sold` itu (benar untuk ketersediaan stok), sehingga angkanya bisa SEDIKIT LEBIH
+// TINGGI dari sini selama ada booking yang belum dibayar. Beda ini DISENGAJA, bukan bug:
+//   Manajemen Tiket  → "berapa stok yang sudah tertahan" (operasional)
+//   Dashboard ini    → "berapa yang benar-benar terjual & menghasilkan uang" (penjualan)
+//
+// ── TIKET DI DALAM PAKET IKUT DIHITUNG ────────────────────────────────────────────────────────
+// Paket bundling memakan kuota tiket & stok merch komponennya. Kalau kontribusi paket tidak ikut
+// dihitung di baris tiket/merch, catatan di UI ("penjualan bundling sudah tercermin di angka di
+// atas") jadi BOHONG dan promotor salah baca sisa kuota. Karena itu:
+//   - tiket: dihitung dari tabel `Ticket` (1 baris = 1 tiket) yang mencakup DUA jalur —
+//     `orderItem` (beli tiket langsung) dan `bundleOrderItem` (tiket di dalam paket). Keduanya
+//     menyimpan `ticketTypeId`. Pola OR ini meniru `audience-report.controller` (preseden ada).
+//     Baris `Ticket` hanya lahir untuk order berbayar → otomatis paid-only.
+//   - merch: `MerchOrderItem` (beli langsung) + `BundleOrderItem.merchSelections` (JSON berisi
+//     `[{ merchItemId, variantId, quantity }]` — size yang dipilih pembeli untuk paketnya).
+const getCategoryBreakdown = async (req, res) => {
+  try {
+    const { eventId } = req.query;
+    if (!eventId) return res.status(400).json({ success: false, message: 'eventId wajib diisi.' });
+
+    const event = await assertEventOwned(eventId, req.user.id);
+    if (!event) return res.status(404).json({ success: false, message: 'Event tidak ditemukan.' });
+
+    const paidOrder = { order: { status: 'paid', eventId } };
+
+    const [ticketTypeRows, merchRows, ticketCounts, merchDirect, bundleSelectionRows, orders] = await Promise.all([
+      // Semua jenis tiket event (termasuk yang belum laku → tetap tampil dgn 0 terjual).
+      prisma.ticketType.findMany({
+        where: { eventId },
+        select: { id: true, name: true, quota: true, isActive: true },
+        orderBy: { price: 'asc' },
+      }),
+      prisma.merchItem.findMany({
+        where: { eventId },
+        select: {
+          id: true, name: true, isActive: true,
+          variants: { select: { id: true, size: true, stock: true }, orderBy: { size: 'asc' } },
+        },
+        orderBy: { createdAt: 'asc' },
+      }),
+      // Tiket terjual per jenis — mencakup tiket langsung DAN tiket di dalam paket.
+      prisma.ticket.groupBy({
+        by: ['ticketTypeId'],
+        where: {
+          ticketTypeId: { not: null },
+          OR: [{ orderItem: paidOrder }, { bundleOrderItem: paidOrder }],
+        },
+        _count: { _all: true },
+      }),
+      // Merch terjual per varian — jalur beli langsung.
+      prisma.merchOrderItem.groupBy({
+        by: ['variantId'],
+        where: paidOrder,
+        _sum: { quantity: true },
+      }),
+      // Merch di dalam paket — size tersimpan di JSON merchSelections.
+      prisma.bundleOrderItem.findMany({ where: paidOrder, select: { merchSelections: true } }),
+      fetchPaidOrders(eventId),
+    ]);
+
+    const soldByType = new Map(ticketCounts.map((r) => [r.ticketTypeId, safe(r._count?._all)]));
+
+    // Gabung merch langsung + merch dari paket, per variantId.
+    const soldByVariant = new Map(merchDirect.map((r) => [r.variantId, safe(r._sum?.quantity)]));
+    for (const row of bundleSelectionRows) {
+      const sel = Array.isArray(row.merchSelections) ? row.merchSelections : [];
+      for (const s of sel) {
+        if (!s?.variantId) continue;
+        soldByVariant.set(s.variantId, (soldByVariant.get(s.variantId) ?? 0) + safe(s.quantity));
+      }
+    }
+
+    const ticketTypes = ticketTypeRows.map((tt) => ({
+      id: tt.id,
+      name: tt.name,
+      isActive: tt.isActive,
+      sold: soldByType.get(tt.id) ?? 0,
+      // `quota` NOT NULL di schema → "kuota tak terbatas" tidak bisa dinyatakan. Nilai <= 0
+      // diperlakukan "tanpa kuota" oleh frontend (tampil tanpa progress bar) sebagai jaring pengaman.
+      quota: safe(tt.quota),
+    }));
+
+    const merchandise = merchRows.map((m) => ({
+      id: m.id,
+      productName: m.name,
+      isActive: m.isActive,
+      variants: m.variants.map((v) => ({
+        id: v.id,
+        size: v.size,
+        sold: soldByVariant.get(v.id) ?? 0,
+        stock: safe(v.stock),
+      })),
+    }));
+
+    // Bundling: TOTAL saja (tanpa progress bar) — BundlePackage TIDAK punya kuota sendiri; stoknya
+    // menumpang tiket & merch komponennya. Angka diambil dari helper yang SAMA dengan kartu
+    // ringkasan → mustahil beda. `revenue` = net (fee dipotong hanya kalau promotor menanggung).
+    const { bundling } = computeCategoryTotals(orders);
+
+    return res.json({
+      success: true,
+      event,
+      basis: 'net',
+      ticketTypes,
+      merchandise,
+      bundlingTotal: { sold: bundling.count, revenue: bundling.revenue },
+    });
+  } catch (err) {
+    console.error('[TICKET CATEGORY BREAKDOWN ERROR]', err);
+    return res.status(500).json({ success: false, message: 'Server error.' });
+  }
+};
+
+module.exports = { getDashboardSummary, getSalesTrend, getCategoryBreakdown };
