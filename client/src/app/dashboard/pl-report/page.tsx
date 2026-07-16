@@ -395,18 +395,18 @@ function PLReportPageInner() {
       <div style={{ display: "flex", flexWrap: "wrap", gap: 16, alignItems: "flex-end", justifyContent: "space-between" }}>
         <PageHeader />
         <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
-          {/* Petty Cash mengelola pilihan event-nya sendiri — TIDAK dioper eventId (sama seperti Pencairan Dana). */}
-          <Link
-            href="/dashboard/petty-cash"
-            className="plr-btn plr-btn-secondary"
-            style={{ display: "inline-flex", alignItems: "center", gap: 8, fontFamily: "var(--font-display)", fontWeight: 700, fontSize: 13, padding: "10px 18px", borderRadius: 12, background: "var(--surface-card)", color: "var(--ink)", border: "1.5px solid var(--line)", textDecoration: "none" }}
-          >
-            <Wallet size={18} weight="duotone" color="var(--emerald-dark)" />
-            Kelola Petty Cash
-          </Link>
-          {/* Halaman turunan kategori Keuangan mewarisi event lewat query param. */}
+          {/* Halaman turunan kategori Keuangan mewarisi event lewat query param.
+              Petty Cash kini PER-EVENT juga (ikut pola hub) → dioper eventId. */}
           {selectedEventId && (
             <>
+              <Link
+                href={`/dashboard/petty-cash?eventId=${selectedEventId}`}
+                className="plr-btn plr-btn-secondary"
+                style={{ display: "inline-flex", alignItems: "center", gap: 8, fontFamily: "var(--font-display)", fontWeight: 700, fontSize: 13, padding: "10px 18px", borderRadius: 12, background: "var(--surface-card)", color: "var(--ink)", border: "1.5px solid var(--line)", textDecoration: "none" }}
+              >
+                <Wallet size={18} weight="duotone" color="var(--emerald-dark)" />
+                Kelola Petty Cash
+              </Link>
               <Link
                 href={`/dashboard/expenses?eventId=${selectedEventId}`}
                 className="plr-btn plr-btn-secondary"

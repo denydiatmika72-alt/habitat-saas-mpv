@@ -2340,3 +2340,14 @@ tidak akan terhitung** → catatan jadi bohong dan promotor salah membaca sisa k
   - TIDAK menyentuh backend/route/controller/schema/logic fee-saldo apa pun — murni relokasi UI.
 - Verifikasi: `npx tsc --noEmit` exit 0; `npm run build` exit 0 (`/dashboard/petty-cash` muncul di route list). Grep: 0 referensi Petty Cash di crew/page.tsx, ada di petty-cash/page.tsx, sidebar, & pl-report.
 - Tag: #ui #petty-cash #crew #refactor #dashboard-keuangan
+
+
+## [2026-07-16] Petty Cash jadi per-event + Kelola Crew jadi item sidebar mandiri
+
+- Gejala: Petty Cash (`/dashboard/petty-cash`) masih mengharuskan user memilih ulang event lewat dropdown sendiri dan tidak punya tombol kembali ke Dashboard Keuangan; halaman ini juga masih ditautkan langsung dari sidebar padahal seharusnya dicapai lewat hub. Selain itu "Field Crew" (Kelola Crew) berada di dalam grup kategori "Operasional" padahal ia halaman setting akses crew yang berdiri sendiri, tidak terkait tema salah satu dashboard kategori.
+- Root cause: Bukan bug — keputusan desain diubah. Petty Cash dipindah dari model lintas-konteks (dropdown event sendiri) menjadi PER-EVENT mengikuti pola hub Dashboard Keuangan (sama seperti Expense Tracker & Laporan Akhir Event: warisi `?eventId=`, redirect balik ke `/dashboard/pl-report` kalau dibuka tanpa eventId). Ini MEMBALIK catatan lama yang menyebut Petty Cash sengaja lintas-konteks. Item "Petty Cash" dihapus dari sidebar (akses hanya via tombol "Kelola Petty Cash" di Dashboard Keuangan). "Field Crew" dijadikan item mandiri di luar grup manapun, direname jadi "Settingan Kelola Crew", diposisikan agar render tepat di bawah "Dashboard Tiket & Pencairan".
+- File terkait: `client/src/app/dashboard/petty-cash/page.tsx`, `client/src/app/dashboard/pl-report/page.tsx`, `client/src/components/dashboard/sidebar.tsx`
+- Fix: (1) petty-cash: bungkus `<Suspense>` + `*Inner`, baca `eventId` via `useSearchParams`, hapus dropdown event (tampilkan judul event read-only), `router.replace("/dashboard/pl-report")` bila tanpa eventId, tambah tombol "Kembali ke Dashboard Keuangan" — logic saldo/top-up TIDAK disentuh. (2) pl-report: tombol "Kelola Petty Cash" dipindah ke dalam blok `{selectedEventId && ...}` dan kini mengoper `?eventId=`. (3) sidebar: hapus item "Petty Cash" (+ import `Wallet`); item "/dashboard/crew" dilepas `group`-nya, direname "Settingan Kelola Crew", ditempatkan sebagai ungrouped bottom-item sehingga render tepat di bawah "Dashboard Tiket & Pencairan" (grup terakhir di GROUP_ORDER). Grup "Operasional" jadi kosong → otomatis tidak dirender. Verifikasi: `npx tsc --noEmit` exit 0, `npm run build` exit 0.
+- Tag: #ui #navigation #petty-cash #dashboard-keuangan #sidebar #crew
+
+---

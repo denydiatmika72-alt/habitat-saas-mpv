@@ -14,7 +14,6 @@ import {
   ShieldCheck,
   TrendingUp,
   ChevronDown,
-  Wallet,
 } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { useUser } from "@/hooks/useUser"
@@ -41,14 +40,18 @@ const nav: NavItem[] = [
   { label: "Simulasi Harga Tiket", icon: Calculator, href: "/dashboard/simulasi", badge: "Pro", group: "Perencanaan" },
   { label: "Sponsor & Partner", icon: Handshake, href: "/dashboard/sponsor", badge: "Pro", group: "Kerjasama" },
   { label: "Vendor & Talent", icon: Users, onClick: () => alert("Fitur Vendor Segera Hadir"), hidden: true },
-  { label: "Field Crew", icon: Users, href: "/dashboard/crew", badge: "Pro", group: "Operasional" },
-  { label: "Petty Cash", icon: Wallet, href: "/dashboard/petty-cash", badge: "Pro", group: "Operasional" },
   // Pola hub (Layer 2): "Dashboard Tiket & Pencairan" adalah SATU-SATUNYA pintu masuk kategori ini.
   // "Manajemen Tiket" (/dashboard/tickets) & "Pencairan Dana" (/dashboard/payout) sengaja TIDAK ada
   // di sidebar — dicapai lewat tombol di hub. Manajemen Tiket mewarisi ?eventId= dari hub; dibuka
   // tanpa itu ia redirect balik ke hub, jadi item sidebar (tanpa eventId) hanya akan memantul.
+  // Petty Cash juga TIDAK lagi di sidebar — kini per-event, dicapai lewat tombol di Dashboard Keuangan.
   { label: "Dashboard Tiket & Pencairan", icon: BarChart2, href: "/dashboard/ticketing", group: "Tiket & Pencairan" },
   { label: "Dashboard Keuangan", icon: BarChart2, href: "/dashboard/pl-report", badge: "Pro", group: "Keuangan" },
+  // Item MANDIRI (tanpa group): halaman setting akses crew, bukan bagian dari salah satu dashboard
+  // kategori. Sengaja ungrouped agar render di tier bawah (bersama item adminOnly) — karena
+  // "Tiket & Pencairan" adalah grup TERAKHIR di GROUP_ORDER, item ini muncul tepat di bawah
+  // "Dashboard Tiket & Pencairan".
+  { label: "Settingan Kelola Crew", icon: Users, href: "/dashboard/crew", badge: "Pro" },
   { label: "Approve User", icon: ShieldCheck, href: "/dashboard/admin", adminOnly: true },
   { label: "Pendapatan Platform", icon: TrendingUp, href: "/dashboard/admin/revenue", adminOnly: true },
 ]

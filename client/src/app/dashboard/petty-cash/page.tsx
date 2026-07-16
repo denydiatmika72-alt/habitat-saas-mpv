@@ -1,8 +1,9 @@
 "use client"
 
-import { useEffect, useState } from "react"
-import { Lock, Wallet, Users, Trash2, ChevronDown, ChevronUp, ArrowUpCircle } from "lucide-react"
+import { Suspense, useEffect, useState } from "react"
+import { ArrowLeft, Lock, Wallet, Users, ChevronDown, ChevronUp, ArrowUpCircle } from "lucide-react"
 import Link from "next/link"
+import { useRouter, useSearchParams } from "next/navigation"
 import { useUser } from "@/hooks/useUser"
 
 type Event = { id: string; title: string }
@@ -33,12 +34,24 @@ const authHeaders = () => ({
 })
 
 export default function PettyCashPage() {
+  return (
+    <Suspense fallback={<div className="p-10 text-center text-slate-400">Memuat...</div>}>
+      <PettyCashPageInner />
+    </Suspense>
+  )
+}
+
+function PettyCashPageInner() {
   const { isPro, loading: userLoading } = useUser()
+  const router = useRouter()
+  const searchParams = useSearchParams()
+
+  // Petty Cash sekarang PER-EVENT: event diwarisi dari Dashboard Keuangan lewat ?eventId=
+  // (mengikuti pola hub yang sama dengan Expense Tracker & Laporan Akhir Event).
+  // Bukan lagi halaman lintas-konteks dengan dropdown sendiri.
+  const selectedEventId = searchParams.get("eventId") ?? ""
 
   const [events, setEvents] = useState<Event[]>([])
-  // Petty Cash mengelola pilihan event-nya sendiri (dropdown), TIDAK mewarisi ?eventId=
-  // dari Dashboard Keuangan — konsisten dengan sifat halaman kas lintas-konteks.
-  const [selectedEventId, setSelectedEventId] = useState("")
   const [crew, setCrew] = useState<CrewMember[]>([])
   const [fetchingCrew, setFetchingCrew] = useState(false)
 
@@ -46,6 +59,11 @@ export default function PettyCashPage() {
   const [topupAmounts, setTopupAmounts] = useState<Record<string, string>>({})
   const [toppingUp, setToppingUp] = useState<Record<string, boolean>>({})
   const [expandedCrew, setExpandedCrew] = useState<Record<string, boolean>>({})
+
+  // Tanpa konteks event, kembalikan ke pintu utama kategori Keuangan.
+  useEffect(() => {
+    if (!selectedEventId) router.replace("/dashboard/pl-report")
+  }, [selectedEventId, router])
 
   useEffect(() => {
     fetch("/api/events", { headers: authHeaders() })
@@ -104,6 +122,8 @@ export default function PettyCashPage() {
     setExpandedCrew((prev) => ({ ...prev, [accountId]: !prev[accountId] }))
   }
 
+  const selectedEvent = events.find((ev) => ev.id === selectedEventId) || null
+
   if (userLoading) {
     return (
       <div className="flex min-h-[60vh] items-center justify-center">
@@ -111,6 +131,9 @@ export default function PettyCashPage() {
       </div>
     )
   }
+
+  // Redirect sedang berjalan — jangan render konten halaman.
+  if (!selectedEventId) return null
 
   if (!isPro) {
     return (
@@ -156,6 +179,17 @@ export default function PettyCashPage() {
 
   return (
     <div className="mx-auto flex w-full max-w-7xl flex-col gap-6">
+      {/* Kembali ke pintu utama kategori Keuangan (event dipertahankan) */}
+      <div>
+        <Link
+          href={`/dashboard/pl-report?eventId=${selectedEventId}`}
+          className="inline-flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm font-semibold text-slate-700 transition-colors hover:bg-slate-50"
+        >
+          <ArrowLeft className="size-4" />
+          Kembali ke Dashboard Keuangan
+        </Link>
+      </div>
+
       {/* Header */}
       <div className="flex items-start gap-4">
         <div className="flex size-11 items-center justify-center rounded-xl bg-emerald-50 text-emerald-800">
@@ -176,149 +210,125 @@ export default function PettyCashPage() {
           <p className="mt-1 text-xs text-slate-400">
             Kelola siapa saja crew di event ini lewat halaman{" "}
             <Link href="/dashboard/crew" className="font-medium text-emerald-700 underline underline-offset-2 hover:text-emerald-900">
-              Field Crew
+              Settingan Kelola Crew
             </Link>
             . Pengeluaran crew otomatis masuk ke Laporan P&amp;L.
           </p>
         </div>
       </div>
 
-      {/* Event selector */}
+      {/* Event aktif — dipilih di Dashboard Keuangan, bukan di sini */}
       <div>
-        <label className="mb-1.5 block text-sm font-medium text-slate-700">Pilih Event</label>
-        <select
-          value={selectedEventId}
-          onChange={(e) => {
-            setSelectedEventId(e.target.value)
-            setCrew([])
-          }}
-          className="max-w-sm truncate rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-700 outline-none transition-colors focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500/30"
-        >
-          <option value="">-- Pilih event --</option>
-          {events.map((ev) => (
-            <option key={ev.id} value={ev.id}>
-              {ev.title}
-            </option>
-          ))}
-        </select>
+        <p className="mb-1.5 text-sm font-medium text-slate-700">Event</p>
+        <p className="text-sm font-semibold text-slate-900">{selectedEvent?.title ?? "Memuat event..."}</p>
       </div>
 
-      {/* No event */}
-      {!selectedEventId && (
-        <div className="rounded-xl border border-slate-200 bg-white py-14 text-center">
-          <Wallet className="mx-auto mb-3 size-10 text-slate-300" />
-          <p className="text-sm text-slate-400">Pilih event untuk melihat saldo kas crew dan melakukan top-up.</p>
-        </div>
-      )}
-
       {/* Crew balance + top-up list */}
-      {selectedEventId && (
-        <div className="rounded-xl border border-slate-200 bg-white p-5">
-          <p className="mb-4 text-sm font-semibold text-slate-900">
-            Saldo Kas Crew ({crew.length})
-          </p>
+      <div className="rounded-xl border border-slate-200 bg-white p-5">
+        <p className="mb-4 text-sm font-semibold text-slate-900">
+          Saldo Kas Crew ({crew.length})
+        </p>
 
-          {fetchingCrew ? (
-            <div className="flex justify-center py-8">
-              <div className="h-6 w-6 animate-spin rounded-full border-2 border-emerald-800 border-t-transparent" />
-            </div>
-          ) : crew.length === 0 ? (
-            <div className="flex flex-col items-center gap-3 py-10 text-center">
-              <Users className="size-10 text-slate-300" />
-              <p className="text-sm text-slate-500">
-                Belum ada crew di event ini — invite crew terlebih dahulu.
-              </p>
-              <Link
-                href="/dashboard/crew"
-                className="inline-flex items-center gap-2 rounded-lg bg-emerald-800 px-5 py-2 text-sm font-semibold text-white transition-colors hover:bg-emerald-900"
-              >
-                Ke Halaman Field Crew →
-              </Link>
-            </div>
-          ) : (
-            <ul className="space-y-3">
-              {crew.map((c) => (
-                <li key={c.accountId} className="rounded-xl border border-slate-100 bg-slate-50 p-4">
-                  {/* Crew header */}
-                  <div className="flex items-start justify-between gap-3">
-                    <div>
-                      <div className="flex items-center gap-2">
-                        <p className="text-sm font-semibold text-slate-900">{c.name}</p>
-                        <span className="rounded-full bg-emerald-100 px-2 py-0.5 text-[10px] font-medium text-emerald-700">
-                          {c.division}
-                        </span>
-                      </div>
-                      <p className="mt-0.5 text-xs text-slate-400">{c.email}</p>
-                      <p className="mt-2 text-xl font-bold text-emerald-800">
-                        {IDR.format(c.balance)}
-                        <span className="ml-1.5 text-xs font-normal text-slate-500">saldo kas</span>
-                      </p>
+        {fetchingCrew ? (
+          <div className="flex justify-center py-8">
+            <div className="h-6 w-6 animate-spin rounded-full border-2 border-emerald-800 border-t-transparent" />
+          </div>
+        ) : crew.length === 0 ? (
+          <div className="flex flex-col items-center gap-3 py-10 text-center">
+            <Users className="size-10 text-slate-300" />
+            <p className="text-sm text-slate-500">
+              Belum ada crew di event ini — invite crew terlebih dahulu.
+            </p>
+            <Link
+              href="/dashboard/crew"
+              className="inline-flex items-center gap-2 rounded-lg bg-emerald-800 px-5 py-2 text-sm font-semibold text-white transition-colors hover:bg-emerald-900"
+            >
+              Ke Halaman Settingan Kelola Crew →
+            </Link>
+          </div>
+        ) : (
+          <ul className="space-y-3">
+            {crew.map((c) => (
+              <li key={c.accountId} className="rounded-xl border border-slate-100 bg-slate-50 p-4">
+                {/* Crew header */}
+                <div className="flex items-start justify-between gap-3">
+                  <div>
+                    <div className="flex items-center gap-2">
+                      <p className="text-sm font-semibold text-slate-900">{c.name}</p>
+                      <span className="rounded-full bg-emerald-100 px-2 py-0.5 text-[10px] font-medium text-emerald-700">
+                        {c.division}
+                      </span>
                     </div>
-                    <button
-                      onClick={() => toggleExpand(c.accountId)}
-                      className="flex size-8 items-center justify-center rounded-lg text-slate-400 transition-colors hover:bg-slate-200 hover:text-slate-700"
-                    >
-                      {expandedCrew[c.accountId] ? (
-                        <ChevronUp className="size-4" />
-                      ) : (
-                        <ChevronDown className="size-4" />
-                      )}
-                    </button>
+                    <p className="mt-0.5 text-xs text-slate-400">{c.email}</p>
+                    <p className="mt-2 text-xl font-bold text-emerald-800">
+                      {IDR.format(c.balance)}
+                      <span className="ml-1.5 text-xs font-normal text-slate-500">saldo kas</span>
+                    </p>
                   </div>
+                  <button
+                    onClick={() => toggleExpand(c.accountId)}
+                    className="flex size-8 items-center justify-center rounded-lg text-slate-400 transition-colors hover:bg-slate-200 hover:text-slate-700"
+                  >
+                    {expandedCrew[c.accountId] ? (
+                      <ChevronUp className="size-4" />
+                    ) : (
+                      <ChevronDown className="size-4" />
+                    )}
+                  </button>
+                </div>
 
-                  {/* Expanded: stats + topup form */}
-                  {expandedCrew[c.accountId] && (
-                    <div className="mt-4 space-y-3 border-t border-slate-200 pt-4">
-                      {/* Stats */}
-                      <div className="grid grid-cols-3 gap-2">
-                        {[
-                          { label: "Total Topup", value: c.totalTopup, color: "text-blue-600" },
-                          { label: "Total Expense", value: c.totalExpense, color: "text-red-600" },
-                          { label: "Total Return", value: c.totalReturn, color: "text-slate-600" },
-                        ].map((s) => (
-                          <div key={s.label} className="rounded-lg bg-white p-2 text-center">
-                            <p className={`text-sm font-semibold ${s.color}`}>{IDR.format(s.value)}</p>
-                            <p className="text-[10px] text-slate-400">{s.label}</p>
-                          </div>
-                        ))}
-                      </div>
-
-                      {/* Topup form */}
-                      <div className="flex items-center gap-2">
-                        <input
-                          type="text"
-                          inputMode="numeric"
-                          value={
-                            topupAmounts[c.accountId]
-                              ? Number(topupAmounts[c.accountId]).toLocaleString("id-ID")
-                              : ""
-                          }
-                          onChange={(e) =>
-                            setTopupAmounts((prev) => ({
-                              ...prev,
-                              [c.accountId]: e.target.value.replace(/[^0-9]/g, ""),
-                            }))
-                          }
-                          placeholder="Nominal top-up…"
-                          className="flex-1 rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 placeholder:text-slate-400 outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500/30"
-                        />
-                        <button
-                          onClick={() => handleTopup(c.accountId)}
-                          disabled={toppingUp[c.accountId]}
-                          className="flex items-center gap-1.5 rounded-lg bg-blue-600 px-4 py-2 text-sm font-semibold text-white transition-colors hover:bg-blue-700 disabled:opacity-50"
-                        >
-                          <ArrowUpCircle className="size-4" />
-                          {toppingUp[c.accountId] ? "..." : "Top-up"}
-                        </button>
-                      </div>
+                {/* Expanded: stats + topup form */}
+                {expandedCrew[c.accountId] && (
+                  <div className="mt-4 space-y-3 border-t border-slate-200 pt-4">
+                    {/* Stats */}
+                    <div className="grid grid-cols-3 gap-2">
+                      {[
+                        { label: "Total Topup", value: c.totalTopup, color: "text-blue-600" },
+                        { label: "Total Expense", value: c.totalExpense, color: "text-red-600" },
+                        { label: "Total Return", value: c.totalReturn, color: "text-slate-600" },
+                      ].map((s) => (
+                        <div key={s.label} className="rounded-lg bg-white p-2 text-center">
+                          <p className={`text-sm font-semibold ${s.color}`}>{IDR.format(s.value)}</p>
+                          <p className="text-[10px] text-slate-400">{s.label}</p>
+                        </div>
+                      ))}
                     </div>
-                  )}
-                </li>
-              ))}
-            </ul>
-          )}
-        </div>
-      )}
+
+                    {/* Topup form */}
+                    <div className="flex items-center gap-2">
+                      <input
+                        type="text"
+                        inputMode="numeric"
+                        value={
+                          topupAmounts[c.accountId]
+                            ? Number(topupAmounts[c.accountId]).toLocaleString("id-ID")
+                            : ""
+                        }
+                        onChange={(e) =>
+                          setTopupAmounts((prev) => ({
+                            ...prev,
+                            [c.accountId]: e.target.value.replace(/[^0-9]/g, ""),
+                          }))
+                        }
+                        placeholder="Nominal top-up…"
+                        className="flex-1 rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 placeholder:text-slate-400 outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500/30"
+                      />
+                      <button
+                        onClick={() => handleTopup(c.accountId)}
+                        disabled={toppingUp[c.accountId]}
+                        className="flex items-center gap-1.5 rounded-lg bg-blue-600 px-4 py-2 text-sm font-semibold text-white transition-colors hover:bg-blue-700 disabled:opacity-50"
+                      >
+                        <ArrowUpCircle className="size-4" />
+                        {toppingUp[c.accountId] ? "..." : "Top-up"}
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </li>
+            ))}
+          </ul>
+        )}
+      </div>
     </div>
   )
 }
