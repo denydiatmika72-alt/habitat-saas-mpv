@@ -23,7 +23,7 @@ const oiCategoryLabel = (cat) => OI_CATEGORY_LABELS[cat] || 'Lainnya'
 // Ambil SEMUA baris mentah yang dibutuhkan P&L 1 event. `select` = superset dari kebutuhan JSON & PDF
 // (field ekstra tak berpengaruh ke total). orderBy otherIncome date desc menjaga urutan JSON getPLReport.
 async function fetchEventPLRows({ eventId, userId }) {
-  const [sponsorDeals, otherIncomeRows, promotorExpenseRows, crewTxRows, ticketOrders] = await Promise.all([
+  const [sponsorDeals, otherIncomeRows, promotorExpenseRows, crewTxRows, ticketOrders, crewCashByType] = await Promise.all([
     prisma.sponsorDeal.findMany({
       where: {
         eventId,
@@ -51,13 +51,20 @@ async function fetchEventPLRows({ eventId, userId }) {
       where: { status: 'paid', eventId },
       select: { totalAmount: true, feeAmount: true },
     }),
+    // Sum petty cash crew per type (topup/expense/return) untuk MEMO "kas belum dipertanggungjawabkan".
+    // Hanya dipakai untuk info outstanding = topup - expense - return; TIDAK memengaruhi totalExpense/netPL.
+    prisma.pettyCashTransaction.groupBy({
+      by: ['type'],
+      where: { account: { eventId } },
+      _sum: { amount: true },
+    }),
   ])
-  return { sponsorDeals, otherIncomeRows, promotorExpenseRows, crewTxRows, ticketOrders }
+  return { sponsorDeals, otherIncomeRows, promotorExpenseRows, crewTxRows, ticketOrders, crewCashByType }
 }
 
 // Hitung SEMUA total + breakdown dari baris mentah. Pure (tak sentuh DB). `safe` membulatkan ke Int.
 function computeEventPLTotals(rows) {
-  const { sponsorDeals, otherIncomeRows, promotorExpenseRows, crewTxRows, ticketOrders } = rows
+  const { sponsorDeals, otherIncomeRows, promotorExpenseRows, crewTxRows, ticketOrders, crewCashByType } = rows
   const safe = (n) => Math.round(Number(n) || 0)
 
   const sponsorTotal = sponsorDeals.reduce((s, d) => s + safe(d.totalValue), 0)
@@ -94,6 +101,18 @@ function computeEventPLTotals(rows) {
   const crewByDivision = Object.entries(crewByDivisionMap).map(([division, total]) => ({ division, total }))
   const crewItems = crewTxRows.map((t) => ({ description: t.description, amount: safe(t.amount), division: t.account?.division || 'Crew', createdAt: t.createdAt }))
 
+  // MEMO informasional (BUKAN biaya): kas yang sudah di-topup ke crew tapi belum jadi expense & belum
+  // dikembalikan → masih di tangan crew. outstanding = topup - expense - return (pola sama calcBalance
+  // di pettycash.controller). expense pakai crewTotal yang SUDAH dibulatkan supaya konsisten dgn baris
+  // "Subtotal Crew" yang tampil. TIDAK ikut ke totalExpense/netPL — murni transparansi cash-flow.
+  const sumByType = (type) => {
+    const row = (crewCashByType || []).find((r) => r.type === type)
+    return safe(row?._sum?.amount)
+  }
+  const crewTopupTotal = sumByType('topup')
+  const crewReturnTotal = sumByType('return')
+  const crewOutstanding = crewTopupTotal - crewTotal - crewReturnTotal
+
   const totalIncome = nexeventSalesTotal + sponsorTotal + otherTotal
   const totalExpense = promotorTotal + crewTotal
   const netPL = totalIncome - totalExpense
@@ -105,6 +124,7 @@ function computeEventPLTotals(rows) {
     otherTotal, otherByCategory, otherItems,
     promotorTotal, promotorByCategory, promotorByCategoryMap,
     crewTotal, crewByDivision, crewByDivisionMap, crewItems,
+    crewTopupTotal, crewReturnTotal, crewOutstanding,
     totalIncome, totalExpense, netPL, marginPct, isProfit: netPL >= 0,
   }
 }

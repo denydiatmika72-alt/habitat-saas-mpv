@@ -2309,3 +2309,18 @@ tidak akan terhitung** → catatan jadi bohong dan promotor salah membaca sisa k
 - Fix: Saat data crew dimuat, inisialisasi `expandedCrew` dengan semua `accountId` → `true` (di initial fetch useEffect dan di refresh setelah invite; refresh mempertahankan pilihan collapse manual crew lama via `prev[accountId] ?? true`). Sekarang saldo + top-up langsung terlihat untuk setiap crew tanpa klik. Toggle chevron (collapse/expand manual) TIDAK diubah — tetap berfungsi penuh, hanya default state yang berubah dari collapsed → expanded.
 - Verifikasi: `npx tsc --noEmit` exit 0; `npm run build` exit 0 (`/dashboard/crew` tetap prerender static ○). `toggleExpand` (flip `!prev[accountId]`) tidak disentuh → klik pertama pada card expanded akan collapse, klik lagi re-expand. Data-fetching, logika top-up, dan kalkulasi saldo tidak diubah.
 - Tag: #ui #ux #petty-cash #field-crew #discoverability
+
+---
+
+## [2026-07-16] Kas crew "belum dipertanggungjawabkan" tak terlihat di P&L (memo transparansi, bukan bug)
+
+- Gejala: Audit memastikan P&L SUDAH benar (hanya hitung petty cash `type:"expense"`; topup & return dikecualikan — tidak ada double-count). Tapi ada celah transparansi: kas yang sudah di-topup ke crew tapi belum jadi expense & belum dikembalikan (masih di tangan crew) tidak muncul di mana pun di Laporan Laba/Rugi — promotor tidak sadar ada uang "mengambang" di lapangan.
+- Root cause: Bukan bug akuntansi — memang by design topup/return bukan biaya. Yang kurang murni presentasi: tidak ada memo cash-flow yang menunjukkan outstanding = topup − expense − return.
+- File terkait: `server/services/pl-report.service.js`, `server/controllers/pl-report.controller.js`, `client/src/app/dashboard/pl-report/page.tsx`
+- Fix: Tambah `crewOutstanding` (+ `crewTopupTotal`/`crewReturnTotal`) di `computeEventPLTotals` (sumber tunggal), dihitung dari query `groupBy` per type yang BARU (`crewCashByType`) — TERPISAH dari query expense-only yang lama (tidak disentuh). `expense` pakai `crewTotal` yang sudah dibulatkan → konsisten dgn baris "Subtotal Crew". Disurface di 3 permukaan sebagai MEMO informasional, muncul hanya jika > 0:
+  - JSON `getPLReport` → objek `crewCashMemo { outstanding, topup, spent, returned, note }`.
+  - PDF `exportPLReportPDF` → baris abu-abu italic di bawah "Subtotal Crew".
+  - UI → subteks di kartu "Total Pengeluaran".
+  **KRITIS: memo TIDAK ikut `totalExpense`/`netPL`** (menambahkannya = mengulang double-count yang justru dibersihkan audit). Diverifikasi via unit test pure `computeEventPLTotals` (topup 500k − expense 300k − return 50k → outstanding 150k; totalExpense & netPL tidak berubah).
+- Verifikasi: `node --check` kedua file backend OK; unit test pure function ALL_ASSERTIONS_PASS=true; `npx tsc --noEmit` exit 0; `npm run build` exit 0. event-summary.controller (konsumen bersama `computeEventPLTotals`) aman — field baru additive, punya Section 8 petty cash sendiri.
+- Tag: #pl-report #petty-cash #transparency #cash-flow #memo #no-bug

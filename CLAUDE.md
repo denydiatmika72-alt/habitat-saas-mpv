@@ -194,6 +194,7 @@ Siklus ini berulang setiap hari event berlangsung.
 1. **P&L Report HANYA boleh menghitung transaksi `type: "expense"`**
    - Jangan pakai `direction: "out"` sebagai filter — tidak cukup
    - `"topup"` dan `"return"` sama-sama ada `direction` tapi BUKAN biaya
+   - **MEMO "kas crew belum dipertanggungjawabkan" (sejak 2026-07-16)**: P&L Report (JSON `crewCashMemo`, PDF, UI kartu Total Pengeluaran) menampilkan `crewOutstanding = topup − expense − return` (Σ lintas akun crew di event) sebagai catatan INFORMASIONAL saja — muncul hanya kalau > 0. Ini kas yang sudah diberikan ke crew tapi belum jadi biaya & belum dikembalikan (masih di tangan crew). **BUKAN pengeluaran — TIDAK ikut `totalExpense`/`netPL`.** Dihitung di `computeEventPLTotals` (sumber tunggal) via query `groupBy` type terpisah; `expense` pakai `crewTotal` yang sudah dibulatkan agar konsisten dgn baris "Subtotal Crew". Lihat known-bugs entry [2026-07-16] memo kas crew.
 
 2. **Saldo crew dihitung sebagai:**
    ```

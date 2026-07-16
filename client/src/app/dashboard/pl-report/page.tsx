@@ -47,6 +47,8 @@ type PLData = {
     promotor: { total: number; byCategory: { category: string; total: number }[]; items: { description: string; amount: number; category: string; date: string }[] }
     crew: { total: number; byDivision: { division: string; total: number }[]; items: { description: string; amount: number; division: string; createdAt: string }[] }
   }
+  // MEMO informasional (BUKAN biaya, tidak memengaruhi netPL): kas crew yang belum dipertanggungjawabkan.
+  crewCashMemo?: { outstanding: number; topup: number; spent: number; returned: number; note: string }
 }
 
 // ── Helpers ────────────────────────────────────────────────────────────────────
@@ -490,6 +492,11 @@ function PLReportPageInner() {
                 <span style={monoLabel}>Total Pengeluaran</span>
               </div>
               <div style={{ fontFamily: "var(--font-mono)", fontWeight: 700, fontSize: 24, letterSpacing: "-0.01em", color: "var(--status-danger)" }}>{IDR.format(plData.summary.totalExpense)}</div>
+              {(plData.crewCashMemo?.outstanding ?? 0) > 0 && (
+                <div style={{ font: "400 12px/1.5 var(--font-body)", color: "var(--text-muted)", marginTop: 6 }}>
+                  Belum termasuk kas crew {IDR.format(plData.crewCashMemo!.outstanding)} yang belum dipertanggungjawabkan (masih di tangan crew — belum jadi biaya).
+                </div>
+              )}
             </Card>
 
             {/* Hero — Laba/Rugi Bersih (dark emerald surface) */}

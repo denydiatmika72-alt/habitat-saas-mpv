@@ -36,6 +36,15 @@ const getPLReport = async (req, res) => {
         promotor: { total: t.promotorTotal, byCategory: t.promotorByCategory, items: rows.promotorExpenseRows },
         crew: { total: t.crewTotal, byDivision: t.crewByDivision, items: t.crewItems },
       },
+      // MEMO informasional (BUKAN biaya, TIDAK memengaruhi netPL): kas yang sudah di-topup ke crew tapi
+      // belum jadi expense & belum dikembalikan (topup - expense - return) — masih di tangan crew.
+      crewCashMemo: {
+        outstanding: t.crewOutstanding,
+        topup: t.crewTopupTotal,
+        spent: t.crewTotal,
+        returned: t.crewReturnTotal,
+        note: 'Kas yang sudah diberikan ke crew tapi belum jadi biaya & belum dikembalikan — masih di tangan crew. Bukan pengeluaran; tidak memengaruhi Laba/Rugi.',
+      },
     })
   } catch (err) {
     console.error('[pl-report] getPLReport error:', err)
@@ -74,6 +83,7 @@ const exportPLReportPDF = async (req, res) => {
   const {
     sponsorTotal, nexeventSalesTotal, nexeventOrderCount, otherTotal, promotorTotal, crewTotal,
     promotorByCategoryMap: byCategoryMap, crewByDivisionMap: byDivisionMap,
+    crewOutstanding,
     totalIncome, totalExpense, netPL, marginPct, isProfit,
   } = t
 
@@ -218,7 +228,14 @@ const exportPLReportPDF = async (req, res) => {
     }
     doc.fontSize(9).fillColor(DARK).font('Helvetica-Bold')
       .text('  Subtotal Crew', { continued: true }).text(fmtIDR(crewTotal), { align: 'right' })
-    doc.font('Helvetica').moveDown(0.3)
+    doc.font('Helvetica')
+    // Memo informasional (BUKAN biaya): kas crew yang belum dipertanggungjawabkan. Hanya jika > 0.
+    if (crewOutstanding > 0) {
+      doc.fontSize(8).fillColor(GRAY).font('Helvetica-Oblique')
+        .text(`  Catatan: kas crew belum dipertanggungjawabkan ${fmtIDR(crewOutstanding)} (top-up - belanja - pengembalian) — masih di tangan crew, belum jadi biaya & tidak memengaruhi Laba/Rugi.`, { width: 495 })
+      doc.font('Helvetica')
+    }
+    doc.moveDown(0.3)
 
     doc.moveTo(50, doc.y).lineTo(545, doc.y).lineWidth(0.5).strokeColor(RED).stroke()
     doc.moveDown(0.2)
