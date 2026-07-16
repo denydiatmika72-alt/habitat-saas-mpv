@@ -1,7 +1,7 @@
 "use client"
 
 import { useEffect, useState } from "react"
-import { Lock, Users, Plus, Trash2, ChevronDown, ChevronUp, ArrowUpCircle, ScanLine } from "lucide-react"
+import { Lock, Users, Plus, Trash2, ScanLine, Wallet } from "lucide-react"
 import Link from "next/link"
 import { useUser } from "@/hooks/useUser"
 
@@ -20,17 +20,7 @@ type CrewMember = {
   name: string
   email: string
   division: string
-  balance: number
-  totalTopup: number
-  totalExpense: number
-  totalReturn: number
 }
-
-const IDR = new Intl.NumberFormat("id-ID", {
-  style: "currency",
-  currency: "IDR",
-  maximumFractionDigits: 0,
-})
 
 const getToken = () =>
   typeof window !== "undefined" ? (localStorage.getItem("token") ?? "") : ""
@@ -53,11 +43,6 @@ export default function CrewPage() {
   const [inviting, setInviting] = useState(false)
   const [inviteError, setInviteError] = useState("")
 
-  // Topup state per crew (accountId → amount)
-  const [topupAmounts, setTopupAmounts] = useState<Record<string, string>>({})
-  const [toppingUp, setToppingUp] = useState<Record<string, boolean>>({})
-  const [expandedCrew, setExpandedCrew] = useState<Record<string, boolean>>({})
-
   // Scanner invite state
   const [scanners, setScanners] = useState<Scanner[]>([])
   const [fetchingScanners, setFetchingScanners] = useState(false)
@@ -78,16 +63,7 @@ export default function CrewPage() {
     setFetchingCrew(true)
     fetch(`/api/crew?eventId=${selectedEventId}`, { headers: authHeaders() })
       .then((r) => (r.ok ? r.json() : null))
-      .then((data) => {
-        if (data?.success) {
-          setCrew(data.crew)
-          // Petty cash balance/top-up section expanded by default → fitur langsung terlihat
-          // tanpa perlu klik chevron. Toggle collapse manual tetap berfungsi.
-          setExpandedCrew(
-            Object.fromEntries((data.crew as CrewMember[]).map((c) => [c.accountId, true]))
-          )
-        }
-      })
+      .then((data) => { if (data?.success) setCrew(data.crew) })
       .catch(() => {})
       .finally(() => setFetchingCrew(false))
   }, [selectedEventId, isPro])
@@ -122,15 +98,7 @@ export default function CrewPage() {
         // Refresh crew list
         const refresh = await fetch(`/api/crew?eventId=${selectedEventId}`, { headers: authHeaders() })
         const refreshData = await refresh.json()
-        if (refreshData.success) {
-          setCrew(refreshData.crew)
-          // Crew baru default expanded; pertahankan pilihan collapse manual pada crew lama.
-          setExpandedCrew((prev) =>
-            Object.fromEntries(
-              (refreshData.crew as CrewMember[]).map((c) => [c.accountId, prev[c.accountId] ?? true])
-            )
-          )
-        }
+        if (refreshData.success) setCrew(refreshData.crew)
       } else {
         setInviteError(data.message ?? "Gagal menambahkan crew.")
       }
@@ -181,33 +149,6 @@ export default function CrewPage() {
     } catch {}
   }
 
-  const handleTopup = async (accountId: string, crewUserId: string) => {
-    const raw = topupAmounts[accountId] ?? ""
-    const amt = parseFloat(raw.replace(/[^0-9]/g, ""))
-    if (isNaN(amt) || amt <= 0) return
-    setToppingUp((prev) => ({ ...prev, [accountId]: true }))
-    try {
-      const res = await fetch("/api/petty-cash/topup", {
-        method: "POST",
-        headers: authHeaders(),
-        body: JSON.stringify({ accountId, amount: amt, description: "Top-up kas dari promotor" }),
-      })
-      const data = await res.json()
-      if (data.success) {
-        setTopupAmounts((prev) => ({ ...prev, [accountId]: "" }))
-        setCrew((prev) =>
-          prev.map((c) =>
-            c.accountId === accountId
-              ? { ...c, balance: data.balance, totalTopup: c.totalTopup + amt }
-              : c
-          )
-        )
-      }
-    } finally {
-      setToppingUp((prev) => ({ ...prev, [accountId]: false }))
-    }
-  }
-
   const handleRemoveCrew = async (crewUserId: string) => {
     if (!confirm("Hapus crew ini dari event? Semua data kas mereka akan ikut terhapus.")) return
     try {
@@ -217,10 +158,6 @@ export default function CrewPage() {
       })
       setCrew((prev) => prev.filter((c) => c.crewId !== crewUserId))
     } catch {}
-  }
-
-  const toggleExpand = (accountId: string) => {
-    setExpandedCrew((prev) => ({ ...prev, [accountId]: !prev[accountId] }))
   }
 
   if (userLoading) {
@@ -248,7 +185,7 @@ export default function CrewPage() {
               </span>
             </div>
             <p className="mt-0.5 text-sm text-slate-500">
-              Kelola kas lapangan crew dan pantau pengeluaran per divisi.
+              Kelola crew lapangan dan petugas scanner tiket per event.
             </p>
           </div>
         </div>
@@ -259,7 +196,7 @@ export default function CrewPage() {
           <div>
             <p className="text-lg font-semibold text-slate-900">🔒 Fitur Pro</p>
             <p className="mx-auto mt-2 max-w-xs text-sm leading-relaxed text-slate-500">
-              Field Crew Management tersedia untuk pengguna Pro. Upgrade untuk mengelola kas lapangan crew.
+              Field Crew Management tersedia untuk pengguna Pro. Upgrade untuk mengelola crew lapangan.
             </p>
           </div>
           <Link
@@ -290,10 +227,14 @@ export default function CrewPage() {
             </span>
           </div>
           <p className="mt-0.5 text-sm text-slate-500">
-            Kelola kas lapangan crew dan pantau pengeluaran per divisi.
+            Kelola crew lapangan dan petugas scanner tiket per event.
           </p>
           <p className="mt-1 text-xs text-slate-400">
-            Pengeluaran crew lapangan akan digabungkan dengan expense tracker di Laporan P&amp;L otomatis.
+            Saldo kas &amp; top-up per crew ada di halaman{" "}
+            <Link href="/dashboard/petty-cash" className="font-medium text-emerald-700 underline underline-offset-2 hover:text-emerald-900">
+              Petty Cash
+            </Link>
+            .
           </p>
         </div>
       </div>
@@ -370,6 +311,15 @@ export default function CrewPage() {
                     {inviting ? "Menambahkan..." : "Invite ke Event"}
                   </button>
                 </form>
+
+                {/* Petty Cash shortcut */}
+                <Link
+                  href="/dashboard/petty-cash"
+                  className="mt-4 flex items-center justify-center gap-2 rounded-lg border border-emerald-200 bg-emerald-50 py-2.5 text-sm font-semibold text-emerald-800 transition-colors hover:bg-emerald-100"
+                >
+                  <Wallet className="size-4" />
+                  Kelola Petty Cash
+                </Link>
               </div>
             </div>
 
@@ -391,89 +341,22 @@ export default function CrewPage() {
                 ) : (
                   <ul className="space-y-3">
                     {crew.map((c) => (
-                      <li key={c.accountId} className="rounded-xl border border-slate-100 bg-slate-50 p-4">
-                        {/* Crew header */}
-                        <div className="flex items-start justify-between gap-3">
-                          <div>
-                            <div className="flex items-center gap-2">
-                              <p className="text-sm font-semibold text-slate-900">{c.name}</p>
-                              <span className="rounded-full bg-emerald-100 px-2 py-0.5 text-[10px] font-medium text-emerald-700">
-                                {c.division}
-                              </span>
-                            </div>
-                            <p className="mt-0.5 text-xs text-slate-400">{c.email}</p>
-                            <p className="mt-2 text-xl font-bold text-emerald-800">
-                              {IDR.format(c.balance)}
-                              <span className="ml-1.5 text-xs font-normal text-slate-500">saldo kas</span>
-                            </p>
-                          </div>
+                      <li key={c.accountId} className="flex items-start justify-between gap-3 rounded-xl border border-slate-100 bg-slate-50 p-4">
+                        <div className="min-w-0">
                           <div className="flex items-center gap-2">
-                            <button
-                              onClick={() => toggleExpand(c.accountId)}
-                              className="flex size-8 items-center justify-center rounded-lg text-slate-400 transition-colors hover:bg-slate-200 hover:text-slate-700"
-                            >
-                              {expandedCrew[c.accountId] ? (
-                                <ChevronUp className="size-4" />
-                              ) : (
-                                <ChevronDown className="size-4" />
-                              )}
-                            </button>
-                            <button
-                              onClick={() => handleRemoveCrew(c.crewId)}
-                              className="flex size-8 items-center justify-center rounded-lg text-slate-400 transition-colors hover:bg-red-50 hover:text-red-500"
-                            >
-                              <Trash2 className="size-4" />
-                            </button>
+                            <p className="truncate text-sm font-semibold text-slate-900">{c.name}</p>
+                            <span className="rounded-full bg-emerald-100 px-2 py-0.5 text-[10px] font-medium text-emerald-700">
+                              {c.division}
+                            </span>
                           </div>
+                          <p className="mt-0.5 truncate text-xs text-slate-400">{c.email}</p>
                         </div>
-
-                        {/* Expanded: topup form */}
-                        {expandedCrew[c.accountId] && (
-                          <div className="mt-4 space-y-3 border-t border-slate-200 pt-4">
-                            {/* Stats */}
-                            <div className="grid grid-cols-3 gap-2">
-                              {[
-                                { label: "Total Topup", value: c.totalTopup, color: "text-blue-600" },
-                                { label: "Total Expense", value: c.totalExpense, color: "text-red-600" },
-                                { label: "Total Return", value: c.totalReturn, color: "text-slate-600" },
-                              ].map((s) => (
-                                <div key={s.label} className="rounded-lg bg-white p-2 text-center">
-                                  <p className={`text-sm font-semibold ${s.color}`}>{IDR.format(s.value)}</p>
-                                  <p className="text-[10px] text-slate-400">{s.label}</p>
-                                </div>
-                              ))}
-                            </div>
-
-                            {/* Topup form */}
-                            <div className="flex items-center gap-2">
-                              <input
-                                type="text"
-                                inputMode="numeric"
-                                value={
-                                  topupAmounts[c.accountId]
-                                    ? Number(topupAmounts[c.accountId]).toLocaleString("id-ID")
-                                    : ""
-                                }
-                                onChange={(e) =>
-                                  setTopupAmounts((prev) => ({
-                                    ...prev,
-                                    [c.accountId]: e.target.value.replace(/[^0-9]/g, ""),
-                                  }))
-                                }
-                                placeholder="Nominal top-up…"
-                                className="flex-1 rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 placeholder:text-slate-400 outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500/30"
-                              />
-                              <button
-                                onClick={() => handleTopup(c.accountId, c.crewId)}
-                                disabled={toppingUp[c.accountId]}
-                                className="flex items-center gap-1.5 rounded-lg bg-blue-600 px-4 py-2 text-sm font-semibold text-white transition-colors hover:bg-blue-700 disabled:opacity-50"
-                              >
-                                <ArrowUpCircle className="size-4" />
-                                {toppingUp[c.accountId] ? "..." : "Top-up"}
-                              </button>
-                            </div>
-                          </div>
-                        )}
+                        <button
+                          onClick={() => handleRemoveCrew(c.crewId)}
+                          className="flex size-8 shrink-0 items-center justify-center rounded-lg text-slate-400 transition-colors hover:bg-red-50 hover:text-red-500"
+                        >
+                          <Trash2 className="size-4" />
+                        </button>
                       </li>
                     ))}
                   </ul>

@@ -14,6 +14,7 @@ import {
   ShieldCheck,
   TrendingUp,
   ChevronDown,
+  Wallet,
 } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { useUser } from "@/hooks/useUser"
@@ -41,6 +42,7 @@ const nav: NavItem[] = [
   { label: "Sponsor & Partner", icon: Handshake, href: "/dashboard/sponsor", badge: "Pro", group: "Kerjasama" },
   { label: "Vendor & Talent", icon: Users, onClick: () => alert("Fitur Vendor Segera Hadir"), hidden: true },
   { label: "Field Crew", icon: Users, href: "/dashboard/crew", badge: "Pro", group: "Operasional" },
+  { label: "Petty Cash", icon: Wallet, href: "/dashboard/petty-cash", badge: "Pro", group: "Operasional" },
   // Pola hub (Layer 2): "Dashboard Tiket & Pencairan" adalah SATU-SATUNYA pintu masuk kategori ini.
   // "Manajemen Tiket" (/dashboard/tickets) & "Pencairan Dana" (/dashboard/payout) sengaja TIDAK ada
   // di sidebar — dicapai lewat tombol di hub. Manajemen Tiket mewarisi ?eventId= dari hub; dibuka

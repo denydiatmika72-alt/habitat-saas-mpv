@@ -252,7 +252,11 @@ Seluruh sistem ini SUDAH live — jangan bangun ulang. Yang sudah ada:
 - **UI mobile Field Crew**: `/field` (halaman standalone, di luar layout `/dashboard`, light theme) — crew catat `expense`/`return`; `topup` hanya promotor via dashboard.
 - **Integrasi P&L Report**: SUDAH terintegrasi. Aturan KRITIS (tetap berlaku): P&L hanya menghitung `type:"expense"` — `topup` & `return` BUKAN biaya (mutasi internal). Saldo crew = topup − expense − return.
 - Endpoint utama: `/api/crew/*` (invite/list/remove/my-events) & `/api/petty-cash/*` (topup/transaction/my-account/overview).
-- **UI dashboard promotor** (`/dashboard/crew`, label sidebar "Field Crew"): tiap kartu crew menampilkan saldo kas + form top-up. Sejak 2026-07-16 seksi ini **expanded by default** saat data crew dimuat (sebelumnya collapsed di dalam accordion → fitur Petty Cash tampak "hilang" saat direview). Toggle chevron collapse/expand manual tetap berfungsi. Jangan bingung lagi soal visibilitas fitur ini. Lihat known-bugs entry [2026-07-16] Petty Cash "hilang".
+- **UI dashboard promotor — DIPISAH jadi 2 halaman (sejak 2026-07-16, lihat known-bugs entry [2026-07-16] pisahkan Petty Cash):**
+  - **`/dashboard/crew`** (label sidebar "Field Crew", Pro): administrasi AKSES saja — form tambah crew (email + divisi) + daftar crew (nama/divisi/email, TANPA saldo/top-up) + undang scanner tiket + daftar scanner. TIDAK ada UI saldo/top-up lagi di sini.
+  - **`/dashboard/petty-cash`** (label sidebar "Petty Cash", Pro, ikon Wallet, group "Operasional") — HALAMAN BARU: event selector sendiri (dropdown, TIDAK mewarisi `?eventId=` — kas lintas-konteks seperti Pencairan Dana), daftar saldo kas crew + form top-up per crew (`POST /api/petty-cash/topup`). Kartu **expanded by default** saat data dimuat; toggle chevron collapse/expand manual tetap berfungsi. Event 0 crew → pesan + link ke `/dashboard/crew`.
+  - **Akses dari Dashboard Keuangan**: tombol "Kelola Petty Cash" (selalu tampil, TANPA `?eventId=`) di baris tombol header `/dashboard/pl-report`.
+  - Endpoint & logic saldo/fee TIDAK berubah — murni relokasi UI. Data crew (termasuk `balance`/`totalTopup`/dst) tetap dari `GET /api/crew?eventId=`.
 
 ## Pricing & Subscription Model
 

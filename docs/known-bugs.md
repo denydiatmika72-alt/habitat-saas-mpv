@@ -2324,3 +2324,19 @@ tidak akan terhitung** → catatan jadi bohong dan promotor salah membaca sisa k
   **KRITIS: memo TIDAK ikut `totalExpense`/`netPL`** (menambahkannya = mengulang double-count yang justru dibersihkan audit). Diverifikasi via unit test pure `computeEventPLTotals` (topup 500k − expense 300k − return 50k → outstanding 150k; totalExpense & netPL tidak berubah).
 - Verifikasi: `node --check` kedua file backend OK; unit test pure function ALL_ASSERTIONS_PASS=true; `npx tsc --noEmit` exit 0; `npm run build` exit 0. event-summary.controller (konsumen bersama `computeEventPLTotals`) aman — field baru additive, punya Section 8 petty cash sendiri.
 - Tag: #pl-report #petty-cash #transparency #cash-flow #memo #no-bug
+
+---
+
+## [2026-07-16] Pisahkan Petty Cash jadi halaman sendiri (refactor UI, bukan bug)
+
+- Gejala: Halaman Field Crew (`/dashboard/crew`) mencampur 3 fungsi dalam satu halaman: tambah crew, saldo/top-up Petty Cash (accordion yang sesi lalu dibuat expanded-by-default), dan undang scanner. Founder ingin Petty Cash dipisah jadi halaman sendiri sebelum di-wire ke Dashboard Keuangan.
+- Root cause: Bukan bug — pemisahan halaman UI. Petty Cash jadi halaman sendiri (`/dashboard/petty-cash`); Kelola Crew (`/dashboard/crew`) tetap fokus administrasi akses (crew + scanner); Dashboard Keuangan (`/dashboard/pl-report`) dapat tombol akses ke Petty Cash.
+- File terkait: `client/src/app/dashboard/petty-cash/page.tsx` (baru), `client/src/app/dashboard/crew/page.tsx`, `client/src/components/dashboard/sidebar.tsx`, `client/src/app/dashboard/pl-report/page.tsx`
+- Fix:
+  - Halaman baru `/dashboard/petty-cash`: event selector sendiri (dropdown, TIDAK mewarisi `?eventId=` — konsisten dgn sifat halaman kas lintas-konteks seperti Pencairan Dana), daftar saldo kas crew + form top-up per crew (`POST /api/petty-cash/topup`, expanded-by-default, toggle manual tetap jalan). Kalau event 0 crew → pesan "Belum ada crew di event ini — invite crew terlebih dahulu" + link ke `/dashboard/crew`. Pro-gated, styling ikut konvensi halaman crew (lucide + slate/emerald).
+  - `/dashboard/crew`: seluruh blok Petty Cash (saldo, stats, top-up, accordion) DIHAPUS. Sisa: form tambah crew, daftar crew (nama/divisi/email saja tanpa saldo/top-up), undang scanner + daftar scanner. Import/state/handler yang cuma dipakai Petty Cash ikut dibersihkan (`topupAmounts`, `toppingUp`, `expandedCrew`, `handleTopup`, `toggleExpand`, ikon `ArrowUpCircle`/`ChevronDown`/`ChevronUp`, konstanta `IDR`). Ditambah shortcut link ke Petty Cash.
+  - Sidebar: item baru "Petty Cash" (ikon Wallet, badge "Pro") di group "Operasional", tepat setelah "Field Crew".
+  - Dashboard Keuangan: tombol "Kelola Petty Cash" (selalu tampil, TANPA `?eventId=`) di baris tombol header, styling sama dgn tombol "Expense Tracker"/"Laporan Akhir Event".
+  - TIDAK menyentuh backend/route/controller/schema/logic fee-saldo apa pun — murni relokasi UI.
+- Verifikasi: `npx tsc --noEmit` exit 0; `npm run build` exit 0 (`/dashboard/petty-cash` muncul di route list). Grep: 0 referensi Petty Cash di crew/page.tsx, ada di petty-cash/page.tsx, sidebar, & pl-report.
+- Tag: #ui #petty-cash #crew #refactor #dashboard-keuangan
