@@ -1,7 +1,7 @@
 "use client"
 
 import { Suspense, useEffect, useState, useCallback } from "react"
-import { Ticket as TicketIcon, Plus, Trash2, Pencil, Copy, Check, ExternalLink, Upload, Package, Download, ArrowLeftRight, ArrowLeft } from "lucide-react"
+import { Ticket as TicketIcon, Plus, Trash2, Pencil, Copy, Check, ExternalLink, Upload, Package, ArrowLeftRight, ArrowLeft } from "lucide-react"
 import Link from "next/link"
 import { useRouter, useSearchParams } from "next/navigation"
 import { useUser } from "@/hooks/useUser"
@@ -216,36 +216,6 @@ function TicketsPageInner() {
   const [ticketTypes, setTicketTypes] = useState<TicketType[]>([])
   const [orders, setOrders] = useState<Order[]>([])
   const [loadingDetail, setLoadingDetail] = useState(false)
-  const [downloadingAudience, setDownloadingAudience] = useState(false)
-
-  // Unduh Data Audiens event terpilih (Roadmap #5). Pola aman download PDF (lihat known-bugs.md).
-  const handleDownloadEventAudience = async () => {
-    if (!selectedEventId) return
-    setDownloadingAudience(true)
-    try {
-      const res = await fetch(`/api/tickets/audience-report/event/${selectedEventId}`, { headers: authHeaders() })
-      if (!res.ok) {
-        let message = `Server error (${res.status})`
-        try { const e = await res.json(); message = (e as { message?: string }).message || message } catch { message = res.statusText || message }
-        alert("Gagal mengunduh data audiens: " + message)
-        return
-      }
-      const blob = await res.blob()
-      if (blob.size < 100) { alert("Laporan kosong — coba lagi."); return }
-      const url = URL.createObjectURL(blob)
-      const a = document.createElement("a")
-      a.href = url
-      a.download = `Data-Audiens-${selectedEventId}.pdf`
-      document.body.appendChild(a)
-      a.click()
-      document.body.removeChild(a)
-      setTimeout(() => URL.revokeObjectURL(url), 1000)
-    } catch (e) {
-      alert("Gagal mengunduh data audiens: " + (e instanceof Error ? e.message : "Unknown error"))
-    } finally {
-      setDownloadingAudience(false)
-    }
-  }
 
   const [merchItems, setMerchItems] = useState<MerchItem[]>([])
   const [newMerchName, setNewMerchName] = useState("")
@@ -954,20 +924,11 @@ function TicketsPageInner() {
         </div>
       </div>
 
-      {/* Event aktif — dipilih di Dashboard Tiket & Pencairan, bukan di sini (dropdown dihapus) */}
-      <div className="flex flex-wrap items-end justify-between gap-3">
-        <div>
-          <p className="mb-1.5 text-sm font-medium text-slate-700">Event</p>
-          <p className="text-sm font-semibold text-slate-900">{selectedEvent?.title ?? "Memuat event..."}</p>
-        </div>
-        <button
-          onClick={handleDownloadEventAudience}
-          disabled={downloadingAudience}
-          className="flex items-center gap-2 rounded-lg border border-emerald-200 bg-emerald-50 px-3.5 py-2 text-sm font-semibold text-emerald-700 transition-colors hover:bg-emerald-100 disabled:opacity-50"
-        >
-          <Download className="size-4" />
-          {downloadingAudience ? "Menyiapkan..." : "Download Data Audience"}
-        </button>
+      {/* Event aktif — dipilih di Dashboard Tiket & Pencairan, bukan di sini (dropdown dihapus).
+          Tombol "Data Audience" per-event dipindah ke Dashboard Ticketing (hub), 2026-07-17. */}
+      <div>
+        <p className="mb-1.5 text-sm font-medium text-slate-700">Event</p>
+        <p className="text-sm font-semibold text-slate-900">{selectedEvent?.title ?? "Memuat event..."}</p>
       </div>
 
       {selectedEventId && loadingDetail && !event && (

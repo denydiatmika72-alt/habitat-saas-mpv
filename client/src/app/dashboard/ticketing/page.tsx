@@ -12,6 +12,7 @@ import {
   ArrowLeft,
   ChartLineUp,
   Storefront,
+  DownloadSimple,
 } from "@phosphor-icons/react/dist/ssr"
 
 // Dashboard Tiket & Pencairan — hub (Layer 2) kategori "Tiket & Pencairan".
@@ -227,6 +228,38 @@ function TicketingDashboardInner() {
   const [loading, setLoading] = useState(false)
   // null = tampilan mingguan; berisi tanggal awal minggu = drill-down harian minggu tsb.
   const [drilldownWeek, setDrilldownWeek] = useState<string | null>(null)
+  const [downloadingAudience, setDownloadingAudience] = useState(false)
+
+  // Unduh Data Audiens event terpilih (Roadmap #5) — dipindah dari Manajemen Tiket ke hub ini
+  // (2026-07-17) supaya promotor tidak perlu masuk Manajemen Tiket hanya untuk mengunduhnya.
+  // Pola aman download PDF (lihat known-bugs.md): cek res.ok → blob → anchor → revokeObjectURL.
+  const handleDownloadEventAudience = async () => {
+    if (!selectedEventId) return
+    setDownloadingAudience(true)
+    try {
+      const res = await fetch(`/api/tickets/audience-report/event/${selectedEventId}`, { headers: authHeaders() })
+      if (!res.ok) {
+        let message = `Server error (${res.status})`
+        try { const e = await res.json(); message = (e as { message?: string }).message || message } catch { message = res.statusText || message }
+        alert("Gagal mengunduh data audiens: " + message)
+        return
+      }
+      const blob = await res.blob()
+      if (blob.size < 100) { alert("Laporan kosong — coba lagi."); return }
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement("a")
+      a.href = url
+      a.download = `Data-Audiens-${selectedEventId}.pdf`
+      document.body.appendChild(a)
+      a.click()
+      document.body.removeChild(a)
+      setTimeout(() => URL.revokeObjectURL(url), 1000)
+    } catch (e) {
+      alert("Gagal mengunduh data audiens: " + (e instanceof Error ? e.message : "Unknown error"))
+    } finally {
+      setDownloadingAudience(false)
+    }
+  }
 
   useEffect(() => {
     fetch("/api/events", { headers: authHeaders() })
@@ -357,6 +390,19 @@ function TicketingDashboardInner() {
             <Wallet size={18} weight="duotone" color="var(--emerald-dark)" />
             Pencairan Dana
           </Link>
+          {/* Data Audiens per-event (dipindah dari Manajemen Tiket, 2026-07-17). Butuh event terpilih;
+              dinonaktifkan sampai ada event — konsisten dengan tombol "Manajemen Tiket" di atas. */}
+          <button
+            type="button"
+            onClick={handleDownloadEventAudience}
+            disabled={!selectedEventId || downloadingAudience}
+            title={!selectedEventId ? "Pilih event dulu untuk mengunduh data audiens" : undefined}
+            className="tkd-btn tkd-btn-secondary"
+            style={{ display: "inline-flex", alignItems: "center", gap: 8, fontFamily: "var(--font-display)", fontWeight: 700, fontSize: 13, padding: "10px 18px", borderRadius: 12, background: "var(--surface-card)", color: selectedEventId ? "var(--ink)" : "var(--text-faint)", border: "1.5px solid var(--line)", cursor: selectedEventId ? "pointer" : "not-allowed", opacity: selectedEventId ? 1 : 0.55 }}
+          >
+            <DownloadSimple size={18} weight="duotone" color={selectedEventId ? "var(--emerald-dark)" : "var(--text-faint)"} />
+            {downloadingAudience ? "Menyiapkan..." : "Data Audience"}
+          </button>
         </div>
       </div>
 

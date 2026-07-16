@@ -302,7 +302,14 @@ export default function InvoicePageWrapper() {
 function InvoicePage() {
   const searchParams = useSearchParams()
   const router = useRouter()
-  const [tab, setTab] = useState<"sponsorship" | "tenant" | "manual" | "list" | "settings">("sponsorship")
+  // Deep-link opsional ke sub-tab tertentu via ?tab= (mis. dari halaman Sponsor & Partner →
+  // ?tab=sponsorship). Default tetap "sponsorship" kalau param tidak ada/invalid.
+  const tabParam = searchParams.get("tab")
+  const initialTab: "sponsorship" | "tenant" | "manual" | "list" | "settings" =
+    tabParam === "sponsorship" || tabParam === "tenant" || tabParam === "manual" || tabParam === "list" || tabParam === "settings"
+      ? tabParam
+      : "sponsorship"
+  const [tab, setTab] = useState<"sponsorship" | "tenant" | "manual" | "list" | "settings">(initialTab)
 
   // Promoter settings
   const [settings, setSettings] = useState<PromoterSettings>({

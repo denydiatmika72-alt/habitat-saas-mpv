@@ -6,7 +6,6 @@ import {
   BadgeCheck,
   Check,
   Copy,
-  Download,
   ExternalLink,
   FileText,
   KeyRound,
@@ -23,7 +22,7 @@ import {
   Users,
   X,
 } from "lucide-react"
-import { Button } from "@/components/ui/button"
+import { Button, buttonVariants } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
@@ -1894,37 +1893,6 @@ export default function SponsorManagementPage() {
   const [benefits, setBenefits] = useState<ApiBenefit[]>([])
   const [benefitsLoading, setBenefitsLoading] = useState(true)
   const [thresholds, setThresholds] = useState<ApiThreshold[]>([])
-  const [downloadingAudience, setDownloadingAudience] = useState(false)
-
-  // Unduh Data Audiens gabungan semua event — data demografis pembeli tiket untuk bantu
-  // pitching ke sponsor. Pola aman download PDF (lihat known-bugs.md): cek res.ok dulu,
-  // parse JSON error kalau gagal, blob kalau sukses.
-  async function handleDownloadAllAudience() {
-    setDownloadingAudience(true)
-    try {
-      const res = await fetch(`${API_BASE}/tickets/audience-report/all-events`, { headers: authHeaders() })
-      if (!res.ok) {
-        let message = `Server error (${res.status})`
-        try { const e = await res.json(); message = (e as { message?: string }).message || message } catch { message = res.statusText || message }
-        alert("Gagal mengunduh data audiens: " + message)
-        return
-      }
-      const blob = await res.blob()
-      if (blob.size < 100) { alert("Laporan kosong — coba lagi."); return }
-      const url = URL.createObjectURL(blob)
-      const a = document.createElement("a")
-      a.href = url
-      a.download = "Data-Audiens-Semua-Event.pdf"
-      document.body.appendChild(a)
-      a.click()
-      document.body.removeChild(a)
-      setTimeout(() => URL.revokeObjectURL(url), 1000)
-    } catch (e) {
-      alert("Gagal mengunduh data audiens: " + (e instanceof Error ? e.message : "Unknown error"))
-    } finally {
-      setDownloadingAudience(false)
-    }
-  }
 
   function fetchBenefits() {
     fetch(`${API_BASE}/sponsor/benefits`, { headers: authHeaders() })
@@ -1997,16 +1965,18 @@ export default function SponsorManagementPage() {
             Invite brands with secure codes and design the sponsorship packages they can purchase — all from one premium workspace.
           </p>
         </div>
-        <Button
-          type="button"
-          variant="outline"
-          onClick={handleDownloadAllAudience}
-          disabled={downloadingAudience}
-          className="shrink-0 gap-2 border-slate-200 bg-white text-slate-900 hover:bg-slate-100 hover:text-slate-900 disabled:opacity-50"
+        {/* Menuju generator invoice sponsor (tab Sponsorship) — lebih relevan dengan alur kerja
+            sponsor daripada tombol Data Audiens lama (redundan, sudah ada di Dashboard Ticketing). */}
+        <Link
+          href="/dashboard/invoice?tab=sponsorship"
+          className={cn(
+            buttonVariants({ variant: "outline" }),
+            "shrink-0 gap-2 border-slate-200 bg-white text-slate-900 hover:bg-slate-100 hover:text-slate-900",
+          )}
         >
-          {downloadingAudience ? <RotateCw className="size-4 animate-spin" /> : <Download className="size-4" />}
-          {downloadingAudience ? "Menyiapkan..." : "Data Audience (Semua Event)"}
-        </Button>
+          <FileText className="size-4" />
+          Kelola Invoice Sponsor
+        </Link>
       </div>
 
       <InvitationCodeGenerator />

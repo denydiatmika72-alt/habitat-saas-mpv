@@ -654,6 +654,11 @@ Founder berencana suatu saat mengubah nexEvent dari web app menjadi aplikasi mob
   kategori sisanya.** Lihat known-bugs entry [2026-07-15].
   **Layer-2 KEDUA — Dashboard Tiket & Pencairan (`/dashboard/ticketing`)**, dibangun dari 0 (2026-07-15, pending deploy):
   hub kategori "Tiket & Pencairan" — 3 kartu (tiket/merch/bundling), grafik tren penjualan, kartu Saldo Payout lintas-event.
+  **Tombol "Data Audience" per-event ada di header hub ini (sejak 2026-07-17, dipindah dari Manajemen Tiket)** — unduh PDF
+  audiens event yang dipilih di selector hub (`GET /api/tickets/audience-report/event/:id`), dinonaktifkan sampai event
+  dipilih. Manajemen Tiket (`/dashboard/tickets`) TIDAK lagi punya tombol ini. (Catatan terkait: tombol "Data Audiens Semua
+  Event" di halaman Sponsor & Partner DIHAPUS 2026-07-17 — diganti link "Kelola Invoice Sponsor" → `/dashboard/invoice?tab=sponsorship`;
+  invoice kini dukung deep-link sub-tab via `?tab=`. Lihat known-bugs [2026-07-17].)
   Endpoint BARU (read-only, `ticket-dashboard.controller.js`): `GET /api/tickets/dashboard-summary?eventId=` (count+Rp per
   kategori) & `GET /api/tickets/sales-trend?eventId=[&weekOf=]` (span ≤45 hari → harian; >45 → mingguan bucket Senin +
   drill-down `weekOf`; hari dipotong WIB).
