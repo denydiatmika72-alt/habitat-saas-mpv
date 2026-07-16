@@ -1,7 +1,8 @@
 "use client"
 
 import { useEffect, useState, useCallback } from "react"
-import { Banknote, Wallet, Pencil, Check, Download } from "lucide-react"
+import { Banknote, Wallet, Pencil, Check, Download, ArrowLeft } from "lucide-react"
+import Link from "next/link"
 import { useUser } from "@/hooks/useUser"
 
 type Bank = { filled: boolean; bankName: string | null; bankAccount: string | null; accountHolder: string | null }
@@ -196,6 +197,22 @@ export default function PayoutPage() {
 
   return (
     <div className="mx-auto flex w-full max-w-7xl flex-col gap-6">
+      {/* Kembali ke pintu utama kategori Tiket & Pencairan.
+          TANPA ?eventId= — DISENGAJA, bukan kelalaian. Payout bersifat LINTAS EVENT (saldo &
+          pengajuan tidak terikat satu event; halaman ini memang tidak punya pemilih event sama
+          sekali), jadi tidak ada konteks event untuk dipertahankan. Halaman detail lain di pola hub
+          ini (mis. Manajemen Tiket) memang mewarisi eventId — payout pengecualian yang disengaja.
+          JANGAN tambahkan eventId/redirect/pemilih event ke halaman ini. */}
+      <div>
+        <Link
+          href="/dashboard/ticketing"
+          className="inline-flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm font-semibold text-slate-700 transition-colors hover:bg-slate-50"
+        >
+          <ArrowLeft className="size-4" />
+          Kembali ke Dashboard Ticketing
+        </Link>
+      </div>
+
       {/* Header */}
       <div className="flex items-start gap-4">
         <div className="flex size-11 items-center justify-center rounded-xl bg-emerald-50 text-emerald-800">

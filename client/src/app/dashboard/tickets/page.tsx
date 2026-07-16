@@ -1,7 +1,9 @@
 "use client"
 
-import { useEffect, useState, useCallback } from "react"
-import { Ticket as TicketIcon, Plus, Trash2, Pencil, Copy, Check, ExternalLink, Upload, Package, Download, ArrowLeftRight } from "lucide-react"
+import { Suspense, useEffect, useState, useCallback } from "react"
+import { Ticket as TicketIcon, Plus, Trash2, Pencil, Copy, Check, ExternalLink, Upload, Package, Download, ArrowLeftRight, ArrowLeft } from "lucide-react"
+import Link from "next/link"
+import { useRouter, useSearchParams } from "next/navigation"
 import { useUser } from "@/hooks/useUser"
 import { formatIDRInput, parseIDRInput } from "@/lib/formatNumber"
 
@@ -191,11 +193,25 @@ function toLocalInputValue(iso: string | null) {
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`
 }
 
+// useSearchParams (Next 16) WAJIB dibungkus <Suspense> — tanpa ini build gagal / halaman jatuh ke
+// dynamic rendering. Pola wrapper + *Inner sama dgn expenses/event-summary/ticketing.
 export default function TicketsPage() {
+  return (
+    <Suspense fallback={<div className="p-10 text-center text-slate-400">Memuat...</div>}>
+      <TicketsPageInner />
+    </Suspense>
+  )
+}
+
+function TicketsPageInner() {
   const { loading: userLoading } = useUser()
+  const router = useRouter()
+  const searchParams = useSearchParams()
 
   const [events, setEvents] = useState<Event[]>([])
-  const [selectedEventId, setSelectedEventId] = useState("")
+  // Event diwarisi dari Dashboard Tiket & Pencairan — halaman ini bukan pintu masuk sendiri
+  // (pola hub Layer 2, sama dgn Expense Tracker yang mewarisi dari Dashboard Keuangan).
+  const selectedEventId = searchParams.get("eventId") ?? ""
   const [event, setEvent] = useState<FullEvent | null>(null)
   const [ticketTypes, setTicketTypes] = useState<TicketType[]>([])
   const [orders, setOrders] = useState<Order[]>([])
@@ -296,6 +312,12 @@ export default function TicketsPage() {
   const [termsConditions, setTermsConditions] = useState("")
   const [savingInfo, setSavingInfo] = useState(false)
   const [infoSaved, setInfoSaved] = useState(false)
+
+  // Tanpa konteks event (akses langsung via URL/bookmark), kembalikan ke pintu utama kategori
+  // Tiket & Pencairan. Sama persis dgn expenses/event-summary → /dashboard/pl-report.
+  useEffect(() => {
+    if (!selectedEventId) router.replace("/dashboard/ticketing")
+  }, [selectedEventId, router])
 
   useEffect(() => {
     fetch("/api/events", { headers: authHeaders() })
@@ -882,6 +904,11 @@ export default function TicketsPage() {
     }
   }
 
+  // Judul event aktif untuk header (dropdown pilih event sudah dihapus — event diwarisi dari hub).
+  // Pola sama dgn Expense Tracker; daftar `events` yang dulu mengisi dropdown tetap dipakai di sini,
+  // jadi fetch /api/events yang sudah ada tidak berubah & tidak jadi kode mati.
+  const selectedEvent = events.find((ev) => ev.id === selectedEventId) || null
+
   // Gate edit/pindah stok (Storefront Roadmap #2) — cermin backend isStockEditAllowed:
   // hanya boleh setelah storefront disetujui admin (fee ikut diatur saat approval).
   const canEditStock = event?.storefrontStatus === "approved"
@@ -901,8 +928,22 @@ export default function TicketsPage() {
     )
   }
 
+  // Redirect sedang berjalan — jangan render konten halaman.
+  if (!selectedEventId) return null
+
   return (
     <div className="mx-auto flex w-full max-w-7xl flex-col gap-6">
+      {/* Kembali ke pintu utama kategori Tiket & Pencairan (event dipertahankan) */}
+      <div>
+        <Link
+          href={`/dashboard/ticketing?eventId=${selectedEventId}`}
+          className="inline-flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm font-semibold text-slate-700 transition-colors hover:bg-slate-50"
+        >
+          <ArrowLeft className="size-4" />
+          Kembali ke Dashboard Ticketing
+        </Link>
+      </div>
+
       <div className="flex items-start gap-4">
         <div className="flex size-11 items-center justify-center rounded-xl bg-emerald-50 text-emerald-800">
           <TicketIcon className="size-5" />
@@ -913,38 +954,21 @@ export default function TicketsPage() {
         </div>
       </div>
 
-      <div className="flex flex-wrap items-end gap-3">
+      {/* Event aktif — dipilih di Dashboard Tiket & Pencairan, bukan di sini (dropdown dihapus) */}
+      <div className="flex flex-wrap items-end justify-between gap-3">
         <div>
-          <label className="mb-1.5 block text-sm font-medium text-slate-700">Pilih Event</label>
-          <select
-            value={selectedEventId}
-            onChange={(e) => setSelectedEventId(e.target.value)}
-            className="max-w-sm truncate rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-700 outline-none transition-colors focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500/30"
-          >
-            <option value="">-- Pilih event --</option>
-            {events.map((ev) => (
-              <option key={ev.id} value={ev.id}>{ev.title}</option>
-            ))}
-          </select>
+          <p className="mb-1.5 text-sm font-medium text-slate-700">Event</p>
+          <p className="text-sm font-semibold text-slate-900">{selectedEvent?.title ?? "Memuat event..."}</p>
         </div>
-        {selectedEventId && (
-          <button
-            onClick={handleDownloadEventAudience}
-            disabled={downloadingAudience}
-            className="flex items-center gap-2 rounded-lg border border-emerald-200 bg-emerald-50 px-3.5 py-2 text-sm font-semibold text-emerald-700 transition-colors hover:bg-emerald-100 disabled:opacity-50"
-          >
-            <Download className="size-4" />
-            {downloadingAudience ? "Menyiapkan..." : "Download Data Audience"}
-          </button>
-        )}
+        <button
+          onClick={handleDownloadEventAudience}
+          disabled={downloadingAudience}
+          className="flex items-center gap-2 rounded-lg border border-emerald-200 bg-emerald-50 px-3.5 py-2 text-sm font-semibold text-emerald-700 transition-colors hover:bg-emerald-100 disabled:opacity-50"
+        >
+          <Download className="size-4" />
+          {downloadingAudience ? "Menyiapkan..." : "Download Data Audience"}
+        </button>
       </div>
-
-      {!selectedEventId && (
-        <div className="rounded-xl border border-slate-200 bg-white py-14 text-center">
-          <TicketIcon className="mx-auto mb-3 size-10 text-slate-300" />
-          <p className="text-sm text-slate-400">Pilih event untuk mengelola tiket.</p>
-        </div>
-      )}
 
       {selectedEventId && loadingDetail && !event && (
         <div className="flex justify-center py-14">

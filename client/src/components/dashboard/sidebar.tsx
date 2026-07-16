@@ -12,8 +12,6 @@ import {
   ReceiptText,
   BarChart2,
   ShieldCheck,
-  Ticket,
-  Banknote,
   TrendingUp,
   ChevronDown,
 } from "lucide-react"
@@ -43,9 +41,11 @@ const nav: NavItem[] = [
   { label: "Sponsor & Partner", icon: Handshake, href: "/dashboard/sponsor", badge: "Pro", group: "Kerjasama" },
   { label: "Vendor & Talent", icon: Users, onClick: () => alert("Fitur Vendor Segera Hadir"), hidden: true },
   { label: "Field Crew", icon: Users, href: "/dashboard/crew", badge: "Pro", group: "Operasional" },
+  // Pola hub (Layer 2): "Dashboard Tiket & Pencairan" adalah SATU-SATUNYA pintu masuk kategori ini.
+  // "Manajemen Tiket" (/dashboard/tickets) & "Pencairan Dana" (/dashboard/payout) sengaja TIDAK ada
+  // di sidebar — dicapai lewat tombol di hub. Manajemen Tiket mewarisi ?eventId= dari hub; dibuka
+  // tanpa itu ia redirect balik ke hub, jadi item sidebar (tanpa eventId) hanya akan memantul.
   { label: "Dashboard Tiket & Pencairan", icon: BarChart2, href: "/dashboard/ticketing", group: "Tiket & Pencairan" },
-  { label: "Manajemen Tiket", icon: Ticket, href: "/dashboard/tickets", group: "Tiket & Pencairan" },
-  { label: "Pencairan Dana", icon: Banknote, href: "/dashboard/payout", group: "Tiket & Pencairan" },
   { label: "Dashboard Keuangan", icon: BarChart2, href: "/dashboard/pl-report", badge: "Pro", group: "Keuangan" },
   { label: "Approve User", icon: ShieldCheck, href: "/dashboard/admin", adminOnly: true },
   { label: "Pendapatan Platform", icon: TrendingUp, href: "/dashboard/admin/revenue", adminOnly: true },

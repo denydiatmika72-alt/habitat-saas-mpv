@@ -326,14 +326,29 @@ function TicketingDashboardInner() {
           <p style={{ font: "400 13px/1.5 var(--font-body)", color: "var(--text-muted)", margin: 0 }}>Ringkasan penjualan real-time dan saldo pencairan Anda.</p>
         </div>
         <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
-          <Link
-            href="/dashboard/tickets"
-            className="tkd-btn tkd-btn-secondary"
-            style={{ display: "inline-flex", alignItems: "center", gap: 8, fontFamily: "var(--font-display)", fontWeight: 700, fontSize: 13, padding: "10px 18px", borderRadius: 12, background: "var(--surface-card)", color: "var(--ink)", border: "1.5px solid var(--line)", textDecoration: "none" }}
-          >
-            <Storefront size={18} weight="duotone" color="var(--emerald-dark)" />
-            Manajemen Tiket
-          </Link>
+          {/* Manajemen Tiket WAJIB membawa ?eventId= — halaman itu mewarisi event dari sini dan
+              redirect balik ke sini kalau param-nya kosong. Tanpa param, tombol ini cuma memantul.
+              Karena header selalu ter-render (termasuk sebelum event dipilih), tombol dinonaktifkan
+              selama belum ada event — lebih jujur daripada mengirim promotor bolak-balik. */}
+          {selectedEventId ? (
+            <Link
+              href={`/dashboard/tickets?eventId=${selectedEventId}`}
+              className="tkd-btn tkd-btn-secondary"
+              style={{ display: "inline-flex", alignItems: "center", gap: 8, fontFamily: "var(--font-display)", fontWeight: 700, fontSize: 13, padding: "10px 18px", borderRadius: 12, background: "var(--surface-card)", color: "var(--ink)", border: "1.5px solid var(--line)", textDecoration: "none" }}
+            >
+              <Storefront size={18} weight="duotone" color="var(--emerald-dark)" />
+              Manajemen Tiket
+            </Link>
+          ) : (
+            <span
+              title="Pilih event dulu untuk mengelola tiketnya"
+              style={{ display: "inline-flex", alignItems: "center", gap: 8, fontFamily: "var(--font-display)", fontWeight: 700, fontSize: 13, padding: "10px 18px", borderRadius: 12, background: "var(--surface-card)", color: "var(--text-faint)", border: "1.5px solid var(--line)", opacity: 0.55, cursor: "not-allowed" }}
+            >
+              <Storefront size={18} weight="duotone" color="var(--text-faint)" />
+              Manajemen Tiket
+            </span>
+          )}
+          {/* Pencairan Dana TIDAK butuh eventId — payout lintas-event (lihat catatan di payout/page.tsx). */}
           <Link
             href="/dashboard/payout"
             className="tkd-btn tkd-btn-secondary"

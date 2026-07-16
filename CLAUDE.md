@@ -651,8 +651,19 @@ Founder berencana suatu saat mengubah nexEvent dari web app menjadi aplikasi mob
   Endpoint BARU (read-only, `ticket-dashboard.controller.js`): `GET /api/tickets/dashboard-summary?eventId=` (count+Rp per
   kategori) & `GET /api/tickets/sales-trend?eventId=[&weekOf=]` (span ≤45 hari → harian; >45 → mingguan bucket Senin +
   drill-down `weekOf`; hari dipotong WIB).
-  **BEDA DISENGAJA dari pola Keuangan**: turunannya (Manajemen Tiket & Pencairan Dana) **TETAP item sidebar** — tombol di hub
-  cuma pintu masuk TAMBAHAN, bukan pengganti (keduanya tujuan kerja berdiri sendiri; payout malah lintas-event).
+  **✅ Pola hub PENUH sejak 2026-07-16 — MEMBALIK keputusan lama "turunannya tetap item sidebar"**: "Manajemen Tiket" &
+  "Pencairan Dana" **SUDAH DIHAPUS dari sidebar**; `/dashboard/ticketing` kini **SATU-SATUNYA pintu masuk** kategori ini,
+  sama seperti Dashboard Keuangan. Grup sidebar "Tiket & Pencairan" tetap ada dgn "Dashboard Tiket & Pencairan" sebagai
+  satu-satunya item.
+  - **Manajemen Tiket (`/dashboard/tickets`) = per-event**: mewarisi `?eventId=` dari hub, dropdown pilih event DIHAPUS,
+    dibuka tanpa `eventId` → `router.replace("/dashboard/ticketing")`. Pola & kode persis `expenses`/`event-summary`.
+    Konsekuensi: tombol "Manajemen Tiket" di hub **wajib** mengirim `?eventId=` (kalau tidak, langsung memantul balik) —
+    karena itu tombolnya **dinonaktifkan selama event belum dipilih**, bukan dibiarkan memantul.
+  - **Pencairan Dana (`/dashboard/payout`) = LINTAS EVENT — PENGECUALIAN DISENGAJA, BUKAN KELALAIAN**: halaman ini **tidak
+    punya konteks event sama sekali** (saldo & pengajuan pencairan tidak terikat satu event, dan memang tidak ada pemilih
+    event di sana). Jadi ia **TIDAK** mewarisi `eventId`, **TIDAK** punya redirect, dan tombol kembalinya link polos tanpa
+    query param. **JANGAN "perbaiki" dengan menambah pemilih event / eventId / redirect ke halaman ini** — itu bukan celah
+    yang terlewat, itu memang sifat fiturnya. Lihat komentar penjelas di `payout/page.tsx`.
   **Seksi "Breakdown Penjualan per Kategori" (2026-07-16)**: tiket per JENIS & merch per SIZE dgn progress bar
   (sold/kuota, sold/stok); bundling **hanya TOTAL tanpa bar** — `BundlePackage` memang TIDAK punya kuota sendiri,
   stoknya menumpang tiket & merch komponennya. Sumber: endpoint baru `GET /api/tickets/category-breakdown?eventId=`
