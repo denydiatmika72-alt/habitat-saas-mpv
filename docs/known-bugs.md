@@ -2298,3 +2298,14 @@ tidak akan terhitung** → catatan jadi bohong dan promotor salah membaca sisa k
   - **Tombol hub diperbaiki (mencegah pantulan)**: tombol "Manajemen Tiket" di `/dashboard/ticketing` dulu link POLOS `/dashboard/tickets` tanpa eventId → dengan redirect baru, tombol itu akan langsung memantul balik ke hub. Sekarang mengirim `?eventId=${selectedEventId}`, dan **dinonaktifkan** (abu-abu, `cursor: not-allowed`, title "Pilih event dulu") selama event belum dipilih — karena header sengaja selalu ter-render, termasuk sebelum event dipilih. Tombol "Pencairan Dana" tetap link polos (benar, tidak butuh eventId).
 - Verifikasi: `npx tsc --noEmit` exit 0; `npm run build` exit 0 — `/dashboard/tickets`, `/dashboard/payout`, `/dashboard/ticketing` ketiganya tetap prerender static (○). Grep: sidebar tidak lagi punya item "Manajemen Tiket"/"Pencairan Dana"; tickets punya `searchParams.get("eventId")` + `router.replace` + `return null` + tombol Kembali; payout HANYA punya tombol Kembali (nol logika eventId). Data-fetching, kalkulasi stok/fee, dan logika saldo payout tidak disentuh.
 - Tag: #ui #navigation #dashboard-ticketing #hub-pattern #ticketing #payout
+
+---
+
+## [2026-07-16] Petty Cash "hilang" di halaman Field Crew (padahal ada — collapsed by default)
+
+- Gejala: Founder review halaman `/dashboard/crew` (Field Crew) di production dan menyimpulkan fitur Petty Cash TIDAK ada — yang terlihat hanya form tambah crew + form undang scanner. Tidak ada tombol top-up maupun tampilan saldo kas di mana pun.
+- Root cause: **Bukan bug — fitur sepenuhnya berfungsi (schema + backend `/api/petty-cash/*` + frontend semua ada), tapi UX default (collapsed) membuatnya sulit ditemukan.** Saldo kas + form top-up berada di dalam accordion per-crew (`expandedCrew[c.accountId]`) yang default-nya collapsed, DAN blok crew hanya render kalau event dipilih + ada crew. Jadi saat review tanpa crew (atau tanpa klik chevron untuk expand), fitur tampak "hilang" sepenuhnya.
+- File terkait: `client/src/app/dashboard/crew/page.tsx`
+- Fix: Saat data crew dimuat, inisialisasi `expandedCrew` dengan semua `accountId` → `true` (di initial fetch useEffect dan di refresh setelah invite; refresh mempertahankan pilihan collapse manual crew lama via `prev[accountId] ?? true`). Sekarang saldo + top-up langsung terlihat untuk setiap crew tanpa klik. Toggle chevron (collapse/expand manual) TIDAK diubah — tetap berfungsi penuh, hanya default state yang berubah dari collapsed → expanded.
+- Verifikasi: `npx tsc --noEmit` exit 0; `npm run build` exit 0 (`/dashboard/crew` tetap prerender static ○). `toggleExpand` (flip `!prev[accountId]`) tidak disentuh → klik pertama pada card expanded akan collapse, klik lagi re-expand. Data-fetching, logika top-up, dan kalkulasi saldo tidak diubah.
+- Tag: #ui #ux #petty-cash #field-crew #discoverability

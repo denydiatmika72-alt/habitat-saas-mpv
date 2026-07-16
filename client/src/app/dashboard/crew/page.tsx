@@ -78,7 +78,16 @@ export default function CrewPage() {
     setFetchingCrew(true)
     fetch(`/api/crew?eventId=${selectedEventId}`, { headers: authHeaders() })
       .then((r) => (r.ok ? r.json() : null))
-      .then((data) => { if (data?.success) setCrew(data.crew) })
+      .then((data) => {
+        if (data?.success) {
+          setCrew(data.crew)
+          // Petty cash balance/top-up section expanded by default → fitur langsung terlihat
+          // tanpa perlu klik chevron. Toggle collapse manual tetap berfungsi.
+          setExpandedCrew(
+            Object.fromEntries((data.crew as CrewMember[]).map((c) => [c.accountId, true]))
+          )
+        }
+      })
       .catch(() => {})
       .finally(() => setFetchingCrew(false))
   }, [selectedEventId, isPro])
@@ -113,7 +122,15 @@ export default function CrewPage() {
         // Refresh crew list
         const refresh = await fetch(`/api/crew?eventId=${selectedEventId}`, { headers: authHeaders() })
         const refreshData = await refresh.json()
-        if (refreshData.success) setCrew(refreshData.crew)
+        if (refreshData.success) {
+          setCrew(refreshData.crew)
+          // Crew baru default expanded; pertahankan pilihan collapse manual pada crew lama.
+          setExpandedCrew((prev) =>
+            Object.fromEntries(
+              (refreshData.crew as CrewMember[]).map((c) => [c.accountId, prev[c.accountId] ?? true])
+            )
+          )
+        }
       } else {
         setInviteError(data.message ?? "Gagal menambahkan crew.")
       }

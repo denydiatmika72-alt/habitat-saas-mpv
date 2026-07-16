@@ -251,6 +251,7 @@ Seluruh sistem ini SUDAH live — jangan bangun ulang. Yang sudah ada:
 - **UI mobile Field Crew**: `/field` (halaman standalone, di luar layout `/dashboard`, light theme) — crew catat `expense`/`return`; `topup` hanya promotor via dashboard.
 - **Integrasi P&L Report**: SUDAH terintegrasi. Aturan KRITIS (tetap berlaku): P&L hanya menghitung `type:"expense"` — `topup` & `return` BUKAN biaya (mutasi internal). Saldo crew = topup − expense − return.
 - Endpoint utama: `/api/crew/*` (invite/list/remove/my-events) & `/api/petty-cash/*` (topup/transaction/my-account/overview).
+- **UI dashboard promotor** (`/dashboard/crew`, label sidebar "Field Crew"): tiap kartu crew menampilkan saldo kas + form top-up. Sejak 2026-07-16 seksi ini **expanded by default** saat data crew dimuat (sebelumnya collapsed di dalam accordion → fitur Petty Cash tampak "hilang" saat direview). Toggle chevron collapse/expand manual tetap berfungsi. Jangan bingung lagi soal visibilitas fitur ini. Lihat known-bugs entry [2026-07-16] Petty Cash "hilang".
 
 ## Pricing & Subscription Model
 
