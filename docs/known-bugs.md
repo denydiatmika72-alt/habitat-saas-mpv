@@ -2351,3 +2351,14 @@ tidak akan terhitung** → catatan jadi bohong dan promotor salah membaca sisa k
 - Tag: #ui #navigation #petty-cash #dashboard-keuangan #sidebar #crew
 
 ---
+
+
+## [2026-07-17] Input "Deskripsi" di Pemasukan Lain (P&L Report) kehilangan fokus tiap keystroke
+
+- Gejala: Di halaman P&L Report, seksi "Pemasukan Lain", mengetik di field "Deskripsi" membuat input kehilangan fokus SETIAP kali menekan satu tombol — user harus klik lagi ke field untuk mengetik karakter berikutnya. Founder melaporkan terasa "seperti nge-refresh".
+- Root cause: Komponen `Shell` (dan `PageHeader`) didefinisikan DI DALAM body `PLReportPageInner` sebagai arrow function (`const Shell = ({ children }) => (...)`), dan seluruh isi halaman dirender di dalam `<Shell>...</Shell>`. Tiap keystroke memanggil `setOiDescription` → `PLReportPageInner` re-render → referensi fungsi `Shell` BARU dibuat tiap render. React membandingkan tipe elemen antar-render berdasarkan referensi; karena tipe `Shell` berubah, React MENG-UNMOUNT seluruh subtree di dalam `<Shell>` lalu me-remount node DOM baru → `<input>` yang sedang difokus ikut dihancurkan → fokus hilang tiap keystroke. Bukan masalah `key` prop dan bukan pada input Deskripsi itu sendiri (input-nya inline JSX dengan `value`/`onChange` stabil, tanpa `key`) — masalahnya ada di ancestor `Shell` yang di-redefine.
+- File terkait: `client/src/app/dashboard/pl-report/page.tsx`
+- Fix: Hoist `Shell` & `PageHeader` ke top-level modul (jadi `function Shell(...)`/`function PageHeader()`), di luar `PLReportPageInner`, sehingga identitasnya stabil lintas re-render dan React tidak lagi remount subtree. Aman karena keduanya hanya memakai konstanta level-modul (`dsVars`, `SCOPED_CSS`, `monoLabel`, `Tag`) — tidak menutup (closure) state/props komponen. Logika `onChange`/state `oiDescription`/validasi/submit TIDAK diubah. Ditambah komentar peringatan di atas definisi.
+- Verifikasi: `npx tsc --noEmit` exit 0; `npm run build` exit 0 (pl-report tetap prerender static). Secara struktural, input Deskripsi kini punya ancestor `Shell` beridentitas stabil → tidak ada unmount/remount saat state input berubah, sehingga node `<input>` bertahan & fokus tidak hilang antar-keystroke. Deploy Vercel READY (SHA cocok), GET /dashboard/pl-report → 200; founder verifikasi manual ketik satu kalimat penuh tanpa kehilangan fokus.
+- Catatan follow-up: pola sama (`const Shell` didefinisikan di dalam komponen) juga ada di `client/src/app/dashboard/ticketing/page.tsx:292` — belum diperbaiki di task ini, kandidat perbaikan berikutnya.
+- Tag: #bug #react #input-focus #pl-report #ui

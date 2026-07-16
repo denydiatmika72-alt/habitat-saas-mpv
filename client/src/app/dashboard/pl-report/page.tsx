@@ -160,6 +160,40 @@ const h2Style: React.CSSProperties = { font: "700 18px/1.25 var(--font-display)"
 const fieldLabel: React.CSSProperties = { fontFamily: "var(--font-mono)", fontSize: 11, fontWeight: 500, letterSpacing: "0.06em", textTransform: "uppercase", color: "var(--text-muted)", display: "block", marginBottom: 6 }
 const inputBase: React.CSSProperties = { width: "100%", fontFamily: "var(--font-body)", fontSize: 14, padding: "11px 14px", borderRadius: 10, border: "1.5px solid var(--line)", background: "var(--surface-card)", color: "var(--ink)", outline: "none" }
 
+// ── Page shell (warm canvas + design tokens) ────────────────────────────────────
+// PENTING: Shell & PageHeader WAJIB didefinisikan di top-level modul, BUKAN di dalam
+// PLReportPageInner. Kalau di dalam komponen, tiap render (mis. tiap ketik di input
+// "Deskripsi" Pemasukan Lain) membuat referensi fungsi Shell BARU → React meng-unmount
+// & remount seluruh subtree di dalam <Shell>, sehingga input yang sedang difokus
+// kehilangan fokus tiap keystroke. Keduanya hanya memakai konstanta level-modul
+// (dsVars/SCOPED_CSS/monoLabel/Tag), jadi aman di-hoist. Lihat known-bugs [2026-07-17].
+function Shell({ children }: { children: React.ReactNode }) {
+  return (
+    <div
+      style={{ ...dsVars, background: "var(--bg-page)", color: "var(--text-body)", fontFamily: "var(--font-body)" }}
+      className="-mx-4 -mb-24 min-h-screen px-4 py-6 md:-mx-8 md:px-8 md:py-8 lg:-mb-8 lg:pb-8"
+    >
+      <style>{SCOPED_CSS}</style>
+      <div style={{ maxWidth: 1180, margin: "0 auto", display: "flex", flexDirection: "column", gap: 22 }}>
+        {children}
+      </div>
+    </div>
+  )
+}
+
+function PageHeader() {
+  return (
+    <div style={{ minWidth: 260 }}>
+      <div style={{ ...monoLabel, display: "flex", alignItems: "center", gap: 8, marginBottom: 6 }}>
+        Keuangan · Laporan
+        <Tag color="amber">Pro</Tag>
+      </div>
+      <h1 style={{ font: "800 28px/1.15 var(--font-display)", letterSpacing: "-0.02em", color: "var(--ink)", margin: "0 0 6px" }}>Laporan Laba/Rugi</h1>
+      <p style={{ font: "400 13px/1.5 var(--font-body)", color: "var(--text-muted)", margin: 0 }}>Laporan P&amp;L otomatis dari seluruh sumber pemasukan dan pengeluaran event.</p>
+    </div>
+  )
+}
+
 // ── Component ─────────────────────────────────────────────────────────────────
 export default function PLReportPage() {
   return (
@@ -273,30 +307,6 @@ function PLReportPageInner() {
     await fetch(`/api/other-income/${id}`, { method: "DELETE", headers: authHeaders() })
     fetchPLData(selectedEventId)
   }
-
-  // ── Page shell (warm canvas + design tokens) ─────────────────────────────────
-  const Shell = ({ children }: { children: React.ReactNode }) => (
-    <div
-      style={{ ...dsVars, background: "var(--bg-page)", color: "var(--text-body)", fontFamily: "var(--font-body)" }}
-      className="-mx-4 -mb-24 min-h-screen px-4 py-6 md:-mx-8 md:px-8 md:py-8 lg:-mb-8 lg:pb-8"
-    >
-      <style>{SCOPED_CSS}</style>
-      <div style={{ maxWidth: 1180, margin: "0 auto", display: "flex", flexDirection: "column", gap: 22 }}>
-        {children}
-      </div>
-    </div>
-  )
-
-  const PageHeader = () => (
-    <div style={{ minWidth: 260 }}>
-      <div style={{ ...monoLabel, display: "flex", alignItems: "center", gap: 8, marginBottom: 6 }}>
-        Keuangan · Laporan
-        <Tag color="amber">Pro</Tag>
-      </div>
-      <h1 style={{ font: "800 28px/1.15 var(--font-display)", letterSpacing: "-0.02em", color: "var(--ink)", margin: "0 0 6px" }}>Laporan Laba/Rugi</h1>
-      <p style={{ font: "400 13px/1.5 var(--font-body)", color: "var(--text-muted)", margin: 0 }}>Laporan P&amp;L otomatis dari seluruh sumber pemasukan dan pengeluaran event.</p>
-    </div>
-  )
 
   // ── Loading (auth) ───────────────────────────────────────────────────────────
   if (userLoading) {
