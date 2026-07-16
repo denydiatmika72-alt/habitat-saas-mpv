@@ -2017,3 +2017,92 @@ menyebut `bundleFeePercent`; nama sebenarnya `bundlingFeePercent`. Dipakai nama 
 - DB diverifikasi bersih setelah tes: 0 sisa data test; data nyata utuh (2 user, 2 event, 1 tiket, 1 merch, 0 order).
 - **Belum diverifikasi di browser** — founder tes manual, khususnya flow kunci fee (menyentuh logika uang langsung).
 - Tag: #security #fee #architecture #ticket-type #merchandise #bundling #immutable #admin
+
+---
+
+## [2026-07-16] Dashboard Tiket & Pencairan: angka KOTOR → NET, konsisten dengan P&L (dimungkinkan fee per-kategori)
+
+- Gejala: Dashboard Tiket & Pencairan (`/dashboard/ticketing`) menampilkan angka **kotor (pre-fee)** karena atribusi
+  fee untuk order `mixed` ambigu di bawah sistem fee level-Event yang lama (fee cuma disimpan agregat per-order,
+  split-nya tidak dipersist, dan admin bisa mengubah fee kapan saja → recompute tak bisa dipercaya). Akibatnya
+  promotor melihat dua angka berbeda untuk event yang sama: kotor di dashboard hub, bersih di P&L — halaman hub
+  bahkan harus memasang disclaimer "penjualan kotor, lihat P&L untuk angka bersih".
+- Root cause: **bukan bug — update Dashboard Ticketing dari gross ke net, memungkinkan setelah migrasi
+  fee-per-kategori (lihat entry sebelumnya).** Setelah fee melekat di kategori & DIKUNCI permanen (`feePercent` +
+  `feeLockedAt`, entry [2026-07-15]), dan karena tiap line item menyimpan `price` historisnya, fee per baris bisa
+  **dihitung ulang PERSIS** seperti saat checkout → atribusi net per kategori jadi eksak, termasuk order mixed.
+
+### KOREKSI PENTING atas rumus yang diminta task (dua kesalahan yang akan salah-hitung uang)
+
+Task menuliskan rumus `net = subtotal − (subtotal × feePercent) − pajak`. Rumus itu **SALAH** dan tidak akan pernah
+cocok dengan P&L. Dua sebab, keduanya diverifikasi dari kode & data nyata:
+
+1. **PAJAK TIDAK BOLEH DIPOTONG.** Pajak 10% adalah **hak promotor sepenuhnya**; nexEvent hanya mengambil fee.
+   Sumber: `payout.controller.js` ("Pajak (taxAmount) TIDAK dipotong — itu hak promotor") & `pl-report.service.js`
+   ("Pajak TIDAK dipotong (hak promotor)").
+2. **`feeBearer` WAJIB diperhitungkan.** Kalau `feeBearer: 'audience'`, fee dibayar PEMBELI di atas harga → fee
+   **tidak boleh** dikurangi dari pendapatan promotor. Rumus task memotongnya tanpa syarat.
+
+**Ini bukan kasus hipotetis**: event live "Throne Party" persis berkonfigurasi `taxEnabled: true` +
+`feeBearer: 'audience'` — konfigurasi di mana rumus task paling meleset. Diverifikasi di tes: rumus naif menghasilkan
+**Rp 888.500** vs angka P&L yang benar **Rp 990.000** → **understate Rp 101.500 (≈10,3%)** pada satu event uji.
+
+**Rumus yang dipakai (diturunkan dari P&L, bukan dikarang):**
+`nexeventSalesTotal` P&L = `Σ(totalAmount − feeAmount)`. Karena `totalAmount = subtotal + tax + (audience ? fee : 0)`:
+- `feeBearer 'audience'` → net = `subtotal + tax`
+- `feeBearer 'promotor'` → net = `subtotal + tax − fee`
+
+### Pembagian angka (kenapa pajak dilaporkan terpisah)
+
+- **Kartu tiket/merch/bundling** = net per kategori setelah fee (`subtotal − (promotor ? fee : 0)`).
+- **`taxTotal`** = Σ `taxAmount` tersimpan, dilaporkan **utuh & terpisah**. Alasan: pajak lahir dari porsi TIKET
+  (tiket langsung + porsi tiket dalam paket) dan disimpan sebagai SATU angka bulat per order; memecahnya ke kartu
+  tiket vs bundling butuh basis `bundleTicketValue` yang **tidak dipersist** → hanya bisa diaproksimasi. Menebak-bagi
+  angka uang = persis jenis kompromi yang dihindari halaman ini. Pajak = hak promotor tapi bukan pendapatan kategori
+  mana pun, jadi wajar berdiri sendiri.
+- **`totalNet`** = `Σ(totalAmount − feeAmount)` dihitung dari nilai **TERSIMPAN**, rumus identik P&L → menjamin
+  `totalNet == P&L` apa pun keadaan datanya (tidak bergantung pada recompute).
+- **Identitas yang dijaga tes**: `kartu(tiket+merch+bundling) + taxTotal === totalNet === P&L nexeventSalesTotal`.
+- `feeTotal` (fee hasil recompute dari fee% terkunci) ikut dikembalikan untuk audit/silang-cek.
+
+### Edge case order pra-migrasi: MUSTAHIL (tidak dibangun dead-code)
+
+Diverifikasi ke DB: saat migrasi fee-per-kategori (2026-07-15) **belum ada satu pun order** (0 order total), dan
+query langsung mengonfirmasi **0 line item berbayar yang kategorinya `feePercent: null`**. Secara struktural juga
+mustahil ke depan: checkout fail-closed (`requireCategoryFee` menolak kategori tanpa fee), fee terkunci permanen
+(tak bisa di-null-kan lagi), dan FK `TicketOrderItem.ticketType` tanpa cascade melarang kategori ber-order dihapus.
+Jadi fallback ke `feeAmount` tersimpan **tidak dibangun** sesuai instruksi. Tetap dipasang penjaga `typeof pct ===
+'number'` (1 baris) supaya kalaupun muncul, hasilnya fee 0 — **bukan NaN yang merusak seluruh angka halaman**.
+
+### File terkait
+
+- `server/controllers/ticket-dashboard.controller.js` — header doc lama (yang menjelaskan alasan KOTOR) diganti
+  penjelasan rumus net. `fetchPaidOrders` kini ikut ambil `totalAmount`/`feeAmount`/`taxAmount`/`feeBearer` +
+  `feePercent` tiap kategori lewat relasi line item. `rollup(lines, feeOf)` menghitung subtotal+fee per kategori
+  memakai **`lineFee` yang di-IMPORT dari `services/ticket.service.js`** (helper yang sama dengan checkout — fee math
+  tidak diduplikasi). `categoryNet(r, feeBearer)` memotong fee HANYA kalau promotor penanggungnya. `orderNet(o)` =
+  rumus P&L dari nilai tersimpan; dipakai `totalNet` DAN tiap titik trend. `basis` `'gross'` → `'net'` di semua
+  response. **`feeBearer` dibaca per-ORDER (snapshot), bukan dari Event sekarang.**
+- `client/src/app/dashboard/ticketing/page.tsx` — tipe `SummaryData` (+`taxTotal`/`feeTotal`/`totalNet`, `basis:"net"`);
+  disclaimer "penjualan kotor … lihat P&L untuk angka bersih" **DIHAPUS**, diganti catatan rekonsiliasi (baris pajak
+  hanya muncul kalau `taxTotal > 0`); tiap kartu dapat label "Pendapatan bersih"; tooltip grafik "Penjualan kotor" →
+  "Pendapatan bersih". Drill-down, pemilih event, dan interaksi lain **TIDAK disentuh**.
+
+### Verifikasi
+
+- **E2E ke DB Supabase asli (data terisolasi, dihapus): 27/27 PASS.** Dua skenario penuh:
+  - **A — `feeBearer: audience` + `taxEnabled: true`** (persis konfigurasi event live "Throne Party"):
+    tiket net 400k (subtotal PENUH — fee dibayar pembeli), merch net 150k (**order mixed ikut, bukan nol**),
+    bundling 400k, pajak 40k terpisah, order `pending` dikecualikan.
+    **`totalNet` 990.000 === P&L `nexeventSalesTotal` 990.000.**
+  - **B — `feeBearer: promotor` + `taxEnabled: false`**: tiket net 389.000 (400k − fee 11k), merch 145.500
+    (150k − 4.5k). **`totalNet` 534.500 === P&L 534.500.** Tanpa pajak, kartu langsung == totalNet.
+  - **Integritas fee**: `feeTotal` hasil recompute dari fee% terkunci **=== Σ `feeAmount` tersimpan** (A: 21.500,
+    B: 15.500) → membuktikan recompute mereproduksi checkout persis.
+  - **Bukti rumus task salah**: naif 888.500 vs P&L 990.000 (selisih 101.500) — di-assert eksplisit di tes.
+  - Trend: `basis:'net'`, **Σ titik trend === totalNet === P&L**; weekly setelah >45 hari; drill-down tetap 7 titik
+    harian & totalnya === bar mingguannya (interaksi tidak berubah). Event kosong nol & tidak crash; ownership 404.
+- `node --check` OK; `npx tsc --noEmit` client **exit 0**; `npm run build` client **exit 0** (`/dashboard/ticketing`
+  tetap prerender **static**). DB bersih setelah tes (0 sisa).
+- **Belum diverifikasi di browser** — founder tes manual, membandingkan angka dashboard vs P&L untuk event yang sama.
+- Tag: #ui #ticketing #dashboard #fee #net-revenue #pl-consistency

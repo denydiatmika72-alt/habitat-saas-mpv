@@ -363,6 +363,10 @@ Perbaikan keamanan yang **membalik** keputusan lama "fee boleh diedit admin kapa
   menulisnya tidak pecah selama transisi. **Nilainya sudah TIDAK berpengaruh ke harga sama sekali.** Endpoint
   `PATCH /api/admin/events/:eventId/fees` masih ada tapi inert & tak punya UI — kandidat hapus di pembersihan berikutnya.
   **JANGAN pakai field ini untuk perhitungan uang baru.**
+- **Efek lanjutan (2026-07-16)**: karena fee kini terkunci per-kategori & line item menyimpan `price` historis, fee tiap
+  baris bisa **dihitung ulang persis** seperti saat checkout (`feeTotal` hasil recompute terbukti === Σ `feeAmount`
+  tersimpan). Ini yang membuat **Dashboard Tiket & Pencairan bisa pindah dari angka kotor ke NET** dan konsisten dengan
+  P&L — batasan "kotor saja" yang lama sudah TIDAK berlaku. Lihat known-bugs entry [2026-07-16].
 - Lihat known-bugs entry [2026-07-15] untuk detail audit, keputusan, & hasil verifikasi (64 tes E2E).
 
 #### 2. Pajak 10% (Opsional per Event) — ✅ IMPLEMENTED (2026-07-02)
@@ -649,9 +653,14 @@ Founder berencana suatu saat mengubah nexEvent dari web app menjadi aplikasi mob
   drill-down `weekOf`; hari dipotong WIB).
   **BEDA DISENGAJA dari pola Keuangan**: turunannya (Manajemen Tiket & Pencairan Dana) **TETAP item sidebar** — tombol di hub
   cuma pintu masuk TAMBAHAN, bukan pengganti (keduanya tujuan kerja berdiri sendiri; payout malah lintas-event).
-  **Angka Rp di hub ini = KOTOR per line-item, SENGAJA beda dari P&L/Payout** — `TicketOrder.feeAmount` cuma agregat
-  per-order (split ticket/merch/bundle tidak dipersist), jadi net per-kategori mustahil untuk order `"mixed"`. Jangan
-  "perbaiki" jadi net tanpa baca catatan di kepala `ticket-dashboard.controller.js` + known-bugs entry [2026-07-15].
+  **Angka Rp di hub ini = NET, konsisten dengan P&L** (sejak 2026-07-16 — menggantikan batasan "kotor saja" yang lama).
+  Dimungkinkan setelah migrasi fee per-kategori: fee terkunci permanen + line item simpan `price` historis → fee per
+  baris bisa direproduksi persis seperti checkout, jadi net per kategori eksak (termasuk order `"mixed"`).
+  **Rumus WAJIB ikut P&L** (`Σ(totalAmount − feeAmount)`), yaitu `subtotal + pajak − (feeBearer==='promotor' ? fee : 0)`:
+  **pajak TIDAK dipotong** (hak promotor) dan **`feeBearer` wajib diperhitungkan** (kalau `audience`, fee dibayar pembeli
+  → jangan dikurangi dari promotor). Pajak dilaporkan terpisah (`taxTotal`) karena bukan pendapatan kategori mana pun dan
+  pemecahannya ke tiket-vs-bundling butuh aproksimasi. Identitas yang dijaga tes:
+  `kartu(tiket+merch+bundling) + taxTotal === totalNet === P&L`. Lihat known-bugs entry [2026-07-16].
 - **Layer 3 — Master dashboard**: ringkasan highlight dari kelima dashboard kategori. Dikerjakan PALING AKHIR, setelah
   kelima Layer-2 selesai & polanya tervalidasi. **Belum dimulai.**
 

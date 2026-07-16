@@ -43,6 +43,7 @@ const nav: NavItem[] = [
   { label: "Sponsor & Partner", icon: Handshake, href: "/dashboard/sponsor", badge: "Pro", group: "Kerjasama" },
   { label: "Vendor & Talent", icon: Users, onClick: () => alert("Fitur Vendor Segera Hadir"), hidden: true },
   { label: "Field Crew", icon: Users, href: "/dashboard/crew", badge: "Pro", group: "Operasional" },
+  { label: "Dashboard Tiket & Pencairan", icon: BarChart2, href: "/dashboard/ticketing", group: "Tiket & Pencairan" },
   { label: "Manajemen Tiket", icon: Ticket, href: "/dashboard/tickets", group: "Tiket & Pencairan" },
   { label: "Pencairan Dana", icon: Banknote, href: "/dashboard/payout", group: "Tiket & Pencairan" },
   { label: "Dashboard Keuangan", icon: BarChart2, href: "/dashboard/pl-report", badge: "Pro", group: "Keuangan" },
