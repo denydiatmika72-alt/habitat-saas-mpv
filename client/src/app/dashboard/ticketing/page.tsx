@@ -175,7 +175,10 @@ function BreakdownRow({
   const pct = hasCap ? Math.min(100, Math.max(0, Math.round((sold / capacity) * 100))) : 0
   const soldOut = hasCap && sold >= capacity
   return (
-    <div style={{ padding: "10px 0" }}>
+    // padding 12px 0 (naik dari 10): kartu breakdown kini ~2x lebih lebar sejak kartu Bundling
+    // dihapus dari seksinya — baris yang lebih lebar butuh ruang vertikal lebih supaya tidak
+    // terbaca padat/gepeng.
+    <div style={{ padding: "12px 0" }}>
       <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", gap: 12, marginBottom: 6 }}>
         <span style={{ fontFamily: "var(--font-display)", fontWeight: 600, fontSize: 14, color: muted ? "var(--text-faint)" : "var(--ink)" }}>
           {label}
@@ -455,14 +458,22 @@ function TicketingDashboardInner() {
           {/* Breakdown per kategori — ditaruh SETELAH kartu ringkasan (total dulu, baru rincian)
               dan SEBELUM grafik tren (rincian "apa yang laku" lebih dekat ke angkanya daripada ke
               dimensi waktu). */}
-          {breakdown && (breakdown.ticketTypes.length > 0 || breakdown.merchandise.length > 0 || breakdown.bundlingTotal.sold > 0) && (
+          {breakdown && (breakdown.ticketTypes.length > 0 || breakdown.merchandise.length > 0) && (
             <section>
               <h2 style={{ ...h2Style, marginBottom: 12 }}>Breakdown Penjualan per Kategori</h2>
-              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))", gap: 14, alignItems: "start" }}>
+              {/* Kartu Bundling DIHAPUS dari seksi ini (2026-07-16): angkanya identik dgn kartu
+                  "Total Bundling Terjual" di ringkasan atas — dua-duanya turun dari helper yang sama
+                  (computeCategoryTotals), jadi mustahil beda. Bundling tetap tampil di ringkasan atas.
+                  JANGAN hidupkan lagi di sini. Catatan penjelasnya dipindah ke bawah grid karena yang
+                  dijelaskan sebenarnya angka TIKET & MERCH, bukan angka bundling.
+                  Kondisi render seksi juga tidak lagi melihat bundlingTotal.sold — tanpa jenis tiket
+                  & merch, seksi ini tidak punya isi apa pun untuk ditampilkan.
+                  Grid: minmax dinaikkan 280→320 (tersisa 2 kartu, ruangnya lebih lega). */}
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(320px, 1fr))", gap: 14, alignItems: "start" }}>
 
                 {/* Tiket per jenis */}
                 {breakdown.ticketTypes.length > 0 && (
-                  <Card>
+                  <Card padding={22}>
                     <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 6 }}>
                       <div style={{ width: 30, height: 30, borderRadius: 9, background: "var(--emerald-tint)", display: "flex", alignItems: "center", justifyContent: "center" }}>
                         <Ticket size={16} weight="duotone" color="var(--emerald-dark)" />
@@ -484,7 +495,7 @@ function TicketingDashboardInner() {
 
                 {/* Merchandise per size, dikelompokkan per produk */}
                 {breakdown.merchandise.length > 0 && (
-                  <Card>
+                  <Card padding={22}>
                     <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 6 }}>
                       <div style={{ width: 30, height: 30, borderRadius: 9, background: "var(--coral-tint)", display: "flex", alignItems: "center", justifyContent: "center" }}>
                         <TShirt size={16} weight="duotone" color="var(--coral)" />
@@ -517,30 +528,19 @@ function TicketingDashboardInner() {
                   </Card>
                 )}
 
-                {/* Bundling — TOTAL saja, tanpa progress bar (tidak punya kuota sendiri) */}
-                <Card>
-                  <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 10 }}>
-                    <div style={{ width: 30, height: 30, borderRadius: 9, background: "var(--amber-tint)", display: "flex", alignItems: "center", justifyContent: "center" }}>
-                      <Package size={16} weight="duotone" color="#8A6100" />
-                    </div>
-                    <span style={monoLabel}>Bundling</span>
-                  </div>
-                  <div style={{ fontFamily: "var(--font-display)", fontWeight: 800, fontSize: 22, color: "var(--ink)", letterSpacing: "-0.01em" }}>
-                    {breakdown.bundlingTotal.sold.toLocaleString("id-ID")}{" "}
-                    <span style={{ fontSize: 13, fontWeight: 600, color: "var(--text-faint)" }}>paket terjual</span>
-                  </div>
-                  <div style={{ fontFamily: "var(--font-mono)", fontWeight: 700, fontSize: 15, color: "var(--emerald-dark)", marginTop: 4 }}>
-                    {IDR.format(breakdown.bundlingTotal.revenue)}
-                  </div>
-                  <div style={{ fontFamily: "var(--font-body)", fontSize: 11, color: "var(--text-faint)", marginTop: 2 }}>
-                    Pendapatan bersih
-                  </div>
-                  <div style={{ fontFamily: "var(--font-body)", fontSize: 11, lineHeight: 1.5, color: "var(--text-muted)", background: "var(--surface-sunken)", borderRadius: 8, padding: "8px 10px", marginTop: 10 }}>
-                    Penjualan bundling sudah otomatis mengurangi stok tiket &amp; merchandise komponennya —
-                    sudah tercermin di angka di atas. Paket tidak punya kuota sendiri, jadi tidak ada bar progres.
-                  </div>
-                </Card>
               </div>
+
+              {/* Catatan ini menjelaskan angka TIKET & MERCH di atas (bahwa unit yang terjual lewat
+                  paket sudah ikut terhitung di dalamnya) — bukan angka bundling. Karena itu ia tetap
+                  ada meski kartu Bundling di seksi ini dihapus. Hanya relevan kalau memang ada paket
+                  terjual; tanpa itu, tidak ada yang perlu dijelaskan. */}
+              {breakdown.bundlingTotal.sold > 0 && (
+                <div style={{ fontFamily: "var(--font-body)", fontSize: 12, lineHeight: 1.6, color: "var(--text-muted)", background: "var(--surface-sunken)", borderRadius: 10, padding: "10px 14px", marginTop: 14 }}>
+                  Termasuk <strong>{breakdown.bundlingTotal.sold.toLocaleString("id-ID")} paket bundling</strong> yang terjual:
+                  tiket &amp; merchandise di dalam paket sudah ikut terhitung di angka terjual dan bar progres di atas.
+                  Total bundling ada di kartu ringkasan paling atas.
+                </div>
+              )}
             </section>
           )}
 

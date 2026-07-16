@@ -2265,3 +2265,19 @@ tidak akan terhitung** → catatan jadi bohong dan promotor salah membaca sisa k
   (aturan 1-pintu dari entry konsolidasi navigasi tidak rusak).
 - **Belum diverifikasi visual di browser** — founder verifikasi manual di production dgn data event nyata.
 - Tag: #ui #ticketing #dashboard #breakdown #new-feature
+
+---
+
+## [2026-07-16] Card Bundling duplikat di section breakdown Dashboard Ticketing
+
+- Gejala: Dashboard Ticketing menampilkan DUA kartu Bundling dengan angka yang sama persis — satu di kartu ringkasan atas ("Total Bundling Terjual"), satu lagi di seksi "Breakdown Penjualan per Kategori". Founder menemukannya saat review visual di production setelah fitur breakdown live. Selain itu, kartu breakdown Tiket & Merch jadi lebih sempit dari yang diperlukan karena berbagi grid 3 kolom dengan kartu Bundling tsb.
+- Root cause: bukan bug — cleanup UI: hapus card Bundling duplikat di section breakdown, perlebar card Tiket & Merch breakdown.
+- File terkait: `client/src/app/dashboard/ticketing/page.tsx`
+- Fix:
+  - Kartu Bundling di seksi breakdown DIHAPUS. Duplikasinya struktural, bukan kebetulan: kartu ringkasan membaca `summary.bundling` (`/api/tickets/dashboard-summary`) dan kartu breakdown membaca `breakdown.bundlingTotal` (`/api/tickets/category-breakdown`), tapi KEDUANYA turun dari helper yang sama (`computeCategoryTotals` atas `fetchPaidOrders(eventId)`) di `ticket-dashboard.controller.js` → angkanya mustahil beda. Bundling tetap tampil di kartu ringkasan atas.
+  - **Backend TIDAK disentuh.** `bundlingTotal` tetap dikembalikan endpoint dan tetap dipakai frontend (lihat poin berikut) — tidak ada data-fetching yang dicabut.
+  - Catatan penjelas di dalam kartu itu DIPERTAHANKAN (dipindah jadi caption di bawah grid, muncul hanya kalau `bundlingTotal.sold > 0`). Alasannya: isi catatan sebenarnya menjelaskan angka TIKET & MERCH — bahwa unit yang terjual lewat paket sudah ikut terhitung di bar progres — bukan menjelaskan angka bundling. Kalau ikut dihapus, promotor kehilangan penjelasan kenapa angka tiket/merch sudah termasuk kontribusi paket.
+  - Kondisi render seksi diubah dari `ticketTypes.length > 0 || merchandise.length > 0 || bundlingTotal.sold > 0` → `ticketTypes.length > 0 || merchandise.length > 0`. Tanpa ini, event yang HANYA punya penjualan paket akan merender seksi breakdown kosong (kartu Bundling yang dulu jadi satu-satunya isinya sudah tidak ada).
+  - Layout: grid `minmax(280px, 1fr)` → `minmax(320px, 1fr)`; padding kartu breakdown 18 → 22; padding `BreakdownRow` `10px 0` → `12px 0`. Grid `auto-fit` membuat 2 kartu tersisa otomatis mengisi lebar (~1/2 shell 1180px masing-masing); spacing internal dinaikkan supaya baris tidak terbaca gepeng di lebar baru.
+- Verifikasi: `npx tsc --noEmit` exit 0; `npm run build` exit 0 (`/dashboard/ticketing` tetap prerender static ○). Tidak ada import/variable yatim — `Package` masih dipakai kartu ringkasan atas, `bundlingTotal` masih dipakai caption. Kartu ringkasan atas, grafik tren + drill-down, kartu Saldo Payout, dan tombol navigasi tidak disentuh.
+- Tag: #ui #ticketing #dashboard #cleanup #layout

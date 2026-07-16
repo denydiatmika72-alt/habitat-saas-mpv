@@ -663,6 +663,13 @@ Founder berencana suatu saat mengubah nexEvent dari web app menjadi aplikasi mob
   `pending` untuk menahan stok) → **angka di Manajemen Tiket bisa sedikit lebih tinggi; itu DISENGAJA**, bukan bug:
   Manajemen Tiket = stok tertahan (operasional), Dashboard ini = penjualan nyata (uang). Angka bundling dipakai
   bersama kartu ringkasan lewat `computeCategoryTotals` → mustahil beda.
+  **Bundling TIDAK punya kartu sendiri di seksi breakdown (dihapus 2026-07-16)** — angkanya identik dgn kartu
+  "Total Bundling Terjual" di ringkasan atas (dua-duanya turun dari `computeCategoryTotals`, jadi duplikasinya
+  struktural). Bundling tampil **hanya di kartu ringkasan atas**; seksi breakdown menyisakan Tiket & Merch saja.
+  Endpoint tetap mengembalikan `bundlingTotal` dan frontend masih memakainya untuk **caption** di bawah grid
+  ("termasuk N paket bundling…") — caption itu menjelaskan angka TIKET & MERCH (unit yang laku lewat paket sudah
+  ikut terhitung di bar progres), jadi JANGAN ikut dihapus mengira sisa kartu Bundling. **JANGAN hidupkan lagi
+  kartu Bundling di seksi breakdown.** Lihat known-bugs entry [2026-07-16] card Bundling duplikat.
   **NAVIGASI = 1 PINTU PER HALAMAN DETAIL (konsolidasi 2026-07-16)**: `/dashboard/tickets` HANYA lewat tombol
   **"Manajemen Tiket" di header**; `/dashboard/payout` HANYA lewat tombol **"Pencairan Dana" di header**. Header dipilih
   karena SELALU ter-render — kartu/link lain hanya muncul setelah event dipilih & data termuat. Yang dihapus: tombol
