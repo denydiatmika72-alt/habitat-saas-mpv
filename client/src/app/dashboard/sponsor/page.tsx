@@ -1717,7 +1717,7 @@ function ThresholdSettings({ onThresholdChange }: { onThresholdChange: () => voi
 
   useEffect(() => {
     Promise.all([
-      fetch(`${API_BASE}/sponsor/thresholds`).then((r) => safeJson(r)),
+      fetch(`${API_BASE}/sponsor/thresholds`, { headers: authHeaders() }).then((r) => safeJson(r)),
       fetch(`${API_BASE}/sponsor/packages`, { headers: authHeaders() }).then((r) => safeJson(r)),
     ])
       .then(([thrData, pkgData]) => {
@@ -1903,7 +1903,7 @@ export default function SponsorManagementPage() {
   }
 
   function fetchThresholds() {
-    fetch(`${API_BASE}/sponsor/thresholds`)
+    fetch(`${API_BASE}/sponsor/thresholds`, { headers: authHeaders() })
       .then((r) => safeJson(r))
       .then((d) => { if (d.success) setThresholds((d.data as ApiThreshold[]) ?? []) })
       .catch(() => {})

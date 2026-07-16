@@ -5,6 +5,8 @@ const { verifyToken } = require('../middleware/auth.middleware');
 const {
   generateCode,
   validateInviteCode,
+  getPortalCatalog,
+  getPublicTierPrice,
   getBenefits,
   createBenefit,
   deleteBenefit,
@@ -36,23 +38,29 @@ const verifyLimiter = rateLimit({
 router.post('/codes', verifyToken, generateCode);
 router.post('/codes/validate', validateInviteCode);         // public
 
-// Benefits
-router.get('/benefits', getBenefits);                    // public — portal reads this
+// ─── PUBLIC sponsor-facing (di-scope oleh resource, BUKAN token promotor) ───────
+// Katalog portal di-scope oleh KODE undangan; harga tier sponsor-dashboard di-scope oleh dealId.
+// Menggantikan pemakaian publik lama GET /benefits, /packages, /thresholds yang kini di-lock.
+router.get('/portal/catalog', getPortalCatalog);            // public — portal sponsor (by ?code=)
+router.get('/public/tier-price', getPublicTierPrice);       // public — sponsor-dashboard (by ?dealId=)
+
+// Benefits — DIKUNCI ke promotor (sebelumnya publik → bocor lintas akun)
+router.get('/benefits', verifyToken, getBenefits);
 router.post('/benefits', verifyToken, createBenefit);
 router.delete('/benefits/:id', verifyToken, deleteBenefit);
 
 // Deals
 router.get('/deals', verifyToken, getDeals);
-router.post('/deals', createDeal);                          // public — sponsor portal
+router.post('/deals', createDeal);                          // public — portal sponsor (owner diturunkan dari kode)
 router.patch('/deals/:id', verifyToken, updateDealStatus);
 
-// Packages
-router.get('/packages', getPackages);                    // public — portal reads this
+// Packages — DIKUNCI ke promotor
+router.get('/packages', verifyToken, getPackages);
 router.post('/packages', verifyToken, createPackage);
 router.delete('/packages/:id', verifyToken, deletePackage);
 
-// Thresholds
-router.get('/thresholds', getThresholds);                   // public — sponsor portal
+// Thresholds — DIKUNCI ke promotor
+router.get('/thresholds', verifyToken, getThresholds);
 router.post('/thresholds', verifyToken, saveThresholds);
 
 // Client accounts
@@ -61,7 +69,7 @@ router.post('/accounts/verify', verifyLimiter, verifyAccount);           // publ
 router.post('/deals/:id/resend-credential', verifyToken, resendCredential);
 
 // Deliverables
-router.get('/deliverables', getDeliverables);               // public — client dashboard
+router.get('/deliverables', getDeliverables);               // public — client dashboard (by ?dealId=)
 router.post('/deliverables', verifyToken, createDeliverable);
 router.patch('/deliverables/:id', verifyToken, updateDeliverable);
 

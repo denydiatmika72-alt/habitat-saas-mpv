@@ -699,16 +699,16 @@ export default function SponsorDashboardPage() {
     if (!session) return
     Promise.all([
       fetch(`${API_BASE}/sponsor/deliverables?dealId=${session.dealId}`).then(safeJson),
-      fetch(`${API_BASE}/sponsor/thresholds`).then(safeJson),
+      // Harga tier di-scope ke dealId (endpoint publik baru) — menggantikan GET /thresholds global
+      // yang kini dikunci ke token promotor (fix keamanan cross-account 2026-07-17).
+      fetch(`${API_BASE}/sponsor/public/tier-price?dealId=${session.dealId}`).then(safeJson),
     ])
-      .then(([delivData, thrData]) => {
+      .then(([delivData, priceData]) => {
         const delivs = (delivData.data ?? []) as ApiDeliverable[]
         const executed = delivs.filter((d) => d.status === "Executed").length
         const active = delivs.filter((d) => d.status === "InProduction" || d.status === "Planning").length
 
-        const thresholds = (thrData.data ?? []) as Array<{ tierName: string; minPrice: string }>
-        const match = thresholds.find((t) => t.tierName === session.tier)
-        const packagePrice = match ? Number(match.minPrice) : 0
+        const packagePrice = Number((priceData as { tierPrice?: number }).tierPrice ?? 0)
 
         setStats({ total: delivs.length, executed, active, packagePrice, loaded: true })
       })

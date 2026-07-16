@@ -60,11 +60,39 @@ Route promotor pakai `verifyToken`; route admin (`admin.routes.js`, `fee-debt.ro
 - **Events & RAB**: Buat event, kelola anggaran (RAB)
 - **RAB Builder** (fitur inti tier Starter/gratis): Rencana Anggaran Biaya per event — kategori → item (qty × harga satuan), auto-hitung `totalEstimatedCost` + Dana Cadangan (default 20%). Backend `/api/budgets/*` + `budget.controller.js` (model `Budget`/`BudgetCategory`/`BudgetItem`). Halaman `/dashboard/rab/[id]`. **Export PDF = client-side browser print** (`window.print()` pada view `@media print`), BUKAN endpoint backend — lihat section "PDF Generation" + entry known-bugs 2026-07-12.
 - **Purchase Order (PO)**: Buat PO per event (item, qty, harga; total dihitung ulang server-side), status `draft/sent/paid`, export PDF via **pdfkit server-side**. Bisa **import item dari RAB** (`PurchaseOrderItem.sourceRabItemId` menautkan ke `BudgetItem`; ambil via `GET /api/events/:eventId/rab-items`). Backend `/api/po/*` + `purchaseOrder.controller.js` (model `PurchaseOrder`/`PurchaseOrderItem`).
-- **Sponsor Management**: Generate invite code → sponsor daftar di portal → buat deal. Config sponsor (benefits/packages/thresholds catalog) via `/api/sponsor/{benefits,packages,thresholds}`; harga paket diambil dari threshold tier bernama sama.
+- **Sponsor Management**: Generate invite code → sponsor daftar di portal → buat deal. Config sponsor (benefits/packages/thresholds catalog) via `/api/sponsor/{benefits,packages,thresholds}`; harga paket diambil dari threshold tier bernama sama. **Semua data sponsor (deal/benefit/package/threshold) dimiliki per-promotor via `promotorId` — lihat section "Keamanan: Isolasi Data Per-Promotor" di bawah.**
 - **Promoter Settings** (`/api/settings/promoter`): satu settings per EO (upsert by `userId`) — `companyName`/`logoUrl` + rekening bank (`bankName`/`bankAccount`/`accountHolder`). Rekening ini di-REUSE untuk "Transfer Ke" di Invoice PDF sponsor DAN rekening tujuan Payout (tidak ada field bank duplikat di `User`).
 - **Invoice**: Generate invoice PDF dari deal sponsor, update status (Belum Dibayar / DP Terbayar / Lunas)
 - **Document Table** (`/dashboard`): Tab "Invoice" menampilkan **semua invoice langsung** (bukan filter per event), karena deal historis punya `eventId = null`
 - **Plan/Tier System**: Field `plan` di tabel `users`. Values: `"starter"` (default) atau `"pro"`. Hook `useUser.ts` expose `{ user, loading, isPro }` untuk feature gating di frontend. `user_plan` disimpan di localStorage setelah login.
+
+## Keamanan: Isolasi Data Per-Promotor (WAJIB — prinsip anti-kebocoran lintas akun)
+
+**Insiden 2026-07-17 (lihat known-bugs entry security):** sistem Sponsor pernah membocorkan data lintas akun —
+`SponsorDeal`/`SponsorBenefit`/`SponsorPackage`/`SponsorThreshold` TIDAK punya kolom pemilik, endpoint GET-nya
+`findMany` tanpa filter, dan endpoint mutasi tanpa cek kepemilikan (IDOR); 3 di antaranya bahkan publik tanpa auth.
+Akibatnya deal/benefit/paket/threshold satu promotor tampil & bisa diubah oleh promotor (atau siapa pun) lain.
+
+**Sudah diperbaiki:** keempat model kini punya `promotorId` (NOT NULL), `SponsorDeal.eventId` punya FK ke `Event`
+(`onDelete: Cascade`), dan `SponsorThreshold` unik per-promotor (`@@unique([promotorId, tierName])`, bukan global).
+
+**Prinsip yang WAJIB ditegakkan (dan ditiru untuk SEMUA fitur/model baru yang menyimpan data milik user):**
+1. **Setiap model yang memegang data spesifik-user WAJIB punya kolom pemilik** (`promotorId`/`userId`) sejak awal —
+   jangan pernah mengandalkan kolom lain (mis. `eventId` nullable) sebagai satu-satunya jalur kepemilikan.
+2. **Semua GET difilter `where: { promotorId: req.user.id }`** (atau setara). Tidak ada `findMany` polos untuk data milik user.
+3. **Semua CREATE mengeset pemilik dari sesi** (`req.user.id`) — JANGAN terima `promotorId` dari body client. Untuk
+   endpoint publik yang sah (mis. `createDeal` via portal), turunkan pemilik SERVER-SIDE dari resource tepercaya
+   (kode undangan → `InviteCode.createdBy`); tolak kalau tak bisa diatribusikan (jangan buat row tanpa pemilik).
+4. **Semua UPDATE/DELETE cek kepemilikan dulu**: ambil record, `not found → 404`, `bukan pemilik → 403` (konsisten
+   dgn konvensi ownership 403 di Expense Tracker). Tidak ada mutasi by-id tanpa guard.
+5. **Endpoint publik/sponsor-facing dipisah & di-scope oleh resource yang dipegang pemanggil**, BUKAN token promotor:
+   `GET /api/sponsor/portal/catalog?code=` (katalog milik promotor pengundang) & `GET /api/sponsor/public/tier-price?dealId=`.
+   Jangan pernah menjadikan endpoint yang mengembalikan data milik-user sebagai publik-tanpa-scope.
+
+Referensi implementasi: `server/controllers/sponsor.controller.js` + `server/routes/sponsor.routes.js`.
+**Catatan (di luar scope task ini, untuk sesi mendatang):** audit kolom pemilik + filter query serupa layak dilakukan
+untuk tabel lain (mis. pastikan `Expense`/`OtherIncome`/`PurchaseOrder`/`Budget`/dst benar-benar ter-scope) —
+belum dikerjakan, hanya catatan pencegahan agar kelas bug ini tidak berulang di tempat lain.
 
 ## Arsitektur 2-Lapis Publish (Homepage Discovery vs Storefront) — SENGAJA, bukan duplikasi
 

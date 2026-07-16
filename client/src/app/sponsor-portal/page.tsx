@@ -779,19 +779,18 @@ export default function SponsorPortalPage() {
   const [benefits, setBenefits] = useState<ApiBenefit[]>([])
 
   useEffect(() => {
-    if (!isVerified) return
-    Promise.all([
-      fetch("/api/sponsor/packages").then((r) => safeJson(r)),
-      fetch("/api/sponsor/benefits").then((r) => safeJson(r)),
-    ])
-      .then(([pkgData, benData]) => {
-        if (pkgData.success && Array.isArray(pkgData.data))
-          setPackages(pkgData.data as ApiPackage[])
-        if (benData.success && Array.isArray(benData.data))
-          setBenefits(benData.data as ApiBenefit[])
+    if (!isVerified || !unlockedCode) return
+    // Katalog di-scope oleh KODE undangan → hanya menampilkan paket/benefit milik promotor pengundang.
+    // Endpoint publik lama GET /packages & /benefits sudah dikunci ke token promotor (fix keamanan 2026-07-17).
+    fetch(`/api/sponsor/portal/catalog?code=${encodeURIComponent(unlockedCode)}`)
+      .then((r) => safeJson(r))
+      .then((res) => {
+        const data = (res.data ?? {}) as { packages?: ApiPackage[]; benefits?: ApiBenefit[] }
+        if (Array.isArray(data.packages)) setPackages(data.packages)
+        if (Array.isArray(data.benefits)) setBenefits(data.benefits)
       })
       .catch(() => {})
-  }, [isVerified])
+  }, [isVerified, unlockedCode])
 
   async function handleSubmit(data: SponsorSubmission) {
     const res = await fetch("/api/sponsor/deals", {
