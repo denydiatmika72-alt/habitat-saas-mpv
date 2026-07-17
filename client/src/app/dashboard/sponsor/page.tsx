@@ -23,7 +23,7 @@ import {
   Users,
   X,
 } from "lucide-react"
-import { Button, buttonVariants } from "@/components/ui/button"
+import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
@@ -1974,7 +1974,7 @@ export default function SponsorManagementPage() {
   }
 
   return (
-    <div className="mx-auto flex w-full max-w-5xl flex-col gap-6">
+    <div className="mx-auto flex w-full max-w-7xl flex-col gap-6">
       {/* Kembali ke hub kategori Kerjasama. Tanpa ?eventId= — Dashboard Kerjasama tidak mengoper
           event ke halaman ini (Sponsor & Partner lintas-event: daftar semua deal + pemilih event
           sendiri untuk kode undangan), jadi tidak ada konteks event tunggal untuk diwariskan. */}
@@ -1988,37 +1988,37 @@ export default function SponsorManagementPage() {
         </Link>
       </div>
 
-      <div className="mb-4 flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
-        <div>
-          <p className="text-xs font-medium uppercase tracking-[0.2em] text-emerald-800">
-            Workspace Promotor
-          </p>
-          <h1 className="mt-2 text-balance text-3xl font-semibold tracking-tight text-slate-900 sm:text-4xl">
-            Manage Event Sponsors
-          </h1>
-          <p className="mt-3 max-w-2xl text-pretty text-sm leading-relaxed text-slate-500">
-            Invite brands with secure codes and design the sponsorship packages they can purchase — all from one premium workspace.
-          </p>
-        </div>
-        {/* Menuju generator invoice sponsor (tab Sponsorship) — lebih relevan dengan alur kerja
-            sponsor daripada tombol Data Audiens lama (redundan, sudah ada di Dashboard Ticketing). */}
-        <Link
-          href="/dashboard/invoice?tab=sponsorship"
-          className={cn(
-            buttonVariants({ variant: "outline" }),
-            "shrink-0 gap-2 border-slate-200 bg-white text-slate-900 hover:bg-slate-100 hover:text-slate-900",
-          )}
-        >
-          <FileText className="size-4" />
-          Kelola Invoice Sponsor
-        </Link>
+      {/* Link "Kelola Invoice Sponsor" DIHAPUS (2026-07-18) — akses ke halaman Invoice sudah tersedia
+          lewat Dashboard Kerjasama (redundan). Aksi "Generate Invoice" per-deal di DealCard TETAP ada. */}
+      <div className="mb-4">
+        <p className="text-xs font-medium uppercase tracking-[0.2em] text-emerald-800">
+          Workspace Promotor
+        </p>
+        <h1 className="mt-2 text-balance text-3xl font-semibold tracking-tight text-slate-900 sm:text-4xl">
+          Manage Event Sponsors
+        </h1>
+        <p className="mt-3 max-w-2xl text-pretty text-sm leading-relaxed text-slate-500">
+          Invite brands with secure codes and design the sponsorship packages they can purchase — all from one premium workspace.
+        </p>
       </div>
 
-      <InvitationCodeGenerator />
-      <DealTracker />
-      <BenefitBuilder benefits={benefits} loading={benefitsLoading} onBenefitChange={fetchBenefits} />
-      <PackageBuilder benefits={benefits} thresholds={thresholds} />
-      <ThresholdSettings onThresholdChange={fetchThresholds} />
+      {/* Split-layout desktop (lg+): kolom KIRI = alur sponsor aktif (generate kode undangan + deal
+          masuk), kolom KANAN = katalog/pengaturan (benefit, paket, threshold tier). Di bawah lg
+          menumpuk 1 kolom seperti semula (mobile/tablet tak berubah). `[&>*:first-child]:mt-0`
+          menetralkan `mt-12` bawaan section pertama tiap kolom supaya puncak kedua kolom sejajar;
+          `mt-12` antar-section di dalam kolom tetap berfungsi sebagai spacing. Konsisten dengan
+          split-layout Manajemen Tiket. Komponen, form, state, dan data-fetch TIDAK diubah. */}
+      <div className="grid gap-6 lg:grid-cols-2 lg:items-start">
+        <div className="flex flex-col [&>*:first-child]:mt-0">
+          <InvitationCodeGenerator />
+          <DealTracker />
+        </div>
+        <div className="flex flex-col [&>*:first-child]:mt-0">
+          <BenefitBuilder benefits={benefits} loading={benefitsLoading} onBenefitChange={fetchBenefits} />
+          <PackageBuilder benefits={benefits} thresholds={thresholds} />
+          <ThresholdSettings onThresholdChange={fetchThresholds} />
+        </div>
+      </div>
     </div>
   )
 }

@@ -2433,3 +2433,15 @@ tidak akan terhitung** → catatan jadi bohong dan promotor salah membaca sisa k
   - Catatan: `mobileNavItems` (bottom nav mobile) SENGAJA tidak diubah (di luar scope "grup Kerjasama" desktop) — masih memuat Sponsor & Invoice sebagai quick-link. Kandidat penyelarasan terpisah kalau founder mau.
 - Verifikasi: `npx tsc --noEmit` exit 0; `npm run build` exit 0; grep: sidebar grup Kerjasama tinggal "Dashboard Kerjasama"; sponsor & invoice back button → `/dashboard/kerjasama`; tickets tanpa tombol Invoice. Deploy Vercel (frontend-only).
 - Tag: #ui #navigation #kerjasama #hub-pattern #sponsor #invoice #cleanup
+
+
+## [2026-07-18] Manajemen Sponsor — hapus link Invoice redundan + split-layout desktop
+
+- Gejala: Halaman Manajemen Sponsor (`/dashboard/sponsor`) masih punya link page-level "Kelola Invoice Sponsor" ke `/dashboard/invoice` (redundan — akses Invoice sudah ada lewat Dashboard Kerjasama), dan layout-nya satu kolom vertikal panjang sehingga butuh scroll berlebihan di desktop dengan ruang horizontal terbuang.
+- Root cause: bukan bug — cleanup navigasi (hapus link Invoice redundan) + perbaikan UX layout desktop (split-layout), konsisten dengan perbaikan serupa di Manajemen Tiket.
+- File terkait: `client/src/app/dashboard/sponsor/page.tsx`
+- Fix:
+  1. **Hapus link "Kelola Invoice Sponsor"** (`<Link href="/dashboard/invoice?tab=sponsorship">`) di header + import `buttonVariants` yang jadi yatim (satu-satunya pemakainya). Header disederhanakan (wrapper `flex justify-between` tak perlu lagi). Aksi **"Generate Invoice" per-deal di DealCard TIDAK disentuh** (fitur inti, bukan navigasi). Import `FileText` TETAP (masih dipakai tombol Generate Invoice di DealCard).
+  2. **Split-layout desktop** (`lg:grid-cols-2 lg:items-start`, di bawah `lg` menumpuk 1 kolom seperti semula): kolom KIRI = alur sponsor aktif (`InvitationCodeGenerator` + `DealTracker`), kolom KANAN = katalog/pengaturan (`BenefitBuilder` + `PackageBuilder` + `ThresholdSettings`). Container dilebarkan `max-w-5xl` → `max-w-7xl`. `[&>*:first-child]:mt-0` menetralkan `mt-12` bawaan section pertama tiap kolom agar puncak kedua kolom sejajar (mt-12 antar-section dalam kolom tetap jadi spacing). Murni restrukturisasi layout — komponen, form, state, data-fetch, dan style tiap komponen TIDAK diubah. Tombol "Kembali ke Dashboard Kerjasama" tetap full-width di atas grid.
+- Verifikasi: `npx tsc --noEmit` exit 0 (tanpa unused var); `npm run build` exit 0 (`/dashboard/sponsor` prerender static); grep: tidak ada lagi `buttonVariants` / link `/dashboard/invoice` di file; `FileText` masih dipakai DealCard. Deploy frontend-only (Vercel).
+- Tag: #ui #sponsor #navigation #layout #split-layout #desktop

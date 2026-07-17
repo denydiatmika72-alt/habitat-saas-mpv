@@ -770,6 +770,13 @@ storefront & operasional** (Tampilan Storefront, Informasi Storefront, Pengatura
 bawah. Sebelumnya `lg:grid-cols-5` (kiri `col-span-3` isi 7 seksi, kanan `col-span-2` isi Pesanan saja) → timpang & kolom
 kiri kepanjangan. Lihat known-bugs entry [2026-07-15].
 
+**Manajemen Sponsor pakai pola split yang sama** (`client/src/app/dashboard/sponsor/page.tsx`, sejak 2026-07-18):
+`lg:grid-cols-2 lg:items-start` (di bawah `lg` menumpuk 1 kolom) — **kiri = alur sponsor aktif** (InvitationCodeGenerator +
+DealTracker), **kanan = katalog/pengaturan** (BenefitBuilder + PackageBuilder + ThresholdSettings); container dilebarkan ke
+`max-w-7xl`; `[&>*:first-child]:mt-0` menetralkan `mt-12` bawaan section pertama tiap kolom agar puncak sejajar. Tombol
+"Kembali ke Dashboard Kerjasama" tetap full-width di atas grid. Link page-level "Kelola Invoice Sponsor" DIHAPUS (redundan
+dengan Dashboard Kerjasama); aksi "Generate Invoice" per-deal di DealCard tetap ada. Lihat known-bugs entry [2026-07-18].
+
 ## Aturan Tambahan
 
 - Setiap selesai coding, selalu commit + push + deploy.sh
