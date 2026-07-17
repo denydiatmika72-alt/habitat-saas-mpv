@@ -35,6 +35,10 @@ type NavItem =
 
 const nav: NavItem[] = [
   { label: "Dashboard", icon: LayoutDashboard, href: "/dashboard" },
+  // Dashboard Kerjasama = hub ringkasan kategori Kerjasama (pola sama Dashboard Ticketing/Keuangan).
+  // BEDA: "Sponsor & Partner" & "Invoice & Purchase Order" SENGAJA TETAP di sidebar sebagai link langsung
+  // (bukan hub-only) atas instruksi eksplisit founder — menunggu perintah terpisah sebelum dihapus.
+  { label: "Dashboard Kerjasama", icon: BarChart2, href: "/dashboard/kerjasama", badge: "Pro", group: "Kerjasama" },
   { label: "Invoice & Purchase Order", icon: ReceiptText, href: "/dashboard/invoice", group: "Kerjasama" },
   { label: "RAB Builder", icon: ClipboardList, href: "/dashboard", group: "Perencanaan" },
   { label: "Simulasi Harga Tiket", icon: Calculator, href: "/dashboard/simulasi", badge: "Pro", group: "Perencanaan" },

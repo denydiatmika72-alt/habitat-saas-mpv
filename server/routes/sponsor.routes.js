@@ -25,6 +25,7 @@ const {
   createDeliverable,
   updateDeliverable,
 } = require('../controllers/sponsor.controller');
+const { getKerjasamaDashboard } = require('../controllers/kerjasama-dashboard.controller');
 
 const verifyLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
@@ -33,6 +34,9 @@ const verifyLimiter = rateLimit({
   legacyHeaders: false,
   message: { success: false, message: 'Terlalu banyak percobaan login. Coba lagi dalam 15 menit.' },
 });
+
+// Dashboard Kerjasama — ringkasan per-event (read-only, di-scope promotorId + eventId)
+router.get('/dashboard-summary', verifyToken, getKerjasamaDashboard);
 
 // Invite codes
 router.post('/codes', verifyToken, generateCode);

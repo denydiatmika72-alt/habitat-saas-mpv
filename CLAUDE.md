@@ -676,6 +676,16 @@ Founder berencana suatu saat mengubah nexEvent dari web app menjadi aplikasi mob
 
 ## Roadmap Navigasi 3-Lapis
 
+- **Layer-2 — Dashboard Kerjasama (`/dashboard/kerjasama`, label sidebar "Dashboard Kerjasama", badge Pro, item PERTAMA
+  di grup "Kerjasama")** — dibangun dari 0 (2026-07-18, pola sama Dashboard Ticketing). Hub ringkasan per-event kategori
+  Kerjasama: 4 kartu (Ringkasan Sponsor status deal, Ringkasan Invoice status bayar, Progress Target Sponsor dari
+  `Event.target_sponsorship`, Deliverables per Brand sebagai daftar per-brand — bukan angka agregat) + 2 tombol nav ke
+  Sponsor & Partner dan Invoice & PO (deep-link `?tab=sponsorship`). Endpoint BARU (read-only, di-scope `promotorId`+`eventId`):
+  `GET /api/sponsor/dashboard-summary?eventId=` di `kerjasama-dashboard.controller.js`.
+  **PENGECUALIAN POLA HUB — DISENGAJA (instruksi eksplisit founder):** BEDA dari Dashboard Keuangan/Ticketing, halaman
+  turunan **"Sponsor & Partner" (`/dashboard/sponsor`) dan "Invoice & Purchase Order" (`/dashboard/invoice`) TETAP jadi item
+  sidebar langsung** (bukan hub-only). JANGAN hapus keduanya dari sidebar sampai ada perintah terpisah dari founder.
+  Dashboard Kerjasama adalah pintu masuk TAMBAHAN, bukan pengganti. Lihat known-bugs entry [2026-07-18].
 - **Layer 1 — Halaman detail** (RAB, Sponsor, Expense, P&L, Tiket, dll): SUDAH ada semua. Tidak dibangun ulang.
 - **Layer 2 — 5 dashboard kategori** (Perencanaan, Kerjasama, Operasional, Keuangan, Tiket & Pencairan): tiap dashboard jadi
   **SATU-SATUNYA pintu masuk** ke halaman detail bertema sama. Pola: event/konteks dipilih SEKALI di level dashboard →
