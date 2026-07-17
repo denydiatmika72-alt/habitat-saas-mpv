@@ -2388,3 +2388,18 @@ tidak akan terhitung** → catatan jadi bohong dan promotor salah membaca sisa k
   6. **Data lama yang ter-expose DIHAPUS permanen** atas keputusan founder (by exact ID): 3 deal (+7 deliverable, 3 client_account, 7 deal_benefit via cascade), 3 invoice, 1 paket (+2 package_benefit), 5 benefit, 4 threshold → semua tabel sponsor = 0.
 - Verifikasi: hapus data (before/after counts, semua tabel → 0); `node --check` controller+routes; client `tsc --noEmit` + `npm run build` exit 0; skema di-push via deploy.sh (DDL: 4× ADD COLUMN NOT NULL, drop+create unique index, 1 FK cascade); E2E HTTP lintas-akun ke production (A=76db0771, B=21fec049): A tak terlihat oleh B di keempat GET; GET tanpa token → 401; B mutasi record A → 403; deal tanpa kode valid → 400; create selalu set promotorId pemilik; semua row uji dibersihkan → tabel kembali 0.
 - Tag: #security #critical #data-isolation #sponsor #idor #schema-migration
+
+
+## [2026-07-18] Wajibkan eventId di InviteCode & SponsorDeal (tutup celah deal/kode mengambang tanpa event)
+
+- Gejala: `InviteCode.eventId` & `SponsorDeal.eventId` dulu nullable TANPA validasi backend yang memaksa terisi — sehingga kode undangan (dan deal turunannya) bisa dibuat tanpa event. Ini yang melahirkan artefak data yatim (deal PT Rejeki Agak Laen `event_id=null`) yang ditemukan & dibersihkan di insiden keamanan 2026-07-17. Celah kodenya masih terbuka setelah fix itu.
+- Root cause: bukan bug baru — menutup celah yang tersisa dari audit sebelumnya: eventId dibuat wajib (NOT NULL + FK cascade) di InviteCode dan SponsorDeal, dengan validasi backend dan frontend yang mencegah pembuatan kode/deal tanpa event.
+- File terkait: `server/prisma/schema.prisma`, `server/controllers/sponsor.controller.js`, `client/src/app/dashboard/sponsor/page.tsx`
+- Fix:
+  1. **Prasyarat data**: `sponsor_deals` sudah 0 (dibersihkan 2026-07-17); `invite_codes` masih menyimpan 6 kode lama (spent, milik akun lama, deal-nya sudah dihapus) — 2 di antaranya `event_id=null` & 1 menunjuk event yang sudah dihapus (dangling), sehingga MEMBLOKIR NOT NULL+FK. Atas keputusan founder (Option A) keenam kode dihapus by exact code → kedua tabel benar-benar kosong dulu.
+  2. **Skema**: `InviteCode.eventId` `String?`→`String` + relasi BARU `event Event @relation(onDelete: Cascade)` (sebelumnya tanpa FK sama sekali); `SponsorDeal.eventId` `String?`→`String` (FK cascade sudah ada sejak 2026-07-17); reverse relation `Event.inviteCodes`. Push via `deploy.sh` (`prisma db push`) di atas tabel kosong → tanpa data loss nyata.
+  3. **Backend `generateCode`**: tolak 400 kalau `eventId` kosong ("Event wajib dipilih untuk membuat kode undangan sponsor."); verifikasi event ADA (400) & MILIK promotor login (403) sebelum buat kode.
+  4. **Backend `createDeal`**: `eventId` diambil langsung dari `inviteCode.eventId` (kini dijamin non-null), bukan `?? null`; guard defensif menolak (400) kalau entah bagaimana kosong.
+  5. **Frontend generator**: hapus fallback `eventId: selectedEventId || null` → kirim `selectedEventId` saja; tombol Generate `disabled` saat belum ada event terpilih; `events.length===0` → tampil pesan + link "Buat Event Baru" (`/dashboard/create-event`).
+- Verifikasi: hapus 6 kode (before 6 → after 0), `sponsor_deals`=0; `prisma validate` OK; `node --check` controller OK; client `tsc --noEmit` + `npm run build` exit 0; uji controller `generateCode` langsung: tanpa eventId→400, event tak ada→400, event promotor lain→403, `invite_codes` tetap 0 (jalur tolak tidak menulis); migrasi diterapkan bersih via deploy.sh (tabel kosong, tanpa data-loss warning).
+- Tag: #security #data-integrity #sponsor #schema-migration #follow-up

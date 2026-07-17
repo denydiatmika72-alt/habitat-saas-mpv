@@ -26,6 +26,18 @@ function makeCodeString() {
 const generateCode = async (req, res) => {
   try {
     const { eventId } = req.body;
+    // eventId WAJIB (2026-07-18) — kode undangan sponsor selalu terikat 1 event. Cegah kode mengambang.
+    if (!eventId || typeof eventId !== 'string' || !eventId.trim()) {
+      return res.status(400).json({ success: false, message: 'Event wajib dipilih untuk membuat kode undangan sponsor.' });
+    }
+    // Event harus ada DAN milik promotor yang login (cegah bikin kode untuk event promotor lain).
+    const event = await prisma.event.findUnique({ where: { id: eventId }, select: { promotor_id: true } });
+    if (!event) {
+      return res.status(400).json({ success: false, message: 'Event tidak ditemukan.' });
+    }
+    if (event.promotor_id !== req.user.id) {
+      return res.status(403).json({ success: false, message: 'Akses ditolak — event bukan milik Anda.' });
+    }
     let code = null;
     for (let attempt = 0; attempt < 5; attempt++) {
       const candidate = makeCodeString();
@@ -36,7 +48,7 @@ const generateCode = async (req, res) => {
       return res.status(500).json({ success: false, message: 'Gagal generate kode unik, coba lagi.' });
     }
     const inviteCode = await prisma.inviteCode.create({
-      data: { code, createdBy: req.user.id, isActive: true, eventId: eventId ?? null },
+      data: { code, createdBy: req.user.id, isActive: true, eventId },
     });
     return res.status(201).json({
       success: true,
@@ -223,7 +235,12 @@ const createDeal = async (req, res) => {
       return res.status(400).json({ success: false, message: 'Kode undangan tidak dikenal — pendaftaran ditolak.' });
     }
     const promotorId = inviteCode.createdBy;
-    const eventId = inviteCode.eventId ?? null;
+    // eventId SELALU dari InviteCode (kini wajib non-null di schema) — tidak pernah dari client, tidak pernah null.
+    const eventId = inviteCode.eventId;
+    if (!eventId) {
+      // Defensif: kode lama tanpa event tidak boleh dipakai (seharusnya mustahil pasca-migrasi NOT NULL).
+      return res.status(400).json({ success: false, message: 'Kode undangan tidak terikat event — pendaftaran ditolak.' });
+    }
 
     // Semua benefit/paket yang dipilih WAJIB milik promotor yang sama (cegah rujukan lintas-akun).
     let benefitRecords = [];

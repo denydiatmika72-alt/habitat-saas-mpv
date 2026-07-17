@@ -76,6 +76,12 @@ Akibatnya deal/benefit/paket/threshold satu promotor tampil & bisa diubah oleh p
 **Sudah diperbaiki:** keempat model kini punya `promotorId` (NOT NULL), `SponsorDeal.eventId` punya FK ke `Event`
 (`onDelete: Cascade`), dan `SponsorThreshold` unik per-promotor (`@@unique([promotorId, tierName])`, bukan global).
 
+**Lanjutan 2026-07-18 — `eventId` kini WAJIB (NOT NULL + FK cascade) di `InviteCode` DAN `SponsorDeal`:** tidak ada lagi
+kode undangan / deal yang mengambang tanpa event. `generateCode` menolak 400 kalau `eventId` kosong dan memverifikasi
+event milik promotor login (403 kalau bukan); `createDeal` mengambil `eventId` langsung dari `InviteCode.eventId`
+(bukan dari client, tidak pernah null); frontend menonaktifkan tombol generate & memandu buat event dulu kalau belum ada.
+`InviteCode` sebelumnya tak punya FK ke Event sama sekali — sekarang ada (`onDelete: Cascade`). Lihat known-bugs [2026-07-18].
+
 **Prinsip yang WAJIB ditegakkan (dan ditiru untuk SEMUA fitur/model baru yang menyimpan data milik user):**
 1. **Setiap model yang memegang data spesifik-user WAJIB punya kolom pemilik** (`promotorId`/`userId`) sejak awal —
    jangan pernah mengandalkan kolom lain (mis. `eventId` nullable) sebagai satu-satunya jalur kepemilikan.

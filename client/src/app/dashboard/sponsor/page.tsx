@@ -150,6 +150,11 @@ function InvitationCodeGenerator() {
   }, [])
 
   async function generate() {
+    // eventId WAJIB (2026-07-18) — tidak boleh generate kode tanpa event.
+    if (!selectedEventId) {
+      setError("Pilih event terlebih dahulu sebelum generate kode sponsor.")
+      return
+    }
     setSpinning(true)
     setError(null)
     const token = getToken()
@@ -159,7 +164,7 @@ function InvitationCodeGenerator() {
       const res = await fetch(`${API_BASE}/sponsor/codes`, {
         method: "POST",
         headers: { "Content-Type": "application/json", ...authHeaders() },
-        body: JSON.stringify({ eventId: selectedEventId || null }),
+        body: JSON.stringify({ eventId: selectedEventId }),
       })
       const data = await safeJson(res)
       if (!res.ok || !data.success) {
@@ -251,6 +256,21 @@ function InvitationCodeGenerator() {
           </div>
         )}
 
+        {events.length === 0 && (
+          <div className="mt-6 w-full max-w-md rounded-xl border border-amber-200 bg-amber-50 p-4 text-left">
+            <p className="text-sm font-medium text-amber-800">Buat event terlebih dahulu</p>
+            <p className="mt-1 text-xs leading-relaxed text-amber-700">
+              Kode undangan sponsor selalu terikat pada satu event. Buat event dulu sebelum generate kode.
+            </p>
+            <Link
+              href="/dashboard/create-event"
+              className="mt-3 inline-flex items-center gap-1.5 rounded-lg bg-amber-800 px-4 py-2 text-xs font-semibold text-white transition-colors hover:bg-amber-900"
+            >
+              Buat Event Baru →
+            </Link>
+          </div>
+        )}
+
         <div className="mt-6 w-full max-w-md">
           <div className="flex items-center justify-between gap-3 rounded-2xl border border-dashed border-emerald-800/30 bg-slate-50 px-5 py-5">
             <div className="flex items-center gap-3 overflow-hidden">
@@ -288,8 +308,9 @@ function InvitationCodeGenerator() {
           type="button"
           size="lg"
           onClick={generate}
-          disabled={spinning}
-          className="mt-6 h-14 w-full max-w-md gap-2.5 rounded-2xl bg-emerald-800 text-base font-semibold text-white shadow-lg shadow-emerald-800/20 transition-transform hover:bg-emerald-900 active:scale-[0.98]"
+          disabled={spinning || !selectedEventId}
+          title={!selectedEventId ? "Pilih event terlebih dahulu" : undefined}
+          className="mt-6 h-14 w-full max-w-md gap-2.5 rounded-2xl bg-emerald-800 text-base font-semibold text-white shadow-lg shadow-emerald-800/20 transition-transform hover:bg-emerald-900 active:scale-[0.98] disabled:opacity-50 disabled:cursor-not-allowed"
         >
           {spinning ? (
             <RotateCw className="size-5 animate-spin" />

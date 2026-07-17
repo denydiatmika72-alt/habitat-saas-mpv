@@ -119,6 +119,7 @@ model Event {
   merchItems         MerchItem[]
   bundlePackages     BundlePackage[]
   sponsorDeals       SponsorDeal[]
+  inviteCodes        InviteCode[]
 
   @@map("events")
 }
@@ -386,7 +387,9 @@ model SponsorDeal {
   // Kepemilikan WAJIB (fix keamanan cross-account 2026-07-17). Diisi server-side dari InviteCode.createdBy
   // saat deal dibuat via portal — TIDAK boleh dari client. Semua query GET/mutasi harus difilter promotorId.
   promotorId   String               @map("promotor_id")
-  eventId      String?              @map("event_id")
+  // eventId WAJIB (fix keamanan/data-integrity 2026-07-18) — diturunkan dari InviteCode.eventId yang
+  // juga sudah wajib. Tidak ada lagi deal mengambang tanpa event.
+  eventId      String               @map("event_id")
   packageId    String?              @map("package_id")
   sponsorName  String               @map("sponsor_name")
   contactName  String               @default("") @map("contact_name")
@@ -397,8 +400,8 @@ model SponsorDeal {
   status       String               @default("Negosiasi")
   createdAt    DateTime             @default(now()) @map("created_at")
   // FK ke Event dgn cascade — sebelumnya TIDAK ada relasi sama sekali, sehingga menghapus event
-  // meninggalkan deal yatim (penyebab data lama selamat dari cleanup). eventId nullable → relasi opsional.
-  event        Event?               @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  // meninggalkan deal yatim (penyebab data lama selamat dari cleanup). eventId kini WAJIB → relasi required.
+  event        Event                @relation(fields: [eventId], references: [id], onDelete: Cascade)
   account      ClientAccount?
   deliverables SponsorDeliverable[]
   dealBenefits SponsorDealBenefit[]
@@ -410,7 +413,10 @@ model SponsorDeal {
 model InviteCode {
   id        String    @id @default(uuid())
   code      String    @unique
-  eventId   String?   @map("event_id")
+  // eventId WAJIB (fix 2026-07-18) — kode undangan sponsor SELALU terikat 1 event. Sebelumnya nullable &
+  // tanpa FK, sehingga kode (dan deal turunannya) bisa mengambang tanpa event. FK cascade: hapus event → hapus kodenya.
+  eventId   String    @map("event_id")
+  event     Event     @relation(fields: [eventId], references: [id], onDelete: Cascade)
   createdBy String    @map("created_by")
   usedBy    String?   @map("used_by")
   usedAt    DateTime? @map("used_at")
