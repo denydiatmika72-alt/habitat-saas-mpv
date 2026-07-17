@@ -2417,3 +2417,19 @@ tidak akan terhitung** → catatan jadi bohong dan promotor salah membaca sisa k
   Catatan temuan: nilai status deal DB = "Negosiasi"(→Menunggu)/"Disetujui"/"Ditolak"; invoice = "Belum Dibayar"/"DP Terbayar"/"Lunas"; deliverable = "Planning"/"InProduction"/"Executed". Brand deliverable diturunkan dari `SponsorDeliverable.dealId → SponsorDeal.sponsorName` (tidak ada kolom brand terpisah). CATATAN TERPISAH (di luar scope, untuk follow-up): `getInvoices` (GET /api/invoices) yang lama BELUM di-scope promotorId — potensi bocor lintas akun seperti sponsor deals dulu; TIDAK disentuh di task ini.
 - Verifikasi: `node --check` controller+routes OK; client `tsc --noEmit` + `npm run build` exit 0 (`/dashboard/kerjasama` prerender static); uji endpoint langsung: tanpa eventId→400, event tak ada→404, event promotor lain→403, event sendiri→200 dgn shape benar (targetSponsorship nyata Rp 5.000.000, sisanya 0 karena tabel sponsor kosong pasca-cleanup). BELUM commit/deploy — menunggu review founder.
 - Tag: #ui #kerjasama #dashboard #new-feature #sponsor #invoice
+
+
+## [2026-07-18] Kategori Kerjasama jadi hub PENUH — konsolidasi navigasi (back button + hapus dari sidebar)
+
+- Gejala: Sponsor & Partner tidak punya jalan kembali ke Dashboard Kerjasama; tombol back Invoice & PO salah arah (ke `/dashboard` root, bukan Dashboard Kerjasama); Manajemen Tiket disebut punya link langsung ke Invoice yang redundan; dan Sponsor & Partner + Invoice & PO masih jadi item sidebar padahal Dashboard Kerjasama sudah jadi hub yang dituju.
+- Root cause: bukan bug — konsolidasi navigasi kategori Kerjasama menjadi pola hub penuh (konsisten dengan Dashboard Keuangan & Ticketing): Dashboard Kerjasama jadi satu-satunya pintu masuk sidebar untuk kategori ini.
+- File terkait: `client/src/app/dashboard/sponsor/page.tsx`, `client/src/app/dashboard/invoice/page.tsx`, `client/src/components/dashboard/sidebar.tsx`
+- Fix:
+  1. **Sponsor & Partner**: tambah tombol "Kembali ke Dashboard Kerjasama" (ikon ArrowLeft) di atas header, link `/dashboard/kerjasama` (TANPA eventId).
+  2. **Invoice & PO**: tombol back yang tadinya `router.push("/dashboard")` (label "Kembali ke Dashboard") diubah ke `router.push("/dashboard/kerjasama")` + label "Kembali ke Dashboard Kerjasama". Styling tak disentuh.
+  3. **Sidebar**: item "Sponsor & Partner" & "Invoice & Purchase Order" DIHAPUS dari grup "Kerjasama"; hanya "Dashboard Kerjasama" tersisa. Import `ReceiptText`/`Handshake` TETAP (masih dipakai `mobileNavItems`).
+  4. **Manajemen Tiket**: TIDAK ada tombol/link ke Invoice di `tickets/page.tsx` (grep bersih — navigasi hanya ke hub Ticketing + link eksternal storefront/QR). Jadi tidak ada yang dihapus; kemungkinan sudah dihapus di sesi sebelumnya atau ingatan founder keliru. Dilaporkan, tidak menyentuh tombol lain.
+- Keputusan Task 5 (entry-gating): TIDAK diterapkan. Dashboard Kerjasama TIDAK mengoper `?eventId=` ke tombol Sponsor/Invoice-nya, dan kedua halaman memang LINTAS-EVENT (Sponsor & Partner: daftar semua deal promotor + pemilih event sendiri hanya untuk generate kode undangan; Invoice & PO: daftar semua invoice + pencarian deal internal). Jadi pola eventId-inherit-or-redirect (mis. Expense Tracker/Manajemen Tiket) TIDAK cocok — tombol back sengaja link polos `/dashboard/kerjasama` tanpa eventId, tanpa redirect.
+  - Catatan: `mobileNavItems` (bottom nav mobile) SENGAJA tidak diubah (di luar scope "grup Kerjasama" desktop) — masih memuat Sponsor & Invoice sebagai quick-link. Kandidat penyelarasan terpisah kalau founder mau.
+- Verifikasi: `npx tsc --noEmit` exit 0; `npm run build` exit 0; grep: sidebar grup Kerjasama tinggal "Dashboard Kerjasama"; sponsor & invoice back button → `/dashboard/kerjasama`; tickets tanpa tombol Invoice. Deploy Vercel (frontend-only).
+- Tag: #ui #navigation #kerjasama #hub-pattern #sponsor #invoice #cleanup

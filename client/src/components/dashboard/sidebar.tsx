@@ -35,14 +35,13 @@ type NavItem =
 
 const nav: NavItem[] = [
   { label: "Dashboard", icon: LayoutDashboard, href: "/dashboard" },
-  // Dashboard Kerjasama = hub ringkasan kategori Kerjasama (pola sama Dashboard Ticketing/Keuangan).
-  // BEDA: "Sponsor & Partner" & "Invoice & Purchase Order" SENGAJA TETAP di sidebar sebagai link langsung
-  // (bukan hub-only) atas instruksi eksplisit founder — menunggu perintah terpisah sebelum dihapus.
+  // Pola hub PENUH (sejak 2026-07-18): "Dashboard Kerjasama" = SATU-SATUNYA pintu masuk sidebar untuk
+  // kategori Kerjasama — sama seperti Dashboard Keuangan & Ticketing. "Sponsor & Partner" (/dashboard/sponsor)
+  // & "Invoice & Purchase Order" (/dashboard/invoice) SUDAH DIHAPUS dari sidebar; halamannya tetap ada,
+  // dicapai lewat tombol nav di Dashboard Kerjasama + tombol "Kembali ke Dashboard Kerjasama" antar-halaman.
   { label: "Dashboard Kerjasama", icon: BarChart2, href: "/dashboard/kerjasama", badge: "Pro", group: "Kerjasama" },
-  { label: "Invoice & Purchase Order", icon: ReceiptText, href: "/dashboard/invoice", group: "Kerjasama" },
   { label: "RAB Builder", icon: ClipboardList, href: "/dashboard", group: "Perencanaan" },
   { label: "Simulasi Harga Tiket", icon: Calculator, href: "/dashboard/simulasi", badge: "Pro", group: "Perencanaan" },
-  { label: "Sponsor & Partner", icon: Handshake, href: "/dashboard/sponsor", badge: "Pro", group: "Kerjasama" },
   { label: "Vendor & Talent", icon: Users, onClick: () => alert("Fitur Vendor Segera Hadir"), hidden: true },
   // Pola hub (Layer 2): "Dashboard Tiket & Pencairan" adalah SATU-SATUNYA pintu masuk kategori ini.
   // "Manajemen Tiket" (/dashboard/tickets) & "Pencairan Dana" (/dashboard/payout) sengaja TIDAK ada

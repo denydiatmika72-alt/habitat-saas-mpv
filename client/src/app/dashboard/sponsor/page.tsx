@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react"
 import Link from "next/link"
 import {
+  ArrowLeft,
   BadgeCheck,
   Check,
   Copy,
@@ -1974,6 +1975,19 @@ export default function SponsorManagementPage() {
 
   return (
     <div className="mx-auto flex w-full max-w-5xl flex-col gap-6">
+      {/* Kembali ke hub kategori Kerjasama. Tanpa ?eventId= — Dashboard Kerjasama tidak mengoper
+          event ke halaman ini (Sponsor & Partner lintas-event: daftar semua deal + pemilih event
+          sendiri untuk kode undangan), jadi tidak ada konteks event tunggal untuk diwariskan. */}
+      <div>
+        <Link
+          href="/dashboard/kerjasama"
+          className="inline-flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm font-semibold text-slate-700 transition-colors hover:bg-slate-50"
+        >
+          <ArrowLeft className="size-4" />
+          Kembali ke Dashboard Kerjasama
+        </Link>
+      </div>
+
       <div className="mb-4 flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
         <div>
           <p className="text-xs font-medium uppercase tracking-[0.2em] text-emerald-800">

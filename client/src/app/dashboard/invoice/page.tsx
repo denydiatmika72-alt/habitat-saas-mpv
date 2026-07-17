@@ -657,11 +657,11 @@ function InvoicePage() {
       {/* Tombol Kembali */}
       <div>
         <button
-          onClick={() => router.push("/dashboard")}
+          onClick={() => router.push("/dashboard/kerjasama")}
           className="flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-600 transition-colors hover:bg-slate-50 hover:text-slate-900"
         >
           <ArrowLeft className="size-4" />
-          Kembali ke Dashboard
+          Kembali ke Dashboard Kerjasama
         </button>
       </div>
 
