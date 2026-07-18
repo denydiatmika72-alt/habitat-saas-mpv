@@ -2489,3 +2489,36 @@ tidak akan terhitung** → catatan jadi bohong dan promotor salah membaca sisa k
   4. Verifikasi: login 2 event beda milik 1 promotor → invoice/PO event A tak muncul saat lihat event B; leak lintas-akun tertutup.
 - Catatan (di luar scope, untuk sesi mendatang): mutasi PO by-id (`getPOById`/`updatePO`/`deletePO`/`addPOItem`/`deletePOItem`) & `PATCH /api/admin/...` belum semua punya guard kepemilikan; `GET /api/invoices/deal/:dealId` masih publik (by-design portal sponsor, di-scope oleh `dealId`). Kandidat audit lanjutan.
 - Tag: #security #invoice #manual-invoice #data-isolation #cross-account #idor #budget #purchase-order #schema-migration #fixed
+
+---
+
+## [2026-07-19] Sponsor catalog cross-event bleed (benefit/paket/threshold ter-share lintas event)
+
+- Gejala: Promotor dengan >1 event melihat katalog benefit, daftar paket, dan harga tier yang SAMA di semua event.
+  Lebih parah: stok benefit (`maxQty`/`usedQty`/`heldQty`) ter-share global per-promotor — menahan/memakai benefit di
+  deal Event A mengurangi ketersediaan benefit yang sama di Event B (padahal event fisik berbeda). Portal sponsor publik
+  juga menampilkan SELURUH katalog promotor, bukan hanya katalog event yang mengundang.
+- Root cause: `SponsorBenefit` & `SponsorThreshold` tidak punya kolom `eventId` sama sekali; `SponsorPackage` punya
+  `eventId` tapi nullable & tak pernah diisi (dead column). Semua endpoint list/create/portal di-scope HANYA `promotorId`.
+  `@@unique([promotorId, tierName])` pada threshold secara struktural mencegah harga tier per-event. Ini BUKAN cross-account
+  leak (filter `promotorId` benar di mana-mana) — murni intra-account cross-event data mixing by design lama.
+- File terkait: `server/prisma/schema.prisma` (SponsorBenefit/SponsorPackage/SponsorThreshold + relasi Event),
+  `server/controllers/sponsor.controller.js` (getBenefits/createBenefit/getPackages/createPackage/getThresholds/
+  saveThresholds/getPortalCatalog/getPublicTierPrice/createDeal + helper `verifyEventOwnership`),
+  `server/controllers/invoice.controller.js` (threshold lookup di generateInvoice),
+  `client/src/app/dashboard/sponsor/page.tsx` (lift `selectedEventId` ke halaman + prop ke 4 komponen).
+- Fix: Ketiga tabel dikonfirmasi 0 rows di production SEBELUM ubah schema (data-safety check WAJIB — kalau ada baris,
+  STOP: tidak ada jalur derivasi event yang benar untuk baris lama, harus keputusan founder). Karena kosong, langsung:
+  (1) `eventId` WAJIB (FK Event, onDelete Cascade) di SponsorBenefit & SponsorThreshold; SponsorPackage.eventId
+  nullable→required. (2) `@@unique` threshold jadi `[promotorId, eventId, tierName]`. (3) Semua GET wajib `?eventId=`
+  (400 kalau kosong) + filter `{ promotorId, eventId }`; semua CREATE set `eventId` dari body + verifikasi event milik
+  `req.user.id` (403 kalau bukan — pola sama fix invoice); `getPortalCatalog` turunkan `eventId` dari `InviteCode`
+  (server-side, bukan client); `getPublicTierPrice` dari `deal.eventId`; `createDeal` validasi benefit/paket by `eventId`;
+  `generateInvoice` filter threshold by `eventId`. Logika stok `heldQty`/`usedQty` tetap by-`benefitId` (kini otomatis
+  benar karena tiap benefit milik tepat 1 event). (4) Frontend: `selectedEventId` di-lift ke `SponsorManagementPage`
+  (pemilih event tunggal governs seluruh katalog), diprop ke InvitationCodeGenerator/BenefitBuilder/PackageBuilder/
+  ThresholdSettings; fetch pakai `?eventId=` & re-fetch saat event berubah; form create kirim `eventId`.
+  Verifikasi lokal: `npx prisma generate` OK, `tsc --noEmit` client OK, `node --check` controllers OK. Backfill TIDAK
+  diperlukan (tabel kosong). PENDING deploy manual founder (git pull → `prisma db push` → `prisma generate` → pm2 restart);
+  verifikasi produksi penuh setelah deploy.
+- Tag: #security #sponsor #data-isolation #cross-event #schema-migration #benefit #package #threshold #fixed #pending-deploy

@@ -21,6 +21,21 @@ function makeCodeString() {
   return `SPN-${seg()}-${seg()}`;
 }
 
+// Verifikasi eventId ada & milik promotor login (dipakai semua CREATE katalog per-event —
+// benefit/package/threshold). Mengembalikan { ok, status, message }. Pola sama seperti generateCode/invoice fix:
+// jangan pernah percaya eventId dari client tanpa memverifikasi event-nya milik req.user.id.
+async function verifyEventOwnership(eventId, userId) {
+  if (!eventId || typeof eventId !== 'string' || !eventId.trim()) {
+    return { ok: false, status: 400, message: 'Event wajib dipilih.' };
+  }
+  const event = await prisma.event.findUnique({ where: { id: eventId }, select: { promotor_id: true } });
+  if (!event) return { ok: false, status: 404, message: 'Event tidak ditemukan.' };
+  if (event.promotor_id !== userId) {
+    return { ok: false, status: 403, message: 'Akses ditolak — event bukan milik Anda.' };
+  }
+  return { ok: true };
+}
+
 // ─── Invite Codes ─────────────────────────────────────────────────────────────
 
 const generateCode = async (req, res) => {
@@ -94,16 +109,19 @@ const getPortalCatalog = async (req, res) => {
   try {
     const code = String(req.query.code || '').toUpperCase();
     if (!code) return res.status(400).json({ success: false, message: 'code wajib diisi.' });
-    const inviteCode = await prisma.inviteCode.findUnique({ where: { code }, select: { createdBy: true } });
+    // eventId diturunkan SERVER-SIDE dari kode undangan (fix cross-event bleed 2026-07-19) —
+    // sponsor hanya melihat katalog event yang mengundangnya, bukan seluruh katalog promotor.
+    const inviteCode = await prisma.inviteCode.findUnique({ where: { code }, select: { createdBy: true, eventId: true } });
     if (!inviteCode) return res.status(200).json({ success: true, data: { packages: [], benefits: [] } });
     const promotorId = inviteCode.createdBy;
+    const eventId = inviteCode.eventId;
     const [packages, benefits] = await Promise.all([
       prisma.sponsorPackage.findMany({
-        where: { promotorId },
+        where: { promotorId, eventId },
         orderBy: { createdAt: 'desc' },
         include: { benefits: { include: { benefit: true } } },
       }),
-      prisma.sponsorBenefit.findMany({ where: { promotorId }, orderBy: { createdAt: 'asc' } }),
+      prisma.sponsorBenefit.findMany({ where: { promotorId, eventId }, orderBy: { createdAt: 'asc' } }),
     ]);
     return res.status(200).json({ success: true, data: { packages, benefits } });
   } catch (error) {
@@ -121,11 +139,12 @@ const getPublicTierPrice = async (req, res) => {
     if (!dealId) return res.status(400).json({ success: false, message: 'dealId wajib diisi.' });
     const deal = await prisma.sponsorDeal.findUnique({
       where: { id: dealId },
-      select: { promotorId: true, tier: true },
+      select: { promotorId: true, tier: true, eventId: true },
     });
     if (!deal) return res.status(404).json({ success: false, message: 'Deal tidak ditemukan.' });
+    // Threshold di-scope ke event deal-nya (fix cross-event bleed 2026-07-19).
     const threshold = await prisma.sponsorThreshold.findFirst({
-      where: { promotorId: deal.promotorId, tierName: deal.tier },
+      where: { promotorId: deal.promotorId, eventId: deal.eventId, tierName: deal.tier },
       select: { minPrice: true },
     });
     return res.status(200).json({ success: true, tierPrice: threshold ? Number(threshold.minPrice) : 0 });
@@ -139,8 +158,13 @@ const getPublicTierPrice = async (req, res) => {
 
 const getBenefits = async (req, res) => {
   try {
+    // eventId WAJIB (fix cross-event bleed 2026-07-19) — katalog benefit di-scope per-event.
+    const { eventId } = req.query;
+    if (!eventId) {
+      return res.status(400).json({ success: false, message: 'eventId wajib diisi.' });
+    }
     const benefits = await prisma.sponsorBenefit.findMany({
-      where: { promotorId: req.user.id },
+      where: { promotorId: req.user.id, eventId: String(eventId) },
       orderBy: { createdAt: 'asc' },
     });
     return res.status(200).json({ success: true, data: benefits });
@@ -152,13 +176,17 @@ const getBenefits = async (req, res) => {
 
 const createBenefit = async (req, res) => {
   try {
-    const { name, category, description, price, maxQty } = req.body;
+    const { name, category, description, price, maxQty, eventId } = req.body;
     if (!name || !category || price === undefined) {
       return res.status(400).json({ success: false, message: 'name, category, dan price wajib diisi.' });
     }
+    // eventId dari body + verifikasi event milik promotor (jangan percaya owner dari client).
+    const own = await verifyEventOwnership(eventId, req.user.id);
+    if (!own.ok) return res.status(own.status).json({ success: false, message: own.message });
     const benefit = await prisma.sponsorBenefit.create({
       data: {
         promotorId: req.user.id,
+        eventId,
         name,
         category,
         description: description ?? '',
@@ -242,11 +270,12 @@ const createDeal = async (req, res) => {
       return res.status(400).json({ success: false, message: 'Kode undangan tidak terikat event — pendaftaran ditolak.' });
     }
 
-    // Semua benefit/paket yang dipilih WAJIB milik promotor yang sama (cegah rujukan lintas-akun).
+    // Semua benefit/paket yang dipilih WAJIB milik promotor yang sama DAN event deal ini
+    // (cegah rujukan lintas-akun & lintas-event — fix cross-event bleed 2026-07-19).
     let benefitRecords = [];
     if (Array.isArray(selectedBenefits) && selectedBenefits.length > 0) {
       const benefitIds = selectedBenefits.map((b) => b.benefitId);
-      benefitRecords = await prisma.sponsorBenefit.findMany({ where: { id: { in: benefitIds }, promotorId } });
+      benefitRecords = await prisma.sponsorBenefit.findMany({ where: { id: { in: benefitIds }, promotorId, eventId } });
       const foundIds = new Set(benefitRecords.map((b) => b.id));
       const foreign = benefitIds.filter((bid) => !foundIds.has(bid));
       if (foreign.length > 0) {
@@ -265,7 +294,7 @@ const createDeal = async (req, res) => {
     // Hitung totalValue di server (tidak percaya client)
     let computedTotalValue = 0;
     if (packageId) {
-      const pkg = await prisma.sponsorPackage.findFirst({ where: { id: packageId, promotorId }, select: { price: true } });
+      const pkg = await prisma.sponsorPackage.findFirst({ where: { id: packageId, promotorId, eventId }, select: { price: true } });
       if (!pkg) return res.status(400).json({ success: false, message: 'Paket tidak valid untuk event ini.' });
       computedTotalValue = Number(pkg.price);
     } else if (benefitRecords.length > 0) {
@@ -371,8 +400,13 @@ const updateDealStatus = async (req, res) => {
 
 const getPackages = async (req, res) => {
   try {
+    // eventId WAJIB (fix cross-event bleed 2026-07-19) — daftar paket di-scope per-event.
+    const { eventId } = req.query;
+    if (!eventId) {
+      return res.status(400).json({ success: false, message: 'eventId wajib diisi.' });
+    }
     const packages = await prisma.sponsorPackage.findMany({
-      where: { promotorId: req.user.id },
+      where: { promotorId: req.user.id, eventId: String(eventId) },
       orderBy: { createdAt: 'desc' },
       include: { benefits: { include: { benefit: true } } },
     });
@@ -385,16 +419,20 @@ const getPackages = async (req, res) => {
 
 const createPackage = async (req, res) => {
   try {
-    const { name, price, slots, description, benefits } = req.body;
+    const { name, price, slots, description, benefits, eventId } = req.body;
     if (!name) return res.status(400).json({ success: false, message: 'name wajib diisi.' });
 
-    // Validasi qty benefit ≤ maxQty — benefit HARUS milik promotor ini.
+    // eventId dari body + verifikasi event milik promotor.
+    const own = await verifyEventOwnership(eventId, req.user.id);
+    if (!own.ok) return res.status(own.status).json({ success: false, message: own.message });
+
+    // Validasi qty benefit ≤ maxQty — benefit HARUS milik promotor ini DAN event yang sama.
     if (Array.isArray(benefits) && benefits.length > 0) {
       const benefitIds = benefits.map((b) => b.benefitId);
-      const benefitRecords = await prisma.sponsorBenefit.findMany({ where: { id: { in: benefitIds }, promotorId: req.user.id } });
+      const benefitRecords = await prisma.sponsorBenefit.findMany({ where: { id: { in: benefitIds }, promotorId: req.user.id, eventId } });
       const foundIds = new Set(benefitRecords.map((b) => b.id));
       if (benefitIds.some((bid) => !foundIds.has(bid))) {
-        return res.status(400).json({ success: false, message: 'Benefit yang dipilih tidak valid.' });
+        return res.status(400).json({ success: false, message: 'Benefit yang dipilih tidak valid untuk event ini.' });
       }
       for (const { benefitId, qty } of benefits) {
         const benefit = benefitRecords.find((b) => b.id === benefitId);
@@ -404,13 +442,14 @@ const createPackage = async (req, res) => {
       }
     }
 
-    // Harga paket dari threshold tier milik promotor ini (bukan global).
-    const threshold = await prisma.sponsorThreshold.findFirst({ where: { tierName: name, promotorId: req.user.id } });
+    // Harga paket dari threshold tier milik promotor ini di event ini (bukan global/lintas-event).
+    const threshold = await prisma.sponsorThreshold.findFirst({ where: { tierName: name, promotorId: req.user.id, eventId } });
     const packagePrice = threshold ? Number(threshold.minPrice) : Number(price ?? 0);
 
     const pkg = await prisma.sponsorPackage.create({
       data: {
         promotorId: req.user.id,
+        eventId,
         name,
         price: packagePrice,
         slots: Number(slots ?? 1),
@@ -448,8 +487,13 @@ const deletePackage = async (req, res) => {
 
 const getThresholds = async (req, res) => {
   try {
+    // eventId WAJIB (fix cross-event bleed 2026-07-19) — harga tier di-scope per-event.
+    const { eventId } = req.query;
+    if (!eventId) {
+      return res.status(400).json({ success: false, message: 'eventId wajib diisi.' });
+    }
     const thresholds = await prisma.sponsorThreshold.findMany({
-      where: { promotorId: req.user.id },
+      where: { promotorId: req.user.id, eventId: String(eventId) },
       orderBy: { minPrice: 'asc' },
     });
     return res.status(200).json({ success: true, data: thresholds });
@@ -461,17 +505,20 @@ const getThresholds = async (req, res) => {
 
 const saveThresholds = async (req, res) => {
   try {
-    const { thresholds } = req.body;
+    const { thresholds, eventId } = req.body;
     if (!Array.isArray(thresholds)) {
       return res.status(400).json({ success: false, message: 'thresholds harus berupa array.' });
     }
     const promotorId = req.user.id;
+    // eventId dari body + verifikasi event milik promotor.
+    const own = await verifyEventOwnership(eventId, promotorId);
+    if (!own.ok) return res.status(own.status).json({ success: false, message: own.message });
     const results = await Promise.all(
       thresholds.map(({ tierName, minPrice }) =>
         prisma.sponsorThreshold.upsert({
-          where: { promotorId_tierName: { promotorId, tierName } },
+          where: { promotorId_eventId_tierName: { promotorId, eventId, tierName } },
           update: { minPrice: Number(minPrice) },
-          create: { promotorId, tierName, minPrice: Number(minPrice) },
+          create: { promotorId, eventId, tierName, minPrice: Number(minPrice) },
         }),
       ),
     );

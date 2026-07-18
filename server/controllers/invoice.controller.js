@@ -391,12 +391,13 @@ async function generateInvoice(req, res) {
     const diskon = isBundle ? Math.max(0, totalHargaSatuan - grandTotal) : 0;
 
     // Tier/threshold hanya relevan untuk invoice sponsorship (punya deal.tier).
-    // Threshold difilter promotorId — cegah kalkulasi tier memakai config promotor lain.
+    // Threshold difilter promotorId + eventId — cegah kalkulasi tier memakai config promotor/event lain
+    // (threshold kini di-scope per-event, fix cross-event bleed 2026-07-19).
     let nextThresh = null;
     let amountToUpgrade = null;
     if (deal) {
       const thresholds = await prisma.sponsorThreshold.findMany({
-        where: { promotorId },
+        where: { promotorId, eventId },
         orderBy: { minPrice: 'asc' },
       });
       const currentIdx = thresholds.findIndex((t) => t.tierName === deal.tier);

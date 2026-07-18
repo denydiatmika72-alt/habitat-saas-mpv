@@ -130,25 +130,14 @@ const BENEFIT_CATEGORIES = ["Branding", "Digital", "On-Ground", "Ticketing", "La
 const DEFAULT_TIERS = ["Silver", "Gold", "Platinum", "Title Sponsor"]
 
 // ─── InvitationCodeGenerator ──────────────────────────────────────────────────
-function InvitationCodeGenerator() {
+// selectedEventId & hasEvents kini diturunkan dari halaman (pemilih event level-halaman, fix cross-event
+// bleed 2026-07-19) — komponen ini tidak lagi mengelola daftar/pemilih event sendiri.
+function InvitationCodeGenerator({ selectedEventId }: { selectedEventId: string }) {
   const [current, setCurrent] = useState<string | null>(null)
   const [history, setHistory] = useState<GeneratedCode[]>([])
   const [copied, setCopied] = useState<string | null>(null)
   const [spinning, setSpinning] = useState(false)
   const [error, setError] = useState<string | null>(null)
-  const [events, setEvents] = useState<{ id: string; title: string }[]>([])
-  const [selectedEventId, setSelectedEventId] = useState<string>("")
-
-  useEffect(() => {
-    fetch(`${API_BASE}/events`, { headers: authHeaders() })
-      .then((r) => r.json())
-      .then((data) => {
-        const list = Array.isArray(data) ? data : (data.data ?? [])
-        setEvents(list)
-        if (list.length > 0) setSelectedEventId(String(list[0].id))
-      })
-      .catch(() => {})
-  }, [])
 
   async function generate() {
     // eventId WAJIB (2026-07-18) — tidak boleh generate kode tanpa event.
@@ -239,38 +228,6 @@ function InvitationCodeGenerator() {
         <p className="mt-3 max-w-md text-pretty leading-relaxed text-slate-500">
           Create a unique, single-use code and share it with brands you want on board for your event.
         </p>
-
-        {events.length > 0 && (
-          <div className="mt-6 w-full max-w-md text-left">
-            <label className="mb-1.5 block text-xs font-semibold uppercase tracking-wider text-slate-500">
-              Pilih Event
-            </label>
-            <select
-              value={selectedEventId}
-              onChange={(e) => setSelectedEventId(e.target.value)}
-              className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm text-slate-800 outline-none focus:border-emerald-600 focus:ring-2 focus:ring-emerald-600/20"
-            >
-              {events.map((ev) => (
-                <option key={ev.id} value={String(ev.id)}>{ev.title}</option>
-              ))}
-            </select>
-          </div>
-        )}
-
-        {events.length === 0 && (
-          <div className="mt-6 w-full max-w-md rounded-xl border border-amber-200 bg-amber-50 p-4 text-left">
-            <p className="text-sm font-medium text-amber-800">Buat event terlebih dahulu</p>
-            <p className="mt-1 text-xs leading-relaxed text-amber-700">
-              Kode undangan sponsor selalu terikat pada satu event. Buat event dulu sebelum generate kode.
-            </p>
-            <Link
-              href="/dashboard/create-event"
-              className="mt-3 inline-flex items-center gap-1.5 rounded-lg bg-amber-800 px-4 py-2 text-xs font-semibold text-white transition-colors hover:bg-amber-900"
-            >
-              Buat Event Baru →
-            </Link>
-          </div>
-        )}
 
         <div className="mt-6 w-full max-w-md">
           <div className="flex items-center justify-between gap-3 rounded-2xl border border-dashed border-emerald-800/30 bg-slate-50 px-5 py-5">
@@ -1162,10 +1119,12 @@ function BenefitBuilder({
   benefits,
   loading,
   onBenefitChange,
+  eventId,
 }: {
   benefits: ApiBenefit[]
   loading: boolean
   onBenefitChange: () => void
+  eventId: string
 }) {
   const [adding, setAdding] = useState(false)
   const [saving, setSaving] = useState(false)
@@ -1178,7 +1137,7 @@ function BenefitBuilder({
   })
 
   async function handleAdd() {
-    if (!form.name || !form.price) return
+    if (!form.name || !form.price || !eventId) return
     setSaving(true)
     try {
       const res = await fetch(`${API_BASE}/sponsor/benefits`, {
@@ -1190,6 +1149,7 @@ function BenefitBuilder({
           description: form.description,
           price: parseRupiah(form.price),
           maxQty: Number(form.maxQty) || 1,
+          eventId,
         }),
       })
       const d = await safeJson(res)
@@ -1400,7 +1360,7 @@ function BenefitBuilder({
 }
 
 // ─── PackageBuilder ───────────────────────────────────────────────────────────
-function PackageBuilder({ benefits, thresholds }: { benefits: ApiBenefit[]; thresholds: ApiThreshold[] }) {
+function PackageBuilder({ benefits, thresholds, eventId }: { benefits: ApiBenefit[]; thresholds: ApiThreshold[]; eventId: string }) {
   const [packages, setPackages] = useState<ApiPackage[]>([])
   const [loading, setLoading] = useState(true)
   const [adding, setAdding] = useState(false)
@@ -1423,12 +1383,14 @@ function PackageBuilder({ benefits, thresholds }: { benefits: ApiBenefit[]; thre
   }
 
   useEffect(() => {
-    fetch(`${API_BASE}/sponsor/packages`, { headers: authHeaders() })
+    if (!eventId) { setPackages([]); setLoading(false); return }
+    setLoading(true)
+    fetch(`${API_BASE}/sponsor/packages?eventId=${eventId}`, { headers: authHeaders() })
       .then((r) => safeJson(r))
       .then((d) => { if (d.success) setPackages((d.data as ApiPackage[]) ?? []) })
       .catch(() => {})
       .finally(() => setLoading(false))
-  }, [])
+  }, [eventId])
 
   function setQty(benefitId: string, qty: number) {
     const benefit = benefits.find((b) => b.id === benefitId)
@@ -1443,7 +1405,7 @@ function PackageBuilder({ benefits, thresholds }: { benefits: ApiBenefit[]; thre
   const packagePrice = selectedThreshold ? Number(selectedThreshold.minPrice) : 0
 
   async function handleCreate() {
-    if (!selectedTierName) return
+    if (!selectedTierName || !eventId) return
     const selectedBenefits = Object.entries(form.benefitQtys)
       .filter(([, qty]) => qty > 0)
       .map(([benefitId, qty]) => ({ benefitId, qty }))
@@ -1459,6 +1421,7 @@ function PackageBuilder({ benefits, thresholds }: { benefits: ApiBenefit[]; thre
           price: packagePrice,
           benefits: selectedBenefits,
           description: "",
+          eventId,
         }),
       })
       const d = await safeJson(res)
@@ -1727,7 +1690,7 @@ function PackageBuilder({ benefits, thresholds }: { benefits: ApiBenefit[]; thre
 }
 
 // ─── ThresholdSettings ────────────────────────────────────────────────────────
-function ThresholdSettings({ onThresholdChange }: { onThresholdChange: () => void }) {
+function ThresholdSettings({ onThresholdChange, eventId }: { onThresholdChange: () => void; eventId: string }) {
   const [rows, setRows] = useState<ApiThreshold[]>(
     DEFAULT_TIERS.map((t) => ({ tierName: t, minPrice: 0 })),
   )
@@ -1738,9 +1701,11 @@ function ThresholdSettings({ onThresholdChange }: { onThresholdChange: () => voi
   const [activeDropdown, setActiveDropdown] = useState<number | null>(null)
 
   useEffect(() => {
+    if (!eventId) { setRows(DEFAULT_TIERS.map((t) => ({ tierName: t, minPrice: 0 }))); setPackages([]); setLoading(false); return }
+    setLoading(true)
     Promise.all([
-      fetch(`${API_BASE}/sponsor/thresholds`, { headers: authHeaders() }).then((r) => safeJson(r)),
-      fetch(`${API_BASE}/sponsor/packages`, { headers: authHeaders() }).then((r) => safeJson(r)),
+      fetch(`${API_BASE}/sponsor/thresholds?eventId=${eventId}`, { headers: authHeaders() }).then((r) => safeJson(r)),
+      fetch(`${API_BASE}/sponsor/packages?eventId=${eventId}`, { headers: authHeaders() }).then((r) => safeJson(r)),
     ])
       .then(([thrData, pkgData]) => {
         if (thrData.success && Array.isArray(thrData.data) && (thrData.data as ApiThreshold[]).length > 0) {
@@ -1749,24 +1714,29 @@ function ThresholdSettings({ onThresholdChange }: { onThresholdChange: () => voi
             apiMap[t.tierName] = Number(t.minPrice)
           })
           setRows(DEFAULT_TIERS.map((t) => ({ tierName: t, minPrice: apiMap[t] ?? 0 })))
+        } else {
+          // Event tanpa threshold tersimpan → reset ke default 0 (jangan bocorkan angka event sebelumnya).
+          setRows(DEFAULT_TIERS.map((t) => ({ tierName: t, minPrice: 0 })))
         }
         if (pkgData.success) setPackages((pkgData.data as ApiPackage[]) ?? [])
       })
       .catch(() => {})
       .finally(() => setLoading(false))
-  }, [])
+  }, [eventId])
 
   function updateRow(idx: number, update: Partial<ApiThreshold>) {
     setRows((prev) => prev.map((r, i) => (i === idx ? { ...r, ...update } : r)))
   }
 
   async function handleSave() {
+    if (!eventId) return
     setSaving(true)
     try {
       const res = await fetch(`${API_BASE}/sponsor/thresholds`, {
         method: "POST",
         headers: { "Content-Type": "application/json", ...authHeaders() },
         body: JSON.stringify({
+          eventId,
           thresholds: rows.map((r) => ({
             tierName: r.tierName,
             minPrice: Number(r.minPrice),
@@ -1915,9 +1885,26 @@ export default function SponsorManagementPage() {
   const [benefits, setBenefits] = useState<ApiBenefit[]>([])
   const [benefitsLoading, setBenefitsLoading] = useState(true)
   const [thresholds, setThresholds] = useState<ApiThreshold[]>([])
+  // Katalog sponsor kini di-scope PER-EVENT (fix cross-event bleed 2026-07-19). Event dipilih SEKALI
+  // di level halaman → diturunkan ke InvitationCodeGenerator + BenefitBuilder/PackageBuilder/ThresholdSettings.
+  const [events, setEvents] = useState<{ id: string; title: string }[]>([])
+  const [selectedEventId, setSelectedEventId] = useState<string>("")
+
+  useEffect(() => {
+    fetch(`${API_BASE}/events`, { headers: authHeaders() })
+      .then((r) => r.json())
+      .then((data) => {
+        const list = Array.isArray(data) ? data : (data.data ?? [])
+        setEvents(list)
+        if (list.length > 0) setSelectedEventId(String(list[0].id))
+      })
+      .catch(() => {})
+  }, [])
 
   function fetchBenefits() {
-    fetch(`${API_BASE}/sponsor/benefits`, { headers: authHeaders() })
+    if (!selectedEventId) { setBenefits([]); setBenefitsLoading(false); return }
+    setBenefitsLoading(true)
+    fetch(`${API_BASE}/sponsor/benefits?eventId=${selectedEventId}`, { headers: authHeaders() })
       .then((r) => safeJson(r))
       .then((d) => { if (d.success) setBenefits((d.data as ApiBenefit[]) ?? []) })
       .catch(() => {})
@@ -1925,13 +1912,14 @@ export default function SponsorManagementPage() {
   }
 
   function fetchThresholds() {
-    fetch(`${API_BASE}/sponsor/thresholds`, { headers: authHeaders() })
+    if (!selectedEventId) { setThresholds([]); return }
+    fetch(`${API_BASE}/sponsor/thresholds?eventId=${selectedEventId}`, { headers: authHeaders() })
       .then((r) => safeJson(r))
       .then((d) => { if (d.success) setThresholds((d.data as ApiThreshold[]) ?? []) })
       .catch(() => {})
   }
 
-  useEffect(() => { fetchBenefits(); fetchThresholds() }, []) // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => { fetchBenefits(); fetchThresholds() }, [selectedEventId]) // eslint-disable-line react-hooks/exhaustive-deps
 
   if (userLoading) {
     return (
@@ -2008,15 +1996,50 @@ export default function SponsorManagementPage() {
           menetralkan `mt-12` bawaan section pertama tiap kolom supaya puncak kedua kolom sejajar;
           `mt-12` antar-section di dalam kolom tetap berfungsi sebagai spacing. Konsisten dengan
           split-layout Manajemen Tiket. Komponen, form, state, dan data-fetch TIDAK diubah. */}
+      {/* Pemilih event level-halaman (fix cross-event bleed 2026-07-19) — mengatur SEMUA katalog di bawah
+          (benefit/paket/threshold) + kode undangan. Event dipilih sekali di sini, diturunkan ke semua child. */}
+      {events.length === 0 ? (
+        <div className="rounded-xl border border-amber-200 bg-amber-50 p-4">
+          <p className="text-sm font-medium text-amber-800">Buat event terlebih dahulu</p>
+          <p className="mt-1 text-xs leading-relaxed text-amber-700">
+            Katalog sponsor (benefit, paket, tier) dan kode undangan selalu terikat pada satu event. Buat event dulu.
+          </p>
+          <Link
+            href="/dashboard/create-event"
+            className="mt-3 inline-flex items-center gap-1.5 rounded-lg bg-amber-800 px-4 py-2 text-xs font-semibold text-white transition-colors hover:bg-amber-900"
+          >
+            Buat Event Baru →
+          </Link>
+        </div>
+      ) : (
+        <div className="rounded-xl border border-slate-200 bg-white p-4">
+          <label className="mb-1.5 block text-xs font-semibold uppercase tracking-wider text-slate-500">
+            Pilih Event
+          </label>
+          <select
+            value={selectedEventId}
+            onChange={(e) => setSelectedEventId(e.target.value)}
+            className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm text-slate-800 outline-none focus:border-emerald-600 focus:ring-2 focus:ring-emerald-600/20"
+          >
+            {events.map((ev) => (
+              <option key={ev.id} value={String(ev.id)}>{ev.title}</option>
+            ))}
+          </select>
+          <p className="mt-2 text-xs text-slate-400">
+            Semua benefit, paket, tier, dan kode undangan di bawah berlaku untuk event ini saja.
+          </p>
+        </div>
+      )}
+
       <div className="grid gap-6 lg:grid-cols-2 lg:items-start">
         <div className="flex flex-col [&>*:first-child]:mt-0">
-          <InvitationCodeGenerator />
+          <InvitationCodeGenerator selectedEventId={selectedEventId} />
           <DealTracker />
         </div>
         <div className="flex flex-col [&>*:first-child]:mt-0">
-          <BenefitBuilder benefits={benefits} loading={benefitsLoading} onBenefitChange={fetchBenefits} />
-          <PackageBuilder benefits={benefits} thresholds={thresholds} />
-          <ThresholdSettings onThresholdChange={fetchThresholds} />
+          <BenefitBuilder benefits={benefits} loading={benefitsLoading} onBenefitChange={fetchBenefits} eventId={selectedEventId} />
+          <PackageBuilder benefits={benefits} thresholds={thresholds} eventId={selectedEventId} />
+          <ThresholdSettings onThresholdChange={fetchThresholds} eventId={selectedEventId} />
         </div>
       </div>
     </div>

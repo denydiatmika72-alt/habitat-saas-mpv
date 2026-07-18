@@ -9,7 +9,13 @@
 //     Urutan deploy: git pull → `node prisma/backfill-invoice-owner.js` → bash deploy.sh
 //
 // Idempotent & aman diulang (ADD COLUMN IF NOT EXISTS + UPDATE hanya baris yang masih NULL).
+//
+// ⚠️  ENV: script standalone HARUS memuat .env sendiri SEBELUM require('../src/lib/prisma') —
+//     src/lib/prisma.js membaca process.env.DATABASE_URL saat require (bikin pg Pool), dan HANYA
+//     src/index.js yang memanggil dotenv. Tanpa baris di bawah, DATABASE_URL undefined → pg fallback
+//     ke localhost:5432 → ECONNREFUSED (bug 2026-07-19). Alternatif: jalankan `node -r dotenv/config prisma/backfill-invoice-owner.js`.
 // ─────────────────────────────────────────────────────────────────────────────
+require('dotenv').config({ path: require('path').resolve(__dirname, '../.env') });
 const prisma = require('../src/lib/prisma');
 
 (async () => {

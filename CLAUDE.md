@@ -114,20 +114,32 @@ belum dikerjakan, hanya catatan pencegahan agar kelas bug ini tidak berulang di 
 - **Status: Fixed, deployed ke production, & verified** (commit `729ce39`; tabel production `sponsor_invoices`
   terkonfirmasi 0 null pada `eventId`/`promotorId` pasca-deploy).
 
-## Known Issues / Not Yet Fixed
+### Sponsor Catalog Per-Event (fix cross-event bleed, 2026-07-19)
+Katalog sponsor dulu di-scope HANYA ke `promotorId` (BUKAN `eventId`) → promotor multi-event melihat katalog & harga tier
+yang sama di semua event, dan stok benefit ter-share lintas event. Diperbaiki (ketiga tabel dikonfirmasi 0 rows sebelum
+schema change, jadi tidak perlu backfill):
+- **`SponsorBenefit`**: tambah `eventId` WAJIB (FK Event, cascade). Stok (`maxQty`/`usedQty`/`heldQty`) kini otomatis
+  per-event karena tiap benefit milik satu event; logika increment `heldQty`/`usedQty` tetap by-`benefitId` (sudah benar).
+- **`SponsorThreshold`**: tambah `eventId` WAJIB (FK Event, cascade). `@@unique` jadi `[promotorId, eventId, tierName]`
+  sehingga tier bernama sama boleh beda harga per event.
+- **`SponsorPackage`**: `eventId` diaktifkan (dulu nullable & dead column → kini WAJIB).
+- **Semua endpoint di-scope `eventId`**: `getBenefits`/`getPackages`/`getThresholds` wajib query param `?eventId=` (400
+  kalau kosong); `createBenefit`/`createPackage`/`saveThresholds` set `eventId` dari body + verifikasi event milik
+  `req.user.id` (helper `verifyEventOwnership`, 403 kalau bukan); `getPortalCatalog` turunkan `eventId` dari `InviteCode`
+  (server-side); `getPublicTierPrice` dari `deal.eventId`; `createDeal` validasi benefit/paket by `eventId`;
+  `generateInvoice` (invoice controller) filter threshold by `eventId`.
+- **Frontend** (`client/src/app/dashboard/sponsor/page.tsx`): `selectedEventId` di-lift ke level halaman (pemilih event
+  tunggal governs seluruh katalog), diturunkan sebagai prop ke `InvitationCodeGenerator`/`BenefitBuilder`/`PackageBuilder`/
+  `ThresholdSettings`; semua fetch pakai `?eventId=` & re-fetch saat event berubah; form create ikut kirim `eventId`.
+- **Status: code-complete, schema compiles (`prisma generate` OK), client typecheck OK. PENDING deploy manual founder**
+  (git pull → `npx prisma db push` → `npx prisma generate` → `pm2 restart`; tidak perlu backfill — tabel kosong).
 
-### Backfill script env loading bug
-`prisma/backfill-invoice-owner.js` TIDAK memuat `.env` saat dijalankan standalone (`node prisma/backfill-invoice-owner.js`),
-karena baik script itu maupun `src/lib/prisma.js` tidak memanggil dotenv — hanya `src/index.js` yang memanggilnya.
-Menjalankan standalone → `DATABASE_URL` undefined → `pg.Pool` fallback ke `localhost:5432` → **ECONNREFUSED**. Kali ini
-tidak berdampak karena `sponsor_invoices` kosong pra-deploy, tapi akan GAGAL lagi kalau dijalankan di masa depan terhadap
-tabel yang sudah berisi data. **Fix:** tambahkan `node -r dotenv/config` atau `require('dotenv').config({ path: ... })`
-eksplisit di atas script sebelum dipakai lagi.
-
-### Sponsor catalog cross-event bleed
-`SponsorBenefit`, `SponsorPackage`, dan `SponsorThreshold` di-scope HANYA ke `promotorId`, BUKAN `eventId` — sehingga
-promotor dengan banyak event melihat katalog benefit / daftar paket / harga tier yang SAMA di semua event, dan kuota stok
-benefit (`maxQty`/`usedQty`) mungkin ter-share salah lintas event. **Status: under investigation** (sesi ini).
+### Backfill script env loading bug — FIXED (2026-07-19)
+`prisma/backfill-invoice-owner.js` dulu tidak memuat `.env` saat dijalankan standalone → `DATABASE_URL` undefined →
+`pg.Pool` fallback ke `localhost:5432` → **ECONNREFUSED**. **Fixed:** ditambahkan `require('dotenv').config({ path: ... })`
+eksplisit di atas `require('../src/lib/prisma')` (harus sebelum require prisma, karena `src/lib/prisma.js` membaca
+`DATABASE_URL` saat require). Terverifikasi `DATABASE_URL` resolve setelah dotenv. Panduan umum: script standalone apa pun
+yang pakai `src/lib/prisma` WAJIB memuat dotenv sendiri (atau jalankan `node -r dotenv/config <script>`).
 
 ## Arsitektur 2-Lapis Publish (Homepage Discovery vs Storefront) — SENGAJA, bukan duplikasi
 
