@@ -76,6 +76,11 @@ type PromoterSettings = {
   accountHolder: string | null
 }
 
+type EventOption = {
+  id: string
+  title: string
+}
+
 type InvoiceItem = {
   name: string
   qty: number
@@ -335,6 +340,11 @@ function InvoicePage() {
     { name: "", qty: 1, unitPrice: 0, subtotal: 0 },
   ])
 
+  // Event picker untuk invoice manual — invoice manual TIDAK lagi menempel ke deal sponsor mana pun,
+  // jadi event dipilih eksplisit di sini (menggantikan hack lama deals[0].id).
+  const [events, setEvents] = useState<EventOption[]>([])
+  const [manualEventId, setManualEventId] = useState<string>("")
+
   // Preview
   const [preview, setPreview] = useState<PreviewData | null>(null)
 
@@ -369,9 +379,17 @@ function InvoicePage() {
   useEffect(() => {
     loadSettings()
     loadInvoices()
+    loadEvents()
     const dealIdParam = searchParams.get("dealId")
     loadDeals(dealIdParam ?? undefined)
   }, [searchParams])
+
+  async function loadEvents() {
+    const res = await fetch(`${API_BASE}/events`, { headers: authHeaders() })
+    const json = await res.json()
+    const list: EventOption[] = Array.isArray(json) ? json : json.data ?? []
+    setEvents(list)
+  }
 
   async function loadSettings() {
     const res = await fetch(`${API_BASE}/settings/promoter`, { headers: authHeaders() })
@@ -527,11 +545,18 @@ function InvoicePage() {
       setError("Pilih deal sponsor terlebih dahulu.")
       return
     }
+    if (!fromDeal && !manualEventId) {
+      setError("Pilih event terlebih dahulu untuk invoice manual.")
+      return
+    }
     setError(null)
     setGenerating(true)
 
     const payload: Record<string, unknown> = {
+      // Invoice sponsorship: kirim dealId (eventId & pemilik diturunkan server-side dari deal).
+      // Invoice manual: kirim eventId yang dipilih (TIDAK ada dealId — tidak menempel ke deal mana pun).
       dealId: fromDeal ? selectedDeal!.id : undefined,
+      eventId: fromDeal ? undefined : manualEventId,
       promotorName: settings.companyName,
       bankName: settings.bankName,
       bankAccount: settings.bankAccount,
@@ -544,15 +569,13 @@ function InvoicePage() {
 
     if (!fromDeal) {
       const validItems = manualItems.filter((i) => i.name.trim())
-      payload.manualItems = validItems
-      payload.manualGrandTotal = validItems.reduce((s, i) => s + i.subtotal, 0)
-      // For manual we still need a dealId — use the first deal if available, or show error
-      if (deals.length === 0) {
-        setError("Tidak ada deal aktif. Buat deal sponsor terlebih dahulu.")
+      if (validItems.length === 0) {
+        setError("Tambahkan minimal 1 item tagihan.")
         setGenerating(false)
         return
       }
-      payload.dealId = deals[0].id
+      payload.manualItems = validItems
+      payload.manualGrandTotal = validItems.reduce((s, i) => s + i.subtotal, 0)
     }
 
     const res = await fetch(`${API_BASE}/invoices/generate`, {
@@ -935,6 +958,26 @@ function InvoicePage() {
               {error}
             </div>
           )}
+
+          <SectionCard title="Event" icon={<Building2 className="size-4" />}>
+            <Label htmlFor="manualEvent" className="text-[10px] font-semibold uppercase tracking-wider text-slate-400">
+              Pilih Event <span className="text-red-500">*</span>
+            </Label>
+            <select
+              id="manualEvent"
+              className="mt-2 w-full rounded-lg border border-slate-200 bg-white px-3 py-2.5 text-sm text-slate-700 outline-none focus:border-slate-400"
+              value={manualEventId}
+              onChange={(e) => setManualEventId(e.target.value)}
+            >
+              <option value="">— Pilih event —</option>
+              {events.map((ev) => (
+                <option key={ev.id} value={ev.id}>{ev.title}</option>
+              ))}
+            </select>
+            <p className="mt-2 text-xs text-slate-400">
+              Invoice manual akan ditautkan ke event ini (bukan ke deal sponsor).
+            </p>
+          </SectionCard>
 
           <SectionCard title="Item Tagihan" icon={<FileText className="size-4" />}>
             <div className="space-y-2">

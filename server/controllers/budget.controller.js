@@ -62,6 +62,19 @@ const initializeBudget = async (req, res) => {
 const getBudgetByEvent = async (req, res) => {
   try {
     const { eventId } = req.params;
+
+    // Cek kepemilikan event dulu — cegah IDOR baca RAB event promotor lain hanya bermodal eventId.
+    const event = await prisma.event.findUnique({
+      where: { id: eventId },
+      select: { promotor_id: true },
+    });
+    if (!event) {
+      return res.status(404).json({ success: false, message: 'Event tidak ditemukan.' });
+    }
+    if (event.promotor_id !== req.user.id) {
+      return res.status(403).json({ success: false, message: 'Anda tidak memiliki akses ke event ini.' });
+    }
+
     const budget = await prisma.budget.findFirst({
       where: { eventId },
       include: {
@@ -223,6 +236,18 @@ const deleteItem = async (req, res) => {
 const getRabItemsByEvent = async (req, res) => {
   try {
     const { eventId } = req.params;
+
+    // Cek kepemilikan event dulu — cegah IDOR baca item RAB event promotor lain (jalur kembar getBudgetByEvent).
+    const event = await prisma.event.findUnique({
+      where: { id: eventId },
+      select: { promotor_id: true },
+    });
+    if (!event) {
+      return res.status(404).json({ success: false, message: 'Event tidak ditemukan.' });
+    }
+    if (event.promotor_id !== req.user.id) {
+      return res.status(403).json({ success: false, message: 'Anda tidak memiliki akses ke event ini.' });
+    }
 
     const budget = await prisma.budget.findFirst({
       where: { eventId },

@@ -247,15 +247,24 @@ function buildPdf(invoice, outputPath) {
 
 // ─── Controllers ─────────────────────────────────────────────────────────────
 
-// GET /api/invoices
+// GET /api/invoices  (opsional ?eventId= untuk scope per-event)
 async function getInvoices(req, res) {
   try {
+    // Isolasi per-promotor WAJIB: SELALU filter promotorId (menutup kebocoran lintas akun — dulu findMany
+    // tanpa where sama sekali). eventId opsional: kalau caller mengirim ?eventId= → scope tambahan ke event
+    // itu; kalau tidak → daftar lintas-event milik promotor (dipakai "Semua Invoice" & Document Table).
+    const { eventId } = req.query;
+    const where = {
+      promotorId: req.user.id,
+      ...(eventId ? { eventId } : {}),
+    };
     const invoices = await prisma.sponsorInvoice.findMany({
+      where,
       orderBy: { createdAt: 'desc' },
       select: {
         id: true, invoiceNumber: true, sponsorName: true, contactName: true,
         grandTotal: true, status: true, currentTier: true, createdAt: true,
-        pdfUrl: true, dealId: true,
+        pdfUrl: true, dealId: true, eventId: true,
       },
     });
     return res.json({ success: true, data: invoices });
@@ -270,6 +279,9 @@ async function getInvoice(req, res) {
   try {
     const invoice = await prisma.sponsorInvoice.findUnique({ where: { id: req.params.id } });
     if (!invoice) return res.status(404).json({ success: false, message: 'Invoice tidak ditemukan.' });
+    if (invoice.promotorId !== req.user.id) {
+      return res.status(403).json({ success: false, message: 'Anda tidak memiliki akses ke invoice ini.' });
+    }
     return res.json({ success: true, data: invoice });
   } catch (err) {
     console.error('[getInvoice]', err);
@@ -296,6 +308,7 @@ async function generateInvoice(req, res) {
   try {
     const {
       dealId,
+      eventId: bodyEventId,
       promotorName,
       promotorLogo,
       bankName,
@@ -307,20 +320,50 @@ async function generateInvoice(req, res) {
       packageId,
       manualItems,
       manualGrandTotal,
+      sponsorName: bodySponsorName,
+      sponsorEmail: bodySponsorEmail,
+      contactName: bodyContactName,
     } = req.body;
 
-    if (!dealId) return res.status(400).json({ success: false, message: 'dealId wajib diisi.' });
     if (!promotorName || !bankName || !bankAccount || !accountHolder) {
       return res.status(400).json({ success: false, message: 'Data promotor dan rekening wajib diisi.' });
     }
 
-    const deal = await prisma.sponsorDeal.findUnique({
-      where: { id: dealId },
-      include: {
-        dealBenefits: { include: { benefit: { select: { name: true, category: true } } } },
-      },
-    });
-    if (!deal) return res.status(404).json({ success: false, message: 'Deal tidak ditemukan.' });
+    // Pemilik SELALU dari sesi — jangan pernah dari body client.
+    const promotorId = req.user.id;
+
+    // eventId & pemilik diturunkan SERVER-SIDE dari resource tepercaya, tidak pernah dari deals[0]:
+    //  - Invoice sponsorship (ada dealId): eventId dari deal.eventId + verifikasi deal milik promotor (tutup IDOR).
+    //  - Invoice manual (tanpa dealId): eventId dari body (event yang dipilih promotor) + verifikasi kepemilikan event.
+    let deal = null;
+    let eventId = null;
+
+    if (dealId) {
+      deal = await prisma.sponsorDeal.findUnique({
+        where: { id: dealId },
+        include: {
+          dealBenefits: { include: { benefit: { select: { name: true, category: true } } } },
+        },
+      });
+      if (!deal) return res.status(404).json({ success: false, message: 'Deal tidak ditemukan.' });
+      if (deal.promotorId !== promotorId) {
+        return res.status(403).json({ success: false, message: 'Anda tidak memiliki akses ke deal ini.' });
+      }
+      eventId = deal.eventId;
+    } else {
+      if (!bodyEventId) {
+        return res.status(400).json({ success: false, message: 'eventId wajib diisi untuk invoice manual.' });
+      }
+      const event = await prisma.event.findUnique({
+        where: { id: bodyEventId },
+        select: { id: true, promotor_id: true },
+      });
+      if (!event) return res.status(404).json({ success: false, message: 'Event tidak ditemukan.' });
+      if (event.promotor_id !== promotorId) {
+        return res.status(403).json({ success: false, message: 'Anda tidak memiliki akses ke event ini.' });
+      }
+      eventId = event.id;
+    }
 
     let items = [];
     let grandTotal = 0;
@@ -328,7 +371,7 @@ async function generateInvoice(req, res) {
     if (Array.isArray(manualItems) && manualItems.length > 0) {
       items = manualItems;
       grandTotal = manualGrandTotal ?? manualItems.reduce((s, i) => s + Number(i.subtotal), 0);
-    } else if (deal.dealBenefits.length > 0) {
+    } else if (deal && deal.dealBenefits.length > 0) {
       items = deal.dealBenefits.map((db) => ({
         name: db.benefit.name,
         qty: db.qty,
@@ -336,29 +379,42 @@ async function generateInvoice(req, res) {
         subtotal: Number(db.totalPrice),
       }));
       grandTotal = Number(deal.totalValue);
-    } else {
+    } else if (deal) {
       items = [{ name: `Paket Sponsorship – Tier ${deal.tier}`, qty: 1, unitPrice: Number(deal.totalValue), subtotal: Number(deal.totalValue) }];
       grandTotal = Number(deal.totalValue);
+    } else {
+      return res.status(400).json({ success: false, message: 'Invoice manual harus memiliki minimal 1 item.' });
     }
 
-    const totalHargaSatuan = items.reduce((sum, item) => sum + (item.unitPrice * item.qty), 0);
-    const isBundle = invoiceSource === 'bundling' || packageId != null || deal.packageId != null;
+    const totalHargaSatuan = items.reduce((sum, item) => sum + (Number(item.unitPrice) * Number(item.qty)), 0);
+    const isBundle = invoiceSource === 'bundling' || packageId != null || (deal && deal.packageId != null);
     const diskon = isBundle ? Math.max(0, totalHargaSatuan - grandTotal) : 0;
 
-    const thresholds = await prisma.sponsorThreshold.findMany({ orderBy: { minPrice: 'asc' } });
-    const currentIdx = thresholds.findIndex((t) => t.tierName === deal.tier);
-    const nextThresh = thresholds[currentIdx + 1] ?? null;
-    const amountToUpgrade = nextThresh ? Math.max(0, Number(nextThresh.minPrice) - grandTotal) : null;
+    // Tier/threshold hanya relevan untuk invoice sponsorship (punya deal.tier).
+    // Threshold difilter promotorId — cegah kalkulasi tier memakai config promotor lain.
+    let nextThresh = null;
+    let amountToUpgrade = null;
+    if (deal) {
+      const thresholds = await prisma.sponsorThreshold.findMany({
+        where: { promotorId },
+        orderBy: { minPrice: 'asc' },
+      });
+      const currentIdx = thresholds.findIndex((t) => t.tierName === deal.tier);
+      nextThresh = thresholds[currentIdx + 1] ?? null;
+      amountToUpgrade = nextThresh ? Math.max(0, Number(nextThresh.minPrice) - grandTotal) : null;
+    }
 
     const invoiceNumber = await nextInvoiceNumber();
 
     const invoice = await prisma.sponsorInvoice.create({
       data: {
         invoiceNumber,
-        dealId,
-        sponsorName: deal.sponsorName,
-        sponsorEmail: deal.email,
-        contactName: deal.contactName || deal.sponsorName,
+        promotorId,
+        eventId,
+        dealId: deal ? deal.id : null,
+        sponsorName: deal ? deal.sponsorName : (bodySponsorName?.trim() || '—'),
+        sponsorEmail: deal ? deal.email : (bodySponsorEmail?.trim() || ''),
+        contactName: deal ? (deal.contactName || deal.sponsorName) : (bodyContactName?.trim() || '—'),
         promotorName,
         promotorLogo: promotorLogo ?? null,
         bankName,
@@ -369,9 +425,9 @@ async function generateInvoice(req, res) {
         itemsSubtotal: totalHargaSatuan,
         discount: diskon,
         invoiceSource: invoiceSource ?? 'alacarte',
-        invoiceType: invoiceType ?? 'sponsorship',
+        invoiceType: invoiceType ?? (deal ? 'sponsorship' : 'manual'),
         bonusItems: Array.isArray(bonusItems) ? bonusItems : [],
-        currentTier: deal.tier,
+        currentTier: deal ? deal.tier : '-',
         nextTier: nextThresh?.tierName ?? null,
         amountToUpgrade: amountToUpgrade && amountToUpgrade > 0 ? amountToUpgrade : null,
         status: 'Belum Dibayar',
@@ -402,6 +458,15 @@ async function updateInvoiceStatus(req, res) {
     if (!VALID_STATUS.includes(status)) {
       return res.status(400).json({ success: false, message: `Status tidak valid. Gunakan: ${VALID_STATUS.join(', ')}` });
     }
+    // Cek kepemilikan dulu — cegah IDOR ubah status invoice promotor lain.
+    const existing = await prisma.sponsorInvoice.findUnique({
+      where: { id: req.params.id },
+      select: { promotorId: true },
+    });
+    if (!existing) return res.status(404).json({ success: false, message: 'Invoice tidak ditemukan.' });
+    if (existing.promotorId !== req.user.id) {
+      return res.status(403).json({ success: false, message: 'Anda tidak memiliki akses ke invoice ini.' });
+    }
     const updated = await prisma.sponsorInvoice.update({
       where: { id: req.params.id },
       data: {
@@ -424,6 +489,9 @@ async function deleteInvoice(req, res) {
   try {
     const invoice = await prisma.sponsorInvoice.findUnique({ where: { id: req.params.id } });
     if (!invoice) return res.status(404).json({ success: false, message: 'Invoice tidak ditemukan.' });
+    if (invoice.promotorId !== req.user.id) {
+      return res.status(403).json({ success: false, message: 'Anda tidak memiliki akses ke invoice ini.' });
+    }
     if (invoice.pdfUrl) {
       const pdfPath = path.join(__dirname, '..', invoice.pdfUrl);
       if (fs.existsSync(pdfPath)) fs.unlinkSync(pdfPath);

@@ -192,6 +192,18 @@ const createPO = async (req, res) => {
       return res.status(400).json({ success: false, message: 'PO harus memiliki minimal 1 item.' });
     }
 
+    // Cek kepemilikan event dulu — cegah membuat PO menempel di event promotor lain (IDOR sisi tulis).
+    const event = await prisma.event.findUnique({
+      where: { id: eventId },
+      select: { promotor_id: true },
+    });
+    if (!event) {
+      return res.status(404).json({ success: false, message: 'Event tidak ditemukan.' });
+    }
+    if (event.promotor_id !== req.user.id) {
+      return res.status(403).json({ success: false, message: 'Anda tidak memiliki akses ke event ini.' });
+    }
+
     for (const item of items) {
       if (!item.name?.trim()) {
         return res.status(400).json({ success: false, message: 'Nama item tidak boleh kosong.' });
@@ -234,6 +246,21 @@ const createPO = async (req, res) => {
 const getPOsByEvent = async (req, res) => {
   try {
     const { eventId } = req.query;
+
+    // Kalau eventId diberikan langsung, cek kepemilikan event dulu — cegah IDOR baca PO event promotor lain.
+    // Tanpa eventId, filter by event.promotor_id sudah membatasi ke milik sendiri (aman).
+    if (eventId) {
+      const event = await prisma.event.findUnique({
+        where: { id: eventId },
+        select: { promotor_id: true },
+      });
+      if (!event) {
+        return res.status(404).json({ success: false, message: 'Event tidak ditemukan.' });
+      }
+      if (event.promotor_id !== req.user.id) {
+        return res.status(403).json({ success: false, message: 'Anda tidak memiliki akses ke event ini.' });
+      }
+    }
 
     const where = eventId
       ? { eventId }

@@ -2445,3 +2445,47 @@ tidak akan terhitung** → catatan jadi bohong dan promotor salah membaca sisa k
   2. **Split-layout desktop** (`lg:grid-cols-2 lg:items-start`, di bawah `lg` menumpuk 1 kolom seperti semula): kolom KIRI = alur sponsor aktif (`InvitationCodeGenerator` + `DealTracker`), kolom KANAN = katalog/pengaturan (`BenefitBuilder` + `PackageBuilder` + `ThresholdSettings`). Container dilebarkan `max-w-5xl` → `max-w-7xl`. `[&>*:first-child]:mt-0` menetralkan `mt-12` bawaan section pertama tiap kolom agar puncak kedua kolom sejajar (mt-12 antar-section dalam kolom tetap jadi spacing). Murni restrukturisasi layout — komponen, form, state, data-fetch, dan style tiap komponen TIDAK diubah. Tombol "Kembali ke Dashboard Kerjasama" tetap full-width di atas grid.
 - Verifikasi: `npx tsc --noEmit` exit 0 (tanpa unused var); `npm run build` exit 0 (`/dashboard/sponsor` prerender static); grep: tidak ada lagi `buttonVariants` / link `/dashboard/invoice` di file; `FileText` masih dipakai DealCard. Deploy frontend-only (Vercel).
 - Tag: #ui #sponsor #navigation #layout #split-layout #desktop
+
+---
+
+## [2026-07-18] Invoice Manual ikut bocor lintas akun — reuse model SponsorInvoice tanpa eventId/promotorId (temuan audit)
+
+- Status: **✅ SUDAH DIPERBAIKI 2026-07-18 — lihat entry "Isolasi SponsorInvoice + IDOR Budget/PO/Invoice — fix end-to-end" di bawah.** (Entry ini dipertahankan sebagai catatan audit/root-cause; detail perbaikan ada di entry resolusi.)
+- Gejala: Fitur "Invoice Manual" (tab "Manual" di `/dashboard/invoice`, di samping "Sponsorship"/"Tenant") memungkinkan user buat invoice free-form (nama item, qty, harga satuan) → PDF, tanpa terkait deal sponsor secara konseptual. Namun invoice manual bocor ke semua promotor sama seperti invoice sponsorship, dan tidak terikat event manapun.
+- Root cause (isolasi data):
+  1. **Tidak ada model terpisah.** Invoice Manual **me-reuse model `SponsorInvoice`** (tabel `sponsor_invoices`), dibedakan hanya lewat flag `invoiceType` (`"manual"` vs default `"sponsorship"`). Tidak ada model `ManualInvoice` di `schema.prisma` (dikonfirmasi — daftar model tidak memuatnya).
+  2. **`SponsorInvoice` tidak punya kolom pemilik/event.** Tidak ada `eventId`, tidak ada `promotorId`. Satu-satunya jalur kepemilikan = `dealId` (FK ke `SponsorDeal`). Untuk invoice manual, `dealId` ini **dipaksa** oleh frontend ke `deals[0].id` (deal pertama yang kebetulan ada) — bukan asosiasi nyata; kalau promotor tak punya deal, fitur menolak dengan "Tidak ada deal aktif". Jadi atribusi pemilik invoice manual bersifat kebetulan & rapuh.
+  3. **List endpoint sama & tanpa scope.** Baik sponsorship maupun manual dibaca lewat `GET /api/invoices` → `getInvoices`, yang memanggil `prisma.sponsorInvoice.findMany({ orderBy })` **TANPA `where` sama sekali** → mengembalikan SEMUA invoice (sponsorship + manual) milik SEMUA promotor ke user manapun yang login. Tidak ada filter `eventId` maupun cek kepemilikan promotor. (Ini leak yang sudah diketahui dari audit sebelumnya — dikonfirmasi juga berlaku untuk invoice manual.)
+  4. **Create endpoint juga tak cek kepemilikan.** `POST /api/invoices/generate` → `generateInvoice` mengambil `sponsorDeal.findUnique({ where: { id: dealId } })` **tanpa** filter `promotorId` → deal milik promotor lain bisa dipakai (IDOR pada create). Threshold untuk hitung upgrade juga `sponsorThreshold.findMany` tanpa `promotorId` (cross-account, konsisten dgn temuan audit).
+- Purchase Order (tab "Purchase Order" di area UI yang sama): komponen `PurchaseOrderTab` memanggil `GET /api/po?eventId=${evId}` (line ~335) → **`getPOsByEvent` yang SAMA** dengan yang sudah di-flag di audit sebelumnya (saat `eventId` diberikan, `where = { eventId }` TANPA cek `event.promotor_id` → IDOR lintas akun). Bukan endpoint baru — konfirmasi target fix yang sama.
+- Konsekuensi dunia nyata: (a) invoice manual promotor A (nominal & nama item bebas) tampil di Document Table promotor B via `/api/invoices`; (b) invoice manual tidak bisa difilter/dilaporkan per-event karena memang tak punya `eventId`; (c) atribusi ke `deals[0]` bisa menautkan invoice manual ke deal/event yang salah.
+- File terkait:
+  - `client/src/app/dashboard/invoice/page.tsx` (tab "manual", `handleGenerate(false)`, payload `invoiceType:"manual"` + `manualItems` + `dealId = deals[0].id`; list via `GET /api/invoices`)
+  - `client/src/components/dashboard/PurchaseOrderTab.tsx` (`GET /api/po?eventId=`)
+  - `server/controllers/invoice.controller.js` (`getInvoices` line 251 tanpa `where`; `generateInvoice` line ~296 tanpa cek kepemilikan deal; threshold findMany line 348)
+  - `server/routes/invoice.routes.js` (`GET /` & `POST /generate` → `verifyToken`, tanpa scoping)
+  - `server/prisma/schema.prisma` (`model SponsorInvoice` line 525 — `invoiceType` flag, tanpa `eventId`/`promotorId`)
+- Fix: **SUDAH DIKERJAKAN** — lihat entry resolusi di bawah untuk detail schema/controller/frontend + urutan migrasi.
+- Tag: #security #invoice #manual-invoice #data-isolation #cross-account #idor #audit #fixed
+
+---
+
+## [2026-07-18] Isolasi SponsorInvoice + IDOR Budget/PO/Invoice — fix end-to-end
+
+- Status: **✅ DIPERBAIKI (code-complete, PENDING DEPLOY).** Menyelesaikan temuan audit entry di atas + IDOR read Budget/PO. Diverifikasi lokal: `prisma validate` OK, `prisma generate` OK, `node --check` semua controller OK, `tsc --noEmit` client OK. **Belum di-deploy** karena PC ini tidak bisa akses DB Supabase (ECONNREFUSED) maupun SSH VPS — migrasi + backfill dijalankan Mandor di VPS (lihat "Urutan deploy" di bawah).
+- Gejala: (1) `GET /api/invoices` membocorkan SEMUA invoice (sponsorship + manual) milik SEMUA promotor ke user manapun yang login. (2) Invoice manual dipaksa menempel `deals[0].id` → atribusi event/deal salah untuk promotor dgn banyak deal. (3) IDOR create invoice terhadap deal promotor lain. (4) Kalkulasi tier pakai `SponsorThreshold` lintas akun. (5) IDOR read RAB (`GET /api/budgets/:eventId`) & PO (`GET /api/po?eventId=`) hanya bermodal `eventId` tebakan.
+- Root cause: `SponsorInvoice` tak punya kolom pemilik/event (satu-satunya jalur = `dealId`), `getInvoices` `findMany` tanpa `where`, `generateInvoice`/threshold query tanpa filter promotor, `getBudgetByEvent`/`getPOsByEvent` pakai `where: { eventId }` tanpa cek `event.promotor_id`.
+- Fix:
+  - **Schema** (`server/prisma/schema.prisma`): `SponsorInvoice` dapat `promotorId` (NOT NULL, FK `User`) + `eventId` (NOT NULL, FK `Event` `onDelete: Cascade`); `dealId` jadi **opsional** (`String?`, relasi opsional) → invoice manual tak lagi menempel deal. Back-relation ditambah di `Event` & `User`.
+  - **Migrasi/backfill**: `server/prisma/backfill-invoice-owner.js` — ADD COLUMN nullable + isi `promotor_id`/`event_id` dari `sponsor_deals` (via `deal_id` yang lama WAJIB). Idempotent; abort kalau ada baris tak ter-backfill.
+  - **`invoice.controller.js`**: `getInvoices` → `where: { promotorId: req.user.id, ...(eventId ? { eventId } : {}) }` (promotorId SELALU, eventId opsional agar "Semua Invoice" & Document Table tetap lintas-event). `generateInvoice` → pemilik dari `req.user.id`; sponsorship: `eventId` dari `deal.eventId` + guard `deal.promotorId === req.user.id` (403); manual: `eventId` dari body + guard `event.promotor_id === req.user.id` (403), `dealId=null`; threshold `findMany` difilter `promotorId`. `getInvoice`/`updateInvoiceStatus`/`deleteInvoice` dapat guard kepemilikan (404/403).
+  - **`budget.controller.js`**: `getBudgetByEvent` + `getRabItemsByEvent` cek `event.promotor_id === req.user.id` (404/403) sebelum kembalikan data.
+  - **`purchaseOrder.controller.js`**: `getPOsByEvent` cek kepemilikan saat `eventId` diberikan; `createPO` cek kepemilikan event sebelum buat PO (tutup IDOR sisi tulis).
+  - **Frontend** (`client/src/app/dashboard/invoice/page.tsx`): tab Manual dapat dropdown "Pilih Event" (`GET /api/events`); `handleGenerate(false)` kirim `eventId` (bukan `deals[0].id`), tanpa `dealId`. `PurchaseOrderTab.tsx` tidak berubah (sudah selalu kirim `?eventId=`).
+- Urutan deploy (WAJIB — deploy.sh menjalankan `db push` otomatis yang akan GAGAL kalau kolom NOT NULL ditambah ke tabel berisi data sebelum backfill):
+  1. `git pull origin main` (ambil script backfill)
+  2. `node prisma/backfill-invoice-owner.js`  ← **sebelum** db push; tambah kolom nullable + isi dari deals
+  3. `bash deploy.sh` (git pull lagi → generate → `db push` meng-enforce NOT NULL + FK → restart)
+  4. Verifikasi: login 2 event beda milik 1 promotor → invoice/PO event A tak muncul saat lihat event B; leak lintas-akun tertutup.
+- Catatan (di luar scope, untuk sesi mendatang): mutasi PO by-id (`getPOById`/`updatePO`/`deletePO`/`addPOItem`/`deletePOItem`) & `PATCH /api/admin/...` belum semua punya guard kepemilikan; `GET /api/invoices/deal/:dealId` masih publik (by-design portal sponsor, di-scope oleh `dealId`). Kandidat audit lanjutan.
+- Tag: #security #invoice #manual-invoice #data-isolation #cross-account #idor #budget #purchase-order #schema-migration #fixed

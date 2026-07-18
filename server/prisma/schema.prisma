@@ -38,6 +38,7 @@ model User {
   proTransactions   ProTransaction[]
   payoutRequests    PayoutRequest[] @relation("PromotorPayouts")
   processedPayouts  PayoutRequest[] @relation("AdminProcessedPayouts")
+  sponsorInvoices   SponsorInvoice[]
 
   @@map("users")
 }
@@ -120,6 +121,7 @@ model Event {
   bundlePackages     BundlePackage[]
   sponsorDeals       SponsorDeal[]
   inviteCodes        InviteCode[]
+  sponsorInvoices    SponsorInvoice[]
 
   @@map("events")
 }
@@ -525,8 +527,19 @@ model ClientAccount {
 model SponsorInvoice {
   id              String      @id @default(cuid())
   invoiceNumber   String      @unique @map("invoice_number")
-  dealId          String      @map("deal_id")
-  deal            SponsorDeal @relation(fields: [dealId], references: [id], onDelete: Cascade)
+  // Kepemilikan WAJIB (fix keamanan cross-account 2026-07-18). Diisi server-side dari sesi (req.user.id)
+  // untuk semua invoice, DAN dari Event untuk konteks per-event. Semua GET difilter promotorId (+ eventId
+  // opsional); mutasi by-id cek kepemilikan. Lihat known-bugs entry [2026-07-18] invoice/PO isolation.
+  promotorId      String      @map("promotor_id")
+  promotor        User        @relation(fields: [promotorId], references: [id])
+  // eventId WAJIB — invoice SELALU terikat 1 event. Untuk invoice sponsorship diturunkan dari SponsorDeal.eventId
+  // (server-side, tidak dari client); untuk invoice manual dipilih promotor (event miliknya, diverifikasi). FK cascade.
+  eventId         String      @map("event_id")
+  event           Event       @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  // dealId kini OPSIONAL — invoice manual TIDAK menempel ke deal sponsor mana pun (dulu dipaksa ke deals[0],
+  // bug atribusi). Invoice sponsorship tetap menautkan deal-nya. FK cascade tetap saat deal dihapus.
+  dealId          String?      @map("deal_id")
+  deal            SponsorDeal? @relation(fields: [dealId], references: [id], onDelete: Cascade)
   sponsorName     String      @map("sponsor_name")
   sponsorEmail    String      @map("sponsor_email")
   contactName     String      @map("contact_name")

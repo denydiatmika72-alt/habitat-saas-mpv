@@ -1,95 +1,148 @@
-﻿MASTER PRD: NEXEVENT (Music Event SaaS)
-1. Ringkasan Eksekutif & Visi Produk
-Platform SaaS B2B end-to-end yang berfungsi sebagai sistem operasi terpadu bagi promotor untuk mengelola siklus operasional event musik, mulai dari perencanaan finansial (RAB), pendanaan (Sponsor), penjualan tiket (B2C), penyewaan lapak, hingga pelaporan laba/rugi akhir.
-Target Pengguna Utama:
-•	Promotor/EO (B2B): Pengendali utama sistem operasional dan keuangan.
-•	Sponsor (B2B): Pengguna via akses Magic Link untuk memilih paket benefit dan menerima invoice.
-•	Tenant/Lapak (B2B): Pengguna untuk pendaftaran mandiri dan pembayaran sewa booth.
-•	Penonton (B2C): Pembeli tiket publik dan merchandise (tanpa perlu mendaftar akun).
-2. Arsitektur & Tech Stack (Teknologi Inti)
-Aplikasi ini akan dibangun menggunakan ekosistem mandiri (Full Coding) untuk memastikan keamanan data dan kemampuan skalabilitas tinggi:
-•	Frontend (Antarmuka): Next.js (React.js) untuk menghasilkan dasbor B2B yang interaktif dan Storefront publik B2C yang sangat responsif.
-•	Backend (Logika Server): Node.js (Express.js) menggunakan ekosistem Full JavaScript untuk mempercepat pengembangan aplikasi.
-•	Database: PostgreSQL (Relational Database) sebagai harga mati untuk menjaga integritas transaksi uang dan mencegah selisih/ overselling kuota tiket menggunakan skema penguncian baris data (Row-Level Locking).
-•	File Storage: Amazon S3 / Supabase Storage khusus untuk menyimpan aset berat seperti PDF Invoice, cetakan RAB, QR Code, dan foto nota bukti kas agar performa server utama tetap cepat.
-3. Fitur Utama & Peta Jalan Rilis (Sprints)
-Pembangunan akan dibagi menjadi fase modular (Sprints) agar fokus pada Minimum Viable Product (MVP) penghasil omzet terlebih dahulu.
-SPRINT 1: "The Promotor's ERP" (Fokus Perencanaan & Pendanaan B2B)
-Fokus pada mesin perencanaan dan akuisisi modal.
-•	Event Setup Dashboard: Input data fundamental (Nama, Tanggal, Kapasitas, Target Profit, Target Sponsor).
-•	RAB Builder: Tersedia 2 mode pengisian: Mode Cepat (Lump Sum) dan Mode Detail (Itemized per item pengeluaran).
-•	Dynamic Ticket Calculator: Kalkulator pintar berbasis kehadiran penonton (100% hingga 20%) dengan 2 opsi perhitungan:
-o	Opsi 1 (Mode Ekspansi): Menyertakan target subsidi sponsor di perhitungan.
-o	Opsi 2 (Mode Bootstrapping): Perhitungan independen murni dari total biaya RAB + Target profit untuk event pemula tanpa ekspektasi sponsor.
-•	Generator RAB Otomatis: Sistem yang merangkum data dan mengekspor dokumen RAB ke dalam format PDF yang rapi.
-•	Sponsorship Package Builder: Etalase benefit ala a la carte bagi promotor untuk menentukan harga tiap item benefit. Dilengkapi dengan sistem gamifikasi Auto-Tagging (misal: "Tambah Rp 3jt untuk menjadi Main Sponsor", jika di bawah batas akan masuk kategori Custom).
-•	Automated P&L & Live Expense Tracker: Pencatatan pengeluaran harian dan uang masuk yang pada akhir acara akan dicocokkan untuk menghasilkan papan skor Laba & Rugi (Profit & Loss) otomatis.
-SPRINT 2: "The Storefront & Ekosistem" (Fokus Publik & Penjualan Tambahan)
-Fokus pada eksekusi lapangan dan ekspansi omzet di luar tiket.
-•	Ticketing Storefront (B2C Publik): Web penjualan tiket publik.
-•	Fair-Play Checkout & Timeout Automation: Batas maksimal 4 tiket, validasi 16 digit NIK wajib (anti-calo), dan booking timeout 15 menit. Jika dalam 15 menit tidak lunas, CRON Job (skrip otomatis) akan mengembalikan tiket yang on-hold ke publik.
-•	Automated E-Ticket & Gate Management App: Pengiriman e-tiket berbekal UUID terenkripsi dalam QR Code otomatis via email. Di lapangan, tiket akan divalidasi menggunakan Aplikasi Scanner Offline-First.
-•	Merchandise PO & Bundling: Sistem penjualan barang dengan sistem Pre-Order (PO) yang mengunci stok berdasarkan varian (misal ukuran kaos). Terintegrasi sebagai upselling saat pengguna membeli tiket (bundling) atau toko mandiri. Pembeli akan mendapat E-Receipt (QR) untuk pengambilan hari H.
-•	Tenant Booking B2B: Dasbor pemilihan peta booth interaktif bagi tenant/penjual makanan, pendaftaran mandiri, kurasi (Approve/Reject) oleh promotor, dan tagihan invoice otomatis yang terintegrasi Payment Gateway.
-ROADMAP EKSPANSI (Masa Depan)
-•	Vendor Marketplace: Integrasi dengan direktori vendor panggung, suara, dan cahaya dengan sistem lelang Request for Quotation (RFQ) dan pembayaran Secure Escrow.
-4. Diagram Skema Alur Pengguna (User Flow Blueprint)
-Berikut adalah cetak biru alur untuk menjaga logika sistem tidak melenceng saat diinstruksikan ke AI/Tim Teknis.
-A. Skema Alur Promotor (Tenant B2B Inti)
-Plaintext
-[ LOGIN PROMOTOR ] -> Autentikasi via Email & Password
-       |
-[ DASHBOARD NEXEVENT ]
-       |--> 1. SETUP & PERENCANAAN
-       |      |-- Input Profil Event & Kapasitas.
-       |      |-- Setup Anggaran: Isi RAB (Itemized/Lump Sum).
-       |      |-- Setup Tiket: Pilih Mode Kalkulator -> Generate Harga Dasar -> Atur Kuota per Kategori.
-       |      |-- Setup Sponsor: Tentukan Menu Benefit & Ambang Batas (Threshold) Harga Paket.
-       |      |-- Output: Cetak PDF RAB.
-       |
-       |--> 2. OPERASIONAL PELAKSANAAN
-       |      |-- "Generate Sponsor Link": Kirim tautan unik via WhatsApp ke brand sasaran.
-       |      |-- "Publish B2C Link": Bagikan link web penjualan tiket + merch ke audiens publik.
-       |      |-- Buka Tenant Portal: Terima kurasi pendaftaran lapak jualan.
-       |      |-- Pantau Kas: Input nota pengeluaran ke Expense Tracker.
-       |
-       |--> 3. HARI PELAKSANAAN & EVALUASI
-              |-- Aplikasi Scanner bekerja membaca QR Code.
-              |-- Event Selesai: Sistem menyandingkan Uang Masuk (Sponsor+Tiket+Tenant+Merch) vs Uang Keluar (RAB/Expense) di Automated P&L.
-B. Skema Alur Sponsor (B2B Eksternal via Magic Link)
-Plaintext
-[ TERIMA MAGIC LINK ] -> Pihak brand mengklik URL (app.nexevent.com/sponsor/EVT-XYZ)
-       |
-[ PITCHING DECK & ETALASE INTERAKTIF ] -> Melihat profil event.
-       |
-[ PILIH BENEFIT (CART SYSTEM) ]
-       |-- Pilih A la Carte: (Logo di Gate, Penyebutan MC, Booth).
-       |-- Sistem menghitung total secara Live.
-       |-- Gamifikasi Auto-Tagging: Menampilkan "Tambah 3jt lagi untuk jadi Main Sponsor".
-       |
-[ CHECKOUT & DEAL ]
-       |-- Input data perusahaan.
-       |-- Sistem me-lock status benefit dan otomatis menghasilkan PDF Invoice.
-       |-- Data tagihan masuk ke Dasbor Promotor (Status: Pending Payment).
-C. Skema Alur Customer Publik (B2C Tiket & Merch)
-Plaintext
-[ AKSES LINK STOREFRONT EVENT ] -> Tanpa perlu login akun.
-       |
-[ PEMILIHAN KATEGORI & ADD-ONS ]
-       |-- Pilih Kelas Tiket.
-       |-- Checkout Upsell: Tawarkan "Bundling Kaos Eksklusif PO Ukuran L".
-       |
-[ VALIDASI ANTI-CALO & LOCKING ]
-       |-- Input Data Pemesan: NIK 16-Digit (Wajib), Nama, Email.
-       |-- Sistem: Maksimal 4 Tiket per NIK.
-       |-- SISTEM BACKEND: Row-Level Locking aktif. Memotong kuota tiket sementara & kuota varian merch.
-       |
-[ PEMBAYARAN GATEWAY ] -> Diberikan batas waktu 15 Menit.
-       |      |-- JIKA LEWAT WAKTU: Cron Job membatalkan pesanan, kuota tiket & merch dikembalikan.
-       |      |-- JIKA LUNAS: Lanjut ke distribusi.
-       |
-[ DISTRIBUSI OTOMATIS ]
-       |-- Generate Kriptografi UUID QR Code.
-       |-- Render PDF E-Ticket (Tiket Masuk) & E-Receipt (Tanda Terima Merch).
-       |-- Kirim otomatis via layanan API Email.
+﻿nexEvent — Product Requirements Document (Investor Edition)
 
+Music Event Operating System
+PRD v4.0 · Juli 2026
+Rahasia — Hanya untuk Calon Investor & Mitra Strategis
+
+28+ Modul Backend Live · 136 API Endpoint Aktif · 36 Model Data Produksi
+
+
+01 — Ringkasan Eksekutif
+
+nexEvent adalah platform SaaS B2B yang berfungsi sebagai "sistem operasi terpadu" bagi promotor musik Indonesia — menyatukan perencanaan anggaran (RAB), akuisisi sponsor, penjualan tiket B2C, penjualan merchandise, dan pelaporan keuangan otomatis dalam satu dashboard.
+
+Sejak konsep awal disusun Juni 2026, produk telah berkembang jauh melampaui MVP: seluruh siklus hidup event — dari perencanaan anggaran hingga pencairan dana pasca-event — kini berjalan end-to-end di production, dipakai oleh promotor pertama, dan sudah melalui tiga lapis audit teknis internal untuk memastikan akurasi dokumentasi terhadap kode yang benar-benar berjalan.
+
+
+STATUS: LIVE DI PRODUCTION — nexeventapp.tech
+
+
+
+Yang membedakan nexEvent: kombinasi RAB Builder + manajemen sponsor otomatis (Magic Link) + ticketing B2C dengan sistem anti-calo terintegrasi + laporan keuangan otomatis dalam satu platform — kombinasi yang belum ada satupun kompetitor lokal menawarkannya secara terpadu.
+
+
+02 — Masalah yang Diselesaikan
+
+Promotor musik skala kecil-menengah di Indonesia saat ini mengelola satu event dengan 5–7 tools terpisah: Excel untuk RAB, WhatsApp untuk negosiasi sponsor, Loket/Tix.id untuk tiket, dan Google Sheets untuk kas. Tidak ada koneksi antar tools, sehingga data harus diinput ulang di setiap platform, laporan laba/rugi harus dihitung manual setelah event selesai, dan risiko overselling tiket tinggi karena tidak ada sistem locking real-time.
+
+Tiga Celah Pasar Utama
+
+
+Tidak ada ERP operasional untuk promotor skala kecil-menengah — kompetitor (LOKET, Wukong) fokus di ticketing, bukan manajemen keuangan/RAB.
+Tidak ada platform digital untuk manajemen sponsor event musik — proses pitching sponsor di Indonesia masih 100% manual via WhatsApp/pertemuan langsung.
+Sistem anti-calo terintegrasi belum ada di pasar — validasi NIK + booking-lock real-time adalah solusi yang belum dikembangkan kompetitor lokal manapun secara terpadu.
+
+
+
+03 — Solusi: Platform Terpadu
+
+nexEvent menghubungkan seluruh alur operasional event dalam satu sistem, dengan empat persona pengguna yang saling terhubung:
+
+PersonaPeranAksesPromotor / EOPengendali utama operasional & keuangan eventDashboard penuhSponsor (B2B)Brand yang menjadi sponsor eventMagic Link — tanpa loginPenonton (B2C)Pembeli tiket & merchandise publikStorefront publikField Crew & ScannerTim lapangan (kas harian, validasi tiket venue)Portal mobile khusus
+
+
+04 — Snapshot Produk: Yang Sudah Live
+
+Berbeda dari draft PRD awal (Juni 2026) yang masih berupa rencana, seluruh modul di bawah ini adalah fitur yang sudah dibangun, diverifikasi, dan berjalan di production nexeventapp.tech per Juli 2026.
+
+A. Perencanaan & Operasional Event
+
+
+RAB Builder — perencanaan anggaran per kategori & item, auto-hitung dana cadangan, export proposal PDF.
+Purchase Order — PO terstruktur dengan impor langsung dari item RAB, status draft/terkirim/lunas, export PDF.
+Expense Tracker & Petty Cash — pencatatan pengeluaran promotor + sistem kas lapangan harian untuk Field Crew (top-up → belanja → sisa dikembalikan), dengan pemisahan akuntansi yang ketat agar tidak mencemari laporan laba/rugi.
+
+
+B. Manajemen Sponsor
+
+
+Generate kode undangan sponsor per event → sponsor mendaftar via portal publik tanpa perlu akun.
+Katalog benefit, paket sponsorship bertingkat, dan invoice otomatis begitu deal disetujui.
+Kredensial akun sponsor dikirim otomatis dengan kontrol penuh di tangan promotor (kapan dan lewat kanal apa).
+
+
+C. Ticketing & Storefront B2C
+
+
+Storefront publik per event (nexeventapp.tech/event/[slug]) — banner, deskripsi, fasilitas, tiket, merchandise, dan paket bundling dalam satu halaman checkout.
+Sistem anti-calo: validasi NIK 16-digit dengan verifikasi tanggal lahir yang valid secara kalender (bukan sekadar cek format), limit maksimal 4 tiket per NIK per event, dihitung kumulatif lintas semua kanal penjualan.
+Booking lock 15 menit dengan pelepasan otomatis (CRON job) mencegah overselling.
+Ticket Box Offline — kanal penjualan tunai/transfer di lokasi fisik untuk pasar yang belum siap online-only, tetap tercatat penuh di sistem (bukan di luar buku).
+E-tiket QR terenkripsi dikirim otomatis via email, dapat divalidasi lewat aplikasi Scanner berbasis web saat masuk venue.
+
+
+D. Monetisasi & Model Fee
+
+
+Fee platform bertingkat (3.5% standar → 2% volume besar → 1.5% kartu truf khusus), dipecah per jenis transaksi (tiket/merchandise/bundling), dapat ditanggung penonton atau promotor sesuai pilihan sebelum storefront live.
+Pajak opsional 10% per event, dihitung transparan hanya dari komponen tiket.
+Sistem rekonsiliasi hutang fee untuk transaksi tunai yang tidak melalui payment gateway.
+
+
+E. Keuangan & Pelaporan
+
+
+Laporan Laba/Rugi otomatis — menggabungkan pendapatan tiket/merchandise, sponsor, dan pemasukan lain, dikurangi seluruh biaya, real-time tanpa hitung manual.
+Payout / Pencairan Dana — promotor dapat menarik hasil penjualan kapan saja, dengan pelunasan hutang fee otomatis terintegrasi ke dalam alur pencairan.
+Laporan Pendapatan Platform (internal nexEvent) untuk memantau revenue perusahaan per sumber dan per promotor.
+Data Audiens — laporan demografis pembeli tiket (usia & gender diturunkan otomatis dari NIK) yang dapat diunduh promotor sebagai materi kredibel untuk pitching ke sponsor berikutnya.
+Laporan Akhir Event — ringkasan menyeluruh (keuangan, sponsor, tiket, audiens) dikirim otomatis via email begitu promotor menandai event selesai.
+
+
+
+05 — Model Bisnis & Monetisasi
+
+TierHargaCakupanStarterGratisRAB Builder + export PDF, 1 event aktifPro Per-EventRp 499.000Semua fitur, 1 event, aktif 90 hariPerpanjangan ProRp 99.000+30 hari, dapat diperpanjang berkali-kali
+
+Sumber Revenue kedua — Fee Transaksi: nexEvent mengambil fee 1.5–3.5% dari setiap transaksi tiket/merchandise/bundling yang terjadi di platform, terlepas dari status langganan Pro promotor. Model dual-revenue ini (langganan + transaction fee) memberi kombinasi pendapatan berulang yang dapat diprediksi (Pro subscription) dan pendapatan yang tumbuh seiring skala transaksi platform (fee).
+
+
+06 — Estimasi Ukuran Pasar
+
+LevelDefinisiEstimasiTAMPasar tiket event Indonesia 2025–2028 (proyeksi Statista, USD ~460 jt di 2028)~Rp 7,1 TriliunSAMSegmen promotor musik kecil–menengah yang belum terdigitalisasi penuh (~10% TAM)~Rp 600 MiliarSOMTarget realistis tahun 1–2 (~100 promotor aktif × Rp 5 jt/tahun)~Rp 6 Miliar
+
+
+07 — Lanskap Kompetitif
+
+PlatformRABSponsorTicketingP&L OtomatisAnti-CalonexEvent (kami)YaYaYaYaYa, terintegrasiLOKET.com (GoTo)TidakTidakYaTidakTidakWukong.co.idTidakTidakYaParsialTidakEventbriteTidakParsialYaTidakTidak
+
+nexEvent adalah satu-satunya platform di pasar Indonesia yang menggabungkan kelima kapabilitas ini dalam satu produk terpadu — kompetitor eksisting seluruhnya berhenti di ticketing murni.
+
+
+08 — Kematangan Teknis & Kualitas Engineering
+
+Produk dibangun dengan disiplin dokumentasi dan verifikasi yang ketat, relevan untuk due diligence teknis calon investor:
+
+
+Seluruh fitur finansial (payout, fee platform, pajak, hutang fee) melalui proses verifikasi ulang dan koreksi eksplisit berbasis keputusan founder, dengan jejak audit terdokumentasi.
+Setiap perubahan pada sistem checkout, pembayaran, dan pencairan dana diverifikasi end-to-end terhadap database produksi sebelum dan sesudah deploy, dengan protokol rollback yang jelas.
+Dokumentasi teknis internal (CLAUDE.md + log 60+ entri histori perbaikan) telah melalui tiga lapis audit independen — memastikan seluruh dokumentasi status fitur akurat 1:1 terhadap kode yang benar-benar berjalan di production, bukan sekadar rencana.
+Arsitektur: Next.js 16 (frontend) + Express 5 (backend) + PostgreSQL via Supabase + Prisma ORM, dideploy di Vercel (frontend) dan VPS terkelola (backend) dengan protokol deploy terverifikasi (SHA-check sebelum & sesudah setiap rilis).
+
+
+
+09 — Roadmap & Kebutuhan Investasi
+
+Prioritas Segera
+
+
+Migrasi Midtrans ke mode Production (saat ini masih Sandbox, menunggu proses KYC) — syarat mutlak sebelum penerimaan pembayaran nyata dari publik.
+Penyelesaian fitur operasional lanjutan: edit & pindah stok tiket antar kategori.
+Evaluasi kelanjutan fitur Tenant/Lapak Booth Booking (B2B) yang ada di rencana awal namun belum dieksekusi.
+
+
+Visi Jangka Menengah
+
+
+Ekspansi Growth Plan (paket langganan multi-event, saat ini ditunda untuk MVP).
+Migrasi ke aplikasi mobile native (App Store / Play Store) — prioritas terendah, dieksekusi setelah seluruh fitur web matang dan produk siap go-to-market penuh.
+Perluasan basis promotor dari 100 pengguna aktif tahun pertama menuju skala SAM (~Rp 600 Miliar).
+
+
+
+10 — Mengapa Sekarang
+
+Kasus calo tiket konser besar di Indonesia (mis. kontroversi tiket Coldplay 2023) menunjukkan urgensi nyata pasar terhadap sistem anti-calo yang kredibel — sesuatu yang nexEvent sudah bangun dan jalankan di production, bukan sekadar janji roadmap. Kombinasi kesiapan teknis, kejelasan model monetisasi dual-stream, dan celah pasar yang belum terisi kompetitor manapun menjadikan momentum ini tepat untuk mempercepat akuisisi promotor dan menyelesaikan proses menuju status pembayaran production penuh.
+
+
+nexEvent SaaS — Dokumen Rahasia | PRD v4.0 Investor Edition | Juli 2026
