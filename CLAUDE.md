@@ -100,6 +100,35 @@ Referensi implementasi: `server/controllers/sponsor.controller.js` + `server/rou
 untuk tabel lain (mis. pastikan `Expense`/`OtherIncome`/`PurchaseOrder`/`Budget`/dst benar-benar ter-scope) —
 belum dikerjakan, hanya catatan pencegahan agar kelas bug ini tidak berulang di tempat lain.
 
+## Fixed / Completed
+
+### Isolasi Data Invoice & Purchase Order (Juli 2026)
+- **SponsorInvoice** kini WAJIB punya `eventId` + `promotorId` (`dealId` sekarang opsional/nullable — invoice manual
+  tidak lagi menempel paksa ke `deals[0]`).
+- `getInvoices`, `generateInvoice`, `getBudgetByEvent`, dan `getPOsByEvent` semuanya kini menegakkan ownership check
+  (403 kalau event/deal bukan milik `req.user.id`).
+- Invoice manual tidak lagi dipaksa ke `deals[0]` — frontend kini punya dropdown pilih event eksplisit di tab Manual
+  (`client/src/app/dashboard/invoice/page.tsx`).
+- Lookup `SponsorThreshold` di `generateInvoice` kini difilter `promotorId` (cegah kalkulasi tier pakai config
+  promotor lain).
+- **Status: Fixed, deployed ke production, & verified** (commit `729ce39`; tabel production `sponsor_invoices`
+  terkonfirmasi 0 null pada `eventId`/`promotorId` pasca-deploy).
+
+## Known Issues / Not Yet Fixed
+
+### Backfill script env loading bug
+`prisma/backfill-invoice-owner.js` TIDAK memuat `.env` saat dijalankan standalone (`node prisma/backfill-invoice-owner.js`),
+karena baik script itu maupun `src/lib/prisma.js` tidak memanggil dotenv — hanya `src/index.js` yang memanggilnya.
+Menjalankan standalone → `DATABASE_URL` undefined → `pg.Pool` fallback ke `localhost:5432` → **ECONNREFUSED**. Kali ini
+tidak berdampak karena `sponsor_invoices` kosong pra-deploy, tapi akan GAGAL lagi kalau dijalankan di masa depan terhadap
+tabel yang sudah berisi data. **Fix:** tambahkan `node -r dotenv/config` atau `require('dotenv').config({ path: ... })`
+eksplisit di atas script sebelum dipakai lagi.
+
+### Sponsor catalog cross-event bleed
+`SponsorBenefit`, `SponsorPackage`, dan `SponsorThreshold` di-scope HANYA ke `promotorId`, BUKAN `eventId` — sehingga
+promotor dengan banyak event melihat katalog benefit / daftar paket / harga tier yang SAMA di semua event, dan kuota stok
+benefit (`maxQty`/`usedQty`) mungkin ter-share salah lintas event. **Status: under investigation** (sesi ini).
+
 ## Arsitektur 2-Lapis Publish (Homepage Discovery vs Storefront) — SENGAJA, bukan duplikasi
 
 Event punya DUA mekanisme "publish" terpisah yang melayani dua lapis berbeda (dikonfirmasi founder — JANGAN gabungkan/hapus salah satu mengira redundan):
