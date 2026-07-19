@@ -14,6 +14,7 @@ import {
   XCircle,
   Building2,
 } from "lucide-react"
+import { ProLockPanel } from "@/components/dashboard/pro-lock"
 
 // ── Types ────────────────────────────────────────────────────────────────────
 type Event = { id: string; title: string }
@@ -66,6 +67,9 @@ function KerjasamaDashboardInner() {
   const [selectedEventId, setSelectedEventId] = useState(searchParams.get("eventId") ?? "")
   const [summary, setSummary] = useState<DashboardSummary | null>(null)
   const [loading, setLoading] = useState(false)
+  // Backend requireActivePro membalas 402 kalau event terpilih belum Pro. Tanpa penanganan khusus,
+  // 402 jatuh ke empty-state generik ("Tidak ada data") → user mengira fitur kosong, bukan terkunci.
+  const [proLocked, setProLocked] = useState(false)
 
   useEffect(() => {
     fetch("/api/events", { headers: authHeaders() })
@@ -75,10 +79,14 @@ function KerjasamaDashboardInner() {
   }, [])
 
   useEffect(() => {
-    if (!selectedEventId) { setSummary(null); return }
+    if (!selectedEventId) { setSummary(null); setProLocked(false); return }
     setLoading(true)
+    setProLocked(false)
     fetch(`/api/sponsor/dashboard-summary?eventId=${selectedEventId}`, { headers: authHeaders() })
-      .then((r) => (r.ok ? r.json() : null))
+      .then((r) => {
+        if (r.status === 402) { setProLocked(true); return null }
+        return r.ok ? r.json() : null
+      })
       .then((data) => { setSummary(data?.success ? data.data : null) })
       .catch(() => setSummary(null))
       .finally(() => setLoading(false))
@@ -150,8 +158,17 @@ function KerjasamaDashboardInner() {
         </div>
       )}
 
+      {/* Terkunci Pro (backend 402) — bukan "tidak ada data" */}
+      {selectedEventId && !loading && proLocked && (
+        <ProLockPanel
+          eventId={selectedEventId}
+          featureName="Dashboard Kerjasama"
+          description="Event ini belum aktif Pro. Ringkasan sponsor, invoice, target, dan deliverables khusus Pro — upgrade untuk membuka fitur ini untuk event terpilih."
+        />
+      )}
+
       {/* No data */}
-      {selectedEventId && !loading && !s && (
+      {selectedEventId && !loading && !proLocked && !s && (
         <div className="rounded-xl border border-slate-200 bg-white py-14 text-center text-sm text-slate-400">
           Tidak ada data untuk event ini.
         </div>

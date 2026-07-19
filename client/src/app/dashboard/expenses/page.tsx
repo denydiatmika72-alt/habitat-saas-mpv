@@ -5,6 +5,7 @@ import { ArrowLeft, Lock, Plus, Receipt, X } from "lucide-react"
 import Link from "next/link"
 import { useRouter, useSearchParams } from "next/navigation"
 import { useUser } from "@/hooks/useUser"
+import { ProLockPanel } from "@/components/dashboard/pro-lock"
 
 type Event = { id: string; title: string }
 type Expense = {
@@ -49,6 +50,10 @@ function ExpensesPageInner() {
   const [events, setEvents] = useState<Event[]>([])
   const [expenses, setExpenses] = useState<Expense[]>([])
   const [fetchingExpenses, setFetchingExpenses] = useState(false)
+  // Pro aktif dicek PER-EVENT di backend (requireActivePro → 402). Akun Pro untuk event LAIN
+  // lolos gate `isPro` global di bawah, jadi 402 harus ditangani terpisah — kalau tidak,
+  // daftar tampil kosong seolah belum ada pengeluaran, bukan terkunci.
+  const [proLocked, setProLocked] = useState(false)
 
   const [categories, setCategories] = useState<string[]>(DEFAULT_CATEGORIES)
   const [description, setDescription] = useState("")
@@ -94,8 +99,12 @@ function ExpensesPageInner() {
   useEffect(() => {
     if (!selectedEventId || !isPro) return
     setFetchingExpenses(true)
+    setProLocked(false)
     fetch(`/api/expenses?eventId=${selectedEventId}`, { headers: authHeaders() })
-      .then((r) => (r.ok ? r.json() : null))
+      .then((r) => {
+        if (r.status === 402) { setProLocked(true); return null }
+        return r.ok ? r.json() : null
+      })
       .then((data) => { if (data?.success) setExpenses(data.data) })
       .catch(() => {})
       .finally(() => setFetchingExpenses(false))
@@ -185,6 +194,29 @@ function ExpensesPageInner() {
             Upgrade ke Pro →
           </Link>
         </div>
+      </div>
+    )
+  }
+
+  // Backend menolak dengan 402 (event ini belum Pro) → tampilkan gembok + ajakan upgrade,
+  // bukan daftar kosong. Pola sama dengan halaman Simulasi Harga Tiket.
+  if (proLocked) {
+    return (
+      <div className="mx-auto flex w-full max-w-7xl flex-col gap-6">
+        <div>
+          <Link
+            href={`/dashboard/pl-report?eventId=${selectedEventId}`}
+            className="inline-flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm font-semibold text-slate-700 transition-colors hover:bg-slate-50"
+          >
+            <ArrowLeft className="size-4" />
+            Kembali ke Dashboard Keuangan
+          </Link>
+        </div>
+        <ProLockPanel
+          eventId={selectedEventId}
+          featureName="Expense Tracker"
+          description="Event ini belum aktif Pro. Pencatatan pengeluaran promotor khusus Pro — upgrade untuk membuka fitur ini untuk event terpilih."
+        />
       </div>
     )
   }

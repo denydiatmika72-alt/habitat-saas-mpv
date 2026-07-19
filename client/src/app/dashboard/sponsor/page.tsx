@@ -29,6 +29,7 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { cn } from "@/lib/utils"
 import { useUser } from "@/hooks/useUser"
+import { ProLockPanel } from "@/components/dashboard/pro-lock"
 
 // ─── API ──────────────────────────────────────────────────────────────────────
 const API_BASE = "/api"
@@ -1889,6 +1890,9 @@ export default function SponsorManagementPage() {
   // di level halaman → diturunkan ke InvitationCodeGenerator + BenefitBuilder/PackageBuilder/ThresholdSettings.
   const [events, setEvents] = useState<{ id: string; title: string }[]>([])
   const [selectedEventId, setSelectedEventId] = useState<string>("")
+  // Katalog sponsor dijaga requireActivePro PER-EVENT → 402 kalau event terpilih belum Pro.
+  // Gate `isPro` global di bawah tidak menangkap kasus "akun Pro, tapi untuk event lain".
+  const [proLocked, setProLocked] = useState(false)
 
   useEffect(() => {
     fetch(`${API_BASE}/events`, { headers: authHeaders() })
@@ -1902,10 +1906,15 @@ export default function SponsorManagementPage() {
   }, [])
 
   function fetchBenefits() {
-    if (!selectedEventId) { setBenefits([]); setBenefitsLoading(false); return }
+    if (!selectedEventId) { setBenefits([]); setBenefitsLoading(false); setProLocked(false); return }
     setBenefitsLoading(true)
+    setProLocked(false)
     fetch(`${API_BASE}/sponsor/benefits?eventId=${selectedEventId}`, { headers: authHeaders() })
-      .then((r) => safeJson(r))
+      .then((r) => {
+        // 402 = requireActivePro menolak (event ini belum Pro) → gembok, bukan katalog kosong.
+        if (r.status === 402) { setProLocked(true); return {} as Record<string, unknown> }
+        return safeJson(r)
+      })
       .then((d) => { if (d.success) setBenefits((d.data as ApiBenefit[]) ?? []) })
       .catch(() => {})
       .finally(() => setBenefitsLoading(false))
@@ -2031,6 +2040,15 @@ export default function SponsorManagementPage() {
         </div>
       )}
 
+      {/* Event terpilih belum Pro (backend 402) → gembok + ajakan upgrade menggantikan seluruh
+          workspace sponsor. Pemilih event di atas tetap tampil supaya user bisa pindah event. */}
+      {proLocked ? (
+        <ProLockPanel
+          eventId={selectedEventId}
+          featureName="Sponsor & Partner"
+          description="Event ini belum aktif Pro. Kode undangan sponsor, katalog benefit/paket/tier, dan tracking deal khusus Pro — upgrade untuk membuka fitur ini untuk event terpilih."
+        />
+      ) : (
       <div className="grid gap-6 lg:grid-cols-2 lg:items-start">
         <div className="flex flex-col [&>*:first-child]:mt-0">
           <InvitationCodeGenerator selectedEventId={selectedEventId} />
@@ -2042,6 +2060,7 @@ export default function SponsorManagementPage() {
           <ThresholdSettings onThresholdChange={fetchThresholds} eventId={selectedEventId} />
         </div>
       </div>
+      )}
     </div>
   )
 }

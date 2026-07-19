@@ -4,6 +4,7 @@ import { useEffect, useState } from "react"
 import { Lock, Users, Plus, Trash2, ScanLine, Wallet } from "lucide-react"
 import Link from "next/link"
 import { useUser } from "@/hooks/useUser"
+import { ProLockPanel } from "@/components/dashboard/pro-lock"
 
 type Event = { id: string; title: string }
 
@@ -36,6 +37,9 @@ export default function CrewPage() {
   const [selectedEventId, setSelectedEventId] = useState("")
   const [crew, setCrew] = useState<CrewMember[]>([])
   const [fetchingCrew, setFetchingCrew] = useState(false)
+  // Pro dicek PER-EVENT di backend (402). Akun Pro untuk event lain lolos gate `isPro` global,
+  // jadi 402 ditangani terpisah supaya tidak tampil sebagai "belum ada crew".
+  const [proLocked, setProLocked] = useState(false)
 
   // Invite form
   const [inviteEmail, setInviteEmail] = useState("")
@@ -61,8 +65,12 @@ export default function CrewPage() {
   useEffect(() => {
     if (!selectedEventId || !isPro) return
     setFetchingCrew(true)
+    setProLocked(false)
     fetch(`/api/crew?eventId=${selectedEventId}`, { headers: authHeaders() })
-      .then((r) => (r.ok ? r.json() : null))
+      .then((r) => {
+        if (r.status === 402) { setProLocked(true); return null }
+        return r.ok ? r.json() : null
+      })
       .then((data) => { if (data?.success) setCrew(data.crew) })
       .catch(() => {})
       .finally(() => setFetchingCrew(false))
@@ -74,7 +82,10 @@ export default function CrewPage() {
     setScannerSuccess("")
     setFetchingScanners(true)
     fetch(`/api/scanner/event/${selectedEventId}`, { headers: authHeaders() })
-      .then((r) => (r.ok ? r.json() : null))
+      .then((r) => {
+        if (r.status === 402) { setProLocked(true); return null }
+        return r.ok ? r.json() : null
+      })
       .then((data) => { if (data?.success) setScanners(data.scanners) })
       .catch(() => {})
       .finally(() => setFetchingScanners(false))
@@ -267,7 +278,17 @@ export default function CrewPage() {
         </div>
       )}
 
-      {selectedEventId && (
+      {/* Terkunci Pro untuk event terpilih (backend 402) — selector tetap tampil supaya
+          user bisa pindah ke event lain yang Pro-nya aktif. */}
+      {selectedEventId && proLocked && (
+        <ProLockPanel
+          eventId={selectedEventId}
+          featureName="Field Crew & Scanner Tiket"
+          description="Event ini belum aktif Pro. Kelola crew lapangan dan petugas scanner khusus Pro — upgrade untuk membuka fitur ini untuk event terpilih."
+        />
+      )}
+
+      {selectedEventId && !proLocked && (
           <div className="grid gap-6 lg:grid-cols-5">
             {/* Left: Invite form */}
             <div className="lg:col-span-2">

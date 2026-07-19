@@ -21,6 +21,7 @@ import {
   Lock,
   Wallet,
 } from "@phosphor-icons/react/dist/ssr"
+import { ProLockPanel } from "@/components/dashboard/pro-lock"
 
 // ── Types ──────────────────────────────────────────────────────────────────────
 type Event = { id: string; title: string }
@@ -214,6 +215,9 @@ function PLReportPageInner() {
   const [plData, setPlData] = useState<PLData | null>(null)
   const [loading, setLoading] = useState(false)
   const [exportingPdf, setExportingPdf] = useState(false)
+  // Backend requireActivePro membalas 402 kalau event terpilih belum Pro. Gate `isPro` global
+  // tidak menangkap kasus "akun Pro, tapi lisensinya untuk event lain".
+  const [proLocked, setProLocked] = useState(false)
 
   // Other income form
   const [oiDescription, setOiDescription] = useState("")
@@ -237,8 +241,10 @@ function PLReportPageInner() {
   const fetchPLData = async (eventId: string) => {
     if (!eventId || !isPro) return
     setLoading(true)
+    setProLocked(false)
     try {
       const res = await fetch(`/api/pl-report?eventId=${eventId}`, { headers: authHeaders() })
+      if (res.status === 402) { setProLocked(true); setPlData(null); return }
       const data = await res.json()
       if (data.success) setPlData(data)
     } catch {}
@@ -480,8 +486,17 @@ function PLReportPageInner() {
         </div>
       )}
 
+      {/* Terkunci Pro untuk event terpilih (backend 402) — bukan "tidak ada data" */}
+      {!loading && proLocked && selectedEventId && (
+        <ProLockPanel
+          eventId={selectedEventId}
+          featureName="Laporan Laba/Rugi"
+          description="Event ini belum aktif Pro. Laporan P&L otomatis khusus Pro — upgrade untuk membuka fitur ini untuk event terpilih."
+        />
+      )}
+
       {/* Empty state */}
-      {!loading && !plData && selectedEventId && (
+      {!loading && !proLocked && !plData && selectedEventId && (
         <Card padding={0} radius={16}>
           <div style={{ display: "flex", minHeight: 200, alignItems: "center", justifyContent: "center", font: "400 13px/1.5 var(--font-body)", color: "var(--text-faint)" }}>
             Tidak ada data untuk event ini.

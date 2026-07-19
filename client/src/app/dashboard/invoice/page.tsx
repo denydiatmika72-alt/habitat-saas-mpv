@@ -27,6 +27,7 @@ import { Badge } from "@/components/ui/badge"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { cn } from "@/lib/utils"
+import { ProLockPanel } from "@/components/dashboard/pro-lock"
 
 const API_BASE = "/api"
 const getToken = () =>
@@ -361,6 +362,11 @@ function InvoicePage() {
   const [updatingStatusId, setUpdatingStatusId] = useState<string | null>(null)
   const [savedStatusId, setSavedStatusId] = useState<string | null>(null)
 
+  // Invoice & deal dijaga requireActivePro (fallback user-level untuk daftar lintas-event) →
+  // 402 kalau tidak ada satu pun event Pro aktif. Tanpa ini, halaman tampil kosong seolah
+  // belum ada invoice, bukan terkunci.
+  const [proLocked, setProLocked] = useState(false)
+
   // Toasts
   const [toasts, setToasts] = useState<Toast[]>([])
 
@@ -399,6 +405,7 @@ function InvoicePage() {
 
   async function loadDeals(preselectedDealId?: string) {
     const res = await fetch(`${API_BASE}/sponsor/deals`, { headers: authHeaders() })
+    if (res.status === 402) { setProLocked(true); return }
     const json = await res.json()
     if (json.success) {
       const dealList: Deal[] = json.data ?? []
@@ -416,6 +423,7 @@ function InvoicePage() {
   async function loadInvoices() {
     setLoadingInvoices(true)
     const res = await fetch(`${API_BASE}/invoices`, { headers: authHeaders() })
+    if (res.status === 402) { setProLocked(true); setLoadingInvoices(false); return }
     const json = await res.json()
     if (json.success) setInvoices(json.data ?? [])
     setLoadingInvoices(false)
@@ -699,6 +707,15 @@ function InvoicePage() {
         </div>
       </div>
 
+      {/* Terkunci Pro (backend 402): tidak ada event Pro aktif → gembok + ajakan upgrade,
+          bukan daftar invoice/PO kosong. Tanpa eventId (halaman ini lintas-event). */}
+      {proLocked ? (
+        <ProLockPanel
+          featureName="Invoice & Purchase Order"
+          description="Belum ada event dengan Pro aktif. Invoice sponsor dan Purchase Order khusus Pro — upgrade salah satu event untuk membukanya."
+        />
+      ) : (
+      <>
       {/* ── Tab utama: Invoice vs Purchase Order ─────────────────────────────── */}
       <Tabs defaultValue="invoice">
         <TabsList className="w-full">
@@ -1262,6 +1279,8 @@ function InvoicePage() {
           <PurchaseOrderTab />
         </TabsContent>
       </Tabs>
+      </>
+      )}
     </div>
   )
 }

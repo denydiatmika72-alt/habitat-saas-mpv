@@ -5,6 +5,7 @@ import { ArrowLeft, Lock, Wallet, Users, ChevronDown, ChevronUp, ArrowUpCircle }
 import Link from "next/link"
 import { useRouter, useSearchParams } from "next/navigation"
 import { useUser } from "@/hooks/useUser"
+import { ProLockPanel } from "@/components/dashboard/pro-lock"
 
 type Event = { id: string; title: string }
 
@@ -54,6 +55,9 @@ function PettyCashPageInner() {
   const [events, setEvents] = useState<Event[]>([])
   const [crew, setCrew] = useState<CrewMember[]>([])
   const [fetchingCrew, setFetchingCrew] = useState(false)
+  // Pro dicek PER-EVENT di backend (402) — gate `isPro` global di bawah tidak menangkap
+  // kasus "akun Pro, tapi untuk event lain". Tanpa ini, daftar kas tampil kosong.
+  const [proLocked, setProLocked] = useState(false)
 
   // Topup state per crew (accountId → amount)
   const [topupAmounts, setTopupAmounts] = useState<Record<string, string>>({})
@@ -75,8 +79,12 @@ function PettyCashPageInner() {
   useEffect(() => {
     if (!selectedEventId || !isPro) return
     setFetchingCrew(true)
+    setProLocked(false)
     fetch(`/api/crew?eventId=${selectedEventId}`, { headers: authHeaders() })
-      .then((r) => (r.ok ? r.json() : null))
+      .then((r) => {
+        if (r.status === 402) { setProLocked(true); return null }
+        return r.ok ? r.json() : null
+      })
       .then((data) => {
         if (data?.success) {
           setCrew(data.crew)
@@ -173,6 +181,28 @@ function PettyCashPageInner() {
             Upgrade ke Pro →
           </Link>
         </div>
+      </div>
+    )
+  }
+
+  // Backend menolak 402 (event ini belum Pro) → gembok + ajakan upgrade, bukan daftar kosong.
+  if (proLocked) {
+    return (
+      <div className="mx-auto flex w-full max-w-7xl flex-col gap-6">
+        <div>
+          <Link
+            href={`/dashboard/pl-report?eventId=${selectedEventId}`}
+            className="inline-flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm font-semibold text-slate-700 transition-colors hover:bg-slate-50"
+          >
+            <ArrowLeft className="size-4" />
+            Kembali ke Dashboard Keuangan
+          </Link>
+        </div>
+        <ProLockPanel
+          eventId={selectedEventId}
+          featureName="Petty Cash"
+          description="Event ini belum aktif Pro. Kas lapangan crew & top-up khusus Pro — upgrade untuk membuka fitur ini untuk event terpilih."
+        />
       </div>
     )
   }

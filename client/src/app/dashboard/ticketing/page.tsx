@@ -14,6 +14,7 @@ import {
   Storefront,
   DownloadSimple,
 } from "@phosphor-icons/react/dist/ssr"
+import { ProLockModal } from "@/components/dashboard/pro-lock"
 
 // Dashboard Tiket & Pencairan — hub (Layer 2) kategori "Tiket & Pencairan".
 // Beda dari Dashboard Keuangan: halaman turunan (Manajemen Tiket & Pencairan Dana) TETAP ada di
@@ -229,6 +230,9 @@ function TicketingDashboardInner() {
   // null = tampilan mingguan; berisi tanggal awal minggu = drill-down harian minggu tsb.
   const [drilldownWeek, setDrilldownWeek] = useState<string | null>(null)
   const [downloadingAudience, setDownloadingAudience] = useState(false)
+  // Hub Ticketing sendiri TIDAK di-gate Pro (monetisasi lewat komisi), tapi unduhan Data Audiens
+  // di header dijaga requireActivePro PER-EVENT → 402 → modal upgrade untuk event terpilih.
+  const [proLocked, setProLocked] = useState(false)
 
   // Unduh Data Audiens event terpilih (Roadmap #5) — dipindah dari Manajemen Tiket ke hub ini
   // (2026-07-17) supaya promotor tidak perlu masuk Manajemen Tiket hanya untuk mengunduhnya.
@@ -238,6 +242,8 @@ function TicketingDashboardInner() {
     setDownloadingAudience(true)
     try {
       const res = await fetch(`/api/tickets/audience-report/event/${selectedEventId}`, { headers: authHeaders() })
+      // Data Audiens Pro-gated PER-EVENT → 402 ditampilkan sebagai modal upgrade, bukan alert error.
+      if (res.status === 402) { setProLocked(true); return }
       if (!res.ok) {
         let message = `Server error (${res.status})`
         try { const e = await res.json(); message = (e as { message?: string }).message || message } catch { message = res.statusText || message }
@@ -351,6 +357,12 @@ function TicketingDashboardInner() {
 
   return (
     <Shell>
+      <ProLockModal
+        open={proLocked}
+        onClose={() => setProLocked(false)}
+        eventId={selectedEventId}
+        featureName="Data Audiens"
+      />
       {/* Header */}
       <div style={{ display: "flex", flexWrap: "wrap", gap: 16, alignItems: "flex-end", justifyContent: "space-between" }}>
         <div style={{ minWidth: 260 }}>

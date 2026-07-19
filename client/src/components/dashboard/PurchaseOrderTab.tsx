@@ -7,6 +7,7 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Badge } from "@/components/ui/badge"
 import { cn } from "@/lib/utils"
+import { ProLockPanel } from "@/components/dashboard/pro-lock"
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -315,6 +316,9 @@ export default function PurchaseOrderTab({ eventId: propEventId }: { eventId?: s
   // Downloading PDF state
   const [downloadingPdfId, setDownloadingPdfId] = useState<string | null>(null)
 
+  // PO dijaga requireActivePro PER-EVENT → 402 kalau event terpilih belum Pro.
+  const [proLocked, setProLocked] = useState(false)
+
   // ── Load events kalau propEventId tidak diberikan ──────────────────────────
   useEffect(() => {
     if (propEventId) {
@@ -332,7 +336,10 @@ export default function PurchaseOrderTab({ eventId: propEventId }: { eventId?: s
   const loadPos = useCallback(async (evId: string) => {
     if (!evId) return
     setLoadingPos(true)
+    setProLocked(false)
     const res = await fetch(`${API_BASE}/po?eventId=${evId}`, { headers: authHeaders() })
+    // 402 = requireActivePro menolak (event ini belum Pro) → gembok, bukan "belum ada PO".
+    if (res.status === 402) { setProLocked(true); setPos([]); setLoadingPos(false); return }
     const json = await res.json()
     if (json.success) setPos(json.data ?? [])
     setLoadingPos(false)
@@ -523,8 +530,14 @@ export default function PurchaseOrderTab({ eventId: propEventId }: { eventId?: s
         </div>
       )}
 
-      {/* Konten PO — hanya tampil setelah event dipilih */}
-      {selectedEventId ? (
+      {/* Event terpilih belum Pro (backend 402) → gembok + ajakan upgrade */}
+      {selectedEventId && proLocked ? (
+        <ProLockPanel
+          eventId={selectedEventId}
+          featureName="Purchase Order"
+          description="Event ini belum aktif Pro. Pembuatan & pengelolaan Purchase Order khusus Pro — upgrade untuk membuka fitur ini untuk event terpilih."
+        />
+      ) : selectedEventId ? (
         <>
           {/* Header + Tombol Buat PO */}
           <div className="flex items-center justify-between">

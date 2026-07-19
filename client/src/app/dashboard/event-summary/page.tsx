@@ -5,6 +5,7 @@ import { ArrowLeft, Lock, FileCheck, FileDown, CheckCircle2, Loader2, Mail, Aler
 import Link from "next/link"
 import { useRouter, useSearchParams } from "next/navigation"
 import { useUser } from "@/hooks/useUser"
+import { ProLockModal } from "@/components/dashboard/pro-lock"
 
 type EventItem = { id: string; title: string; finishedAt: string | null }
 
@@ -33,6 +34,9 @@ function EventSummaryPageInner() {
   const [finishing, setFinishing] = useState(false)
   const [downloading, setDownloading] = useState(false)
   const [message, setMessage] = useState<{ type: "success" | "error"; text: string } | null>(null)
+  // Aksi di halaman ini (finish + unduh PDF) dijaga requireActivePro PER-EVENT → 402 kalau event
+  // terpilih belum Pro. Tampilkan modal upgrade, bukan pesan error teknis.
+  const [proLocked, setProLocked] = useState(false)
 
   // Tanpa konteks event, kembalikan ke pintu utama kategori Keuangan.
   useEffect(() => {
@@ -60,6 +64,7 @@ function EventSummaryPageInner() {
     setMessage(null)
     try {
       const res = await fetch(`/api/events/${selectedEventId}/finish`, { method: "POST", headers: authHeaders() })
+      if (res.status === 402) { setProLocked(true); return }
       const data = await res.json()
       if (!res.ok || !data.success) {
         setMessage({ type: "error", text: data.message || "Gagal menyelesaikan event." })
@@ -83,6 +88,7 @@ function EventSummaryPageInner() {
       const res = await fetch(`/api/events/${selectedEventId}/summary-pdf`, {
         headers: { Authorization: `Bearer ${getToken()}` },
       })
+      if (res.status === 402) { setProLocked(true); return }
       if (!res.ok) {
         let text = `Server error (${res.status})`
         try { const err = await res.json(); text = (err as { message?: string }).message || text } catch { text = res.statusText || text }
@@ -142,6 +148,13 @@ function EventSummaryPageInner() {
   // ── Main ──
   return (
     <div className="mx-auto flex w-full max-w-3xl flex-col gap-6">
+      {/* Terkunci Pro untuk event ini (backend 402) */}
+      <ProLockModal
+        open={proLocked}
+        onClose={() => setProLocked(false)}
+        eventId={selectedEventId}
+        featureName="Laporan Akhir Event"
+      />
       {/* Kembali ke pintu utama kategori Keuangan (event dipertahankan) */}
       <div>
         <Link
