@@ -102,6 +102,37 @@ belum dikerjakan, hanya catatan pencegahan agar kelas bug ini tidak berulang di 
 
 ## Fixed / Completed
 
+### Gating Fitur Pro PER-EVENT — tutup monetization gap (2026-07-19)
+**Gap:** `proEventId`/`proExpiresAt` ditulis saat bayar (`payment.controller.js`) tapi **TIDAK PERNAH dicek** endpoint
+fitur mana pun → semua fitur Pro bisa dipakai GRATIS oleh user terautentikasi mana pun (panggil API langsung). Gate
+frontend `isPro` juga global (bukan per-event) & mudah dilewati.
+**Fix:** middleware baru `server/middleware/pro.middleware.js` → **`requireActivePro(resolveEventId?)`**.
+- Sebuah event "Pro aktif" bila PEMILIK event punya `plan==='pro' && proEventId===eventId && proExpiresAt>now`.
+  Cek berbasis **pemilik event** (bukan pemanggil) → aksi crew/scanner ikut terkunci kalau Pro promotor lapse.
+- eventId di-resolve dari request: default `body/query/params.eventId`; untuk route by-`:id` ada resolver turunan-resource
+  (`fromPOParam`, `fromBenefitParam`, `fromDealParam`, `fromInvoiceParam`, `fromExpenseParam`, `fromCrewParam`,
+  `fromPettyAccountBody`, `fromDeliverableParam`, `fromDealBody`, `fromInvoiceGenerate`, dll — semua di-export dari middleware).
+- Fitur **lintas-event tanpa satu eventId** (Payout, daftar agregat invoice/deal, audiens all-events) → fallback cek
+  **user-level** (pemanggil punya Pro aktif untuk event mana pun).
+- Gagal → **402 Payment Required** (`"Fitur ini memerlukan Pro aktif untuk event ini. Upgrade di halaman pembayaran."`).
+- **GATED:** sponsor (codes/benefits/packages/thresholds/deals GET+mutasi/accounts/deliverables mutasi/dashboard-summary),
+  invoice (list/generate/by-id/status/delete), PO (semua), expenses (semua, TERMASUK budget-categories dropdown-nya),
+  crew (getEventCrew/invite/remove), petty cash (semua), P&L (report+export), payout promotor (balance/my-requests/request/
+  statement-pdf), audiens (event + all-events), Laporan Akhir Event (finish + summary-pdf), scanner (invite/list/remove/
+  validate), Simulasi Harga Tiket (frontend).
+- **SENGAJA TIDAK di-gate (Starter/gratis atau bukan customer):** RAB/Budget (`budget.routes` + `events/:id/rab-items`),
+  SELURUH Ticketing/Storefront/Merch/Bundling/Ticket Box (`ticket.routes` — monetisasi via komisi 1.5–3.5%, sudah bersih
+  dari cek Pro — DIVERIFIKASI), createEvent/getEvents/publish/delete, endpoint PUBLIK sponsor-portal (`/codes/validate`,
+  `/portal/catalog`, `/public/tier-price`, `POST /deals`, `/accounts/verify`, `GET /deliverables`, `GET /invoices/deal/:dealId`),
+  navigasi akun crew/scanner (`/crew/my-events`, `/scanner/my-events`), dan admin payout routes.
+- **Frontend:** `useUser` dapat `isProForEvent(eventId)` + `hasActivePro` (mirror aturan backend). Simulasi Harga Tiket
+  kini gating PER-EVENT: selector event tetap tampil, tool terkunci bila event terpilih belum Pro → komponen reusable
+  `client/src/components/dashboard/pro-lock.tsx` (`ProLockPanel`/`ProLockModal`: gembok + modal "Upgrade untuk event ini").
+- **CATATAN BISNIS (perlu konfirmasi founder):** karena Payout=Pro, promotor **Starter yang menjual tiket (komisi) belum
+  bisa menarik saldo tanpa beli Pro**. Sesuai daftar fitur founder, tapi implikasinya perlu dikonfirmasi sebelum deploy.
+- **Status: code-complete, verified lokal** (`node --check` semua middleware+routes OK; `tsc --noEmit` client OK). TIDAK
+  butuh `db push` (tak ada perubahan schema). PENDING deploy manual founder (`git pull` → `pm2 restart nexevent-api`).
+
 ### Pembuatan Event TIDAK Dibatasi Jumlahnya — monetisasi = fitur Pro per-event (2026-07-19, koreksi)
 **Model bisnis yang BENAR:** akun mana pun boleh membuat event **tanpa batas jumlah**. Monetisasi BUKAN pada jumlah
 event, melainkan pada **fitur Pro PER-EVENT** (RAB Builder full, Sponsor Magic Link, Ticketing B2C, P&L otomatis, dll.)
@@ -113,9 +144,8 @@ yang digate lewat `proEventId`/`proExpiresAt` — **Pro Per-Event Rp 499.000, 1 
 - `createEvent` (`server/controllers/event.controller.js`) kini kembali seperti sebelum `9a8c2fc`: buat event tanpa cek
   jumlah. **JANGAN tambahkan lagi batas jumlah event di sini.**
 - Field `role`/`isAdmin` TIDAK diubah (masih dipakai di tempat lain, mis. `requireAdmin` + exemption testing).
-- **Catatan (Part 2, read-only — belum difix):** audit enforcement `proEventId`/`proExpiresAt` di endpoint fitur Pro
-  dilakukan terpisah untuk menentukan apakah ada monetization gap (fitur Pro bisa dipakai tanpa bayar). Lihat hasil
-  investigasi di ringkasan sesi / follow-up task bila ada.
+- **Status: FINALIZED & pushed** (commit `75b1c4c`, origin/main). Monetization gap `proEventId`/`proExpiresAt` yang
+  ditemukan di audit Part 2 sudah **DIFIX** — lihat entry "Gating Fitur Pro PER-EVENT" di atas.
 
 ### Isolasi Data Invoice & Purchase Order (Juli 2026)
 - **SponsorInvoice** kini WAJIB punya `eventId` + `promotorId` (`dealId` sekarang opsional/nullable — invoice manual
