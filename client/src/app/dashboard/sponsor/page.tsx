@@ -1726,6 +1726,7 @@ function ThresholdSettings({ onThresholdChange, eventId }: { onThresholdChange: 
   const [saved, setSaved] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [activeDropdown, setActiveDropdown] = useState<string | null>(null)
+  const [deletingKey, setDeletingKey] = useState<string | null>(null)
 
   useEffect(() => {
     if (!eventId) { setRows(suggestionRows()); setPackages([]); setLoading(false); return }
@@ -1752,22 +1753,43 @@ function ThresholdSettings({ onThresholdChange, eventId }: { onThresholdChange: 
     setRows((prev) => [...prev, { key: newRowKey(), tierName: "", minPrice: 0 }])
   }
 
-  // Backend hanya punya upsert (POST /sponsor/thresholds) — tidak ada endpoint DELETE. Jadi baris yang
-  // SUDAH tersimpan tidak bisa dihapus dari sini; hanya baris baru (belum disimpan) yang bisa dibuang.
-  function removeRow(key: string) {
-    setRows((prev) => prev.filter((r) => r.key !== key))
+  async function reloadThresholds() {
+    if (!eventId) return
+    const d = await fetch(`${API_BASE}/sponsor/thresholds?eventId=${eventId}`, { headers: authHeaders() }).then((r) => safeJson(r))
+    const stored = d.success && Array.isArray(d.data) ? (d.data as ApiThreshold[]) : []
+    setRows(stored.length > 0 ? toRows(stored) : suggestionRows())
+  }
+
+  // Hapus baris. Baris BARU (belum punya id) cukup dibuang dari state. Baris TERSIMPAN (punya id)
+  // memanggil DELETE /sponsor/thresholds/:id — backend menolak 409 kalau tier masih dipakai paket.
+  async function handleRemoveRow(row: ThresholdRow) {
+    if (!row.id) { setRows((prev) => prev.filter((r) => r.key !== row.key)); return }
+    setError(null)
+    setDeletingKey(row.key)
+    try {
+      const res = await fetch(`${API_BASE}/sponsor/thresholds/${row.id}`, { method: "DELETE", headers: authHeaders() })
+      const d = await safeJson(res)
+      if (d.success) {
+        setRows((prev) => prev.filter((r) => r.key !== row.key))
+        onThresholdChange()
+      } else {
+        setError(typeof d.message === "string" ? d.message : "Gagal menghapus tier.")
+      }
+    } catch {
+      setError("Gagal menghapus tier.")
+    } finally { setDeletingKey(null) }
   }
 
   async function handleSave() {
     if (!eventId) return
-    const payload = rows
-      .map((r) => ({ tierName: r.tierName.trim(), minPrice: Number(r.minPrice) }))
+    const named = rows
+      .map((r) => ({ ...r, tierName: r.tierName.trim() }))
       .filter((r) => r.tierName.length > 0)
-    if (payload.length === 0) {
+    if (named.length === 0) {
       setError("Isi minimal satu nama tier.")
       return
     }
-    const names = payload.map((r) => r.tierName.toLowerCase())
+    const names = named.map((r) => r.tierName.toLowerCase())
     if (new Set(names).size !== names.length) {
       setError("Nama tier tidak boleh sama.")
       return
@@ -1775,22 +1797,39 @@ function ThresholdSettings({ onThresholdChange, eventId }: { onThresholdChange: 
     setError(null)
     setSaving(true)
     try {
-      const res = await fetch(`${API_BASE}/sponsor/thresholds`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json", ...authHeaders() },
-        body: JSON.stringify({ eventId, thresholds: payload }),
-      })
-      const d = await safeJson(res)
-      if (d.success) {
-        // Sinkronkan dari respons server (sudah membawa id) supaya baris baru langsung punya id
-        // tanpa perlu reload — tampilan = data nyata di DB.
-        if (Array.isArray(d.data)) setRows(toRows(d.data as ApiThreshold[]))
-        setSaved(true)
-        onThresholdChange()
-        window.setTimeout(() => setSaved(false), 2000)
-      } else {
-        setError(typeof d.message === "string" ? d.message : "Gagal menyimpan threshold.")
+      // Baris TERSIMPAN (punya id) → PATCH per baris: rename/reprice by id. Perubahan cascade ke
+      // paket & deal terkait di backend (keputusan founder 2026-07-20). 409 = nama tier bentrok.
+      for (const r of named.filter((r) => r.id)) {
+        const res = await fetch(`${API_BASE}/sponsor/thresholds/${r.id}`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json", ...authHeaders() },
+          body: JSON.stringify({ tierName: r.tierName, minPrice: Number(r.minPrice) }),
+        })
+        const d = await safeJson(res)
+        if (!d.success) {
+          setError(typeof d.message === "string" ? d.message : "Gagal memperbarui tier.")
+          return
+        }
       }
+      // Baris BARU (belum punya id) → POST batch create (endpoint upsert lama, khusus tier baru).
+      const fresh = named.filter((r) => !r.id).map((r) => ({ tierName: r.tierName, minPrice: Number(r.minPrice) }))
+      if (fresh.length > 0) {
+        const res = await fetch(`${API_BASE}/sponsor/thresholds`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json", ...authHeaders() },
+          body: JSON.stringify({ eventId, thresholds: fresh }),
+        })
+        const d = await safeJson(res)
+        if (!d.success) {
+          setError(typeof d.message === "string" ? d.message : "Gagal menyimpan tier baru.")
+          return
+        }
+      }
+      // Sinkronkan tampilan dari data nyata di DB (baris baru dapat id, harga hasil cascade konsisten).
+      await reloadThresholds()
+      setSaved(true)
+      onThresholdChange()
+      window.setTimeout(() => setSaved(false), 2000)
     } catch {
       setError("Gagal menyimpan threshold.")
     }
@@ -1853,13 +1892,13 @@ function ThresholdSettings({ onThresholdChange, eventId }: { onThresholdChange: 
               )}
             >
               <div className="w-full sm:w-44 shrink-0">
+                {/* Nama tier kini EDITABLE untuk baris tersimpan (fitur rename 2026-07-20). Simpan →
+                    PATCH by id, cascade ke paket & deal. Tidak lagi read-only. */}
                 <Input
                   value={row.tierName}
                   onChange={(e) => updateRow(row.key, { tierName: e.target.value })}
                   placeholder="Nama tier"
-                  disabled={Boolean(row.id)}
-                  title={row.id ? "Nama tier yang sudah tersimpan tidak bisa diubah — tambahkan tier baru." : undefined}
-                  className="font-medium disabled:bg-slate-50 disabled:text-slate-600"
+                  className="font-medium"
                 />
               </div>
               <div className="flex flex-1 flex-col gap-1.5">
@@ -1925,18 +1964,19 @@ function ThresholdSettings({ onThresholdChange, eventId }: { onThresholdChange: 
                 <p className="text-xs text-slate-500">minimum</p>
               </div>
               <div className="shrink-0">
-                {!row.id && (
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="icon"
-                    onClick={() => removeRow(row.key)}
-                    aria-label={`Hapus baris ${row.tierName || "tier baru"}`}
-                    className="text-slate-400 hover:text-rose-600"
-                  >
-                    <Trash2 className="size-4" />
-                  </Button>
-                )}
+                {/* Hapus tier — baris tersimpan memanggil DELETE (backend blokir 409 kalau dipakai paket),
+                    baris baru cukup dibuang dari state. Fitur delete 2026-07-20. */}
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="icon"
+                  disabled={deletingKey === row.key}
+                  onClick={() => handleRemoveRow(row)}
+                  aria-label={`Hapus tier ${row.tierName || "baru"}`}
+                  className="text-slate-400 hover:text-rose-600"
+                >
+                  {deletingKey === row.key ? <RotateCw className="size-4 animate-spin" /> : <Trash2 className="size-4" />}
+                </Button>
               </div>
             </div>
           ))}
@@ -1946,7 +1986,8 @@ function ThresholdSettings({ onThresholdChange, eventId }: { onThresholdChange: 
               Tambah Tier
             </Button>
             <p className="text-xs text-slate-500">
-              Nama tier yang sudah tersimpan tidak bisa diubah — buat tier baru bila perlu.
+              Ubah nama/harga tier lalu Simpan — perubahan otomatis berlaku ke paket &amp; deal terkait.
+              Untuk mempertahankan harga lama, buat tier baru.
             </p>
           </div>
         </div>

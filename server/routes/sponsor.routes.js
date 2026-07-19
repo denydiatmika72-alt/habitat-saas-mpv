@@ -6,6 +6,7 @@ const {
   requireActivePro,
   fromBenefitParam,
   fromPackageParam,
+  fromThresholdParam,
   fromDealParam,
   fromDealBody,
   fromDeliverableParam,
@@ -26,6 +27,8 @@ const {
   deletePackage,
   getThresholds,
   saveThresholds,
+  updateThreshold,
+  deleteThreshold,
   createAccount,
   verifyAccount,
   resendCredential,
@@ -73,7 +76,9 @@ router.delete('/packages/:id', verifyToken, requireActivePro(fromPackageParam), 
 
 // Thresholds — DIKUNCI ke promotor + Pro per-event
 router.get('/thresholds', verifyToken, requireActivePro(), getThresholds);
-router.post('/thresholds', verifyToken, requireActivePro(), saveThresholds);
+router.post('/thresholds', verifyToken, requireActivePro(), saveThresholds);         // create tier baru (batch upsert)
+router.patch('/thresholds/:id', verifyToken, requireActivePro(fromThresholdParam), updateThreshold);   // rename/reprice by id (cascade)
+router.delete('/thresholds/:id', verifyToken, requireActivePro(fromThresholdParam), deleteThreshold);  // hapus by id (blokir kalau dipakai paket)
 
 // Client accounts — createAccount di-scope event deal (Pro); verify PUBLIK (login sponsor, jangan gate)
 router.post('/accounts', verifyToken, requireActivePro(fromDealBody), createAccount);

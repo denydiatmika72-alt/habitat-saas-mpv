@@ -529,6 +529,99 @@ const saveThresholds = async (req, res) => {
   }
 };
 
+// PATCH /api/sponsor/thresholds/:id — rename dan/atau reprice tier by id (BUKAN by name).
+// Keputusan founder 2026-07-20: rename/reprice tier CASCADE LIVE ke SponsorPackage & SponsorDeal
+// yang merujuk tier ini — tidak ada versioning/penguncian harga historis. Untuk mempertahankan
+// harga lama bagi sponsor tertentu, buat tier BARU (bukan edit tier lama). Cascade dilakukan di
+// level aplikasi (name-based) dalam SATU transaksi — bukan FK live — karena tabel paket sudah
+// berisi data produksi sehingga konversi FK NOT NULL butuh backfill yang tidak boleh ditebak
+// (data-safety check 2026-07-20: sponsor_packages=1, sponsor_deals=0 baris).
+const updateThreshold = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { tierName, minPrice } = req.body;
+
+    const existing = await prisma.sponsorThreshold.findUnique({ where: { id } });
+    if (!existing) return res.status(404).json({ success: false, message: 'Tier tidak ditemukan.' });
+    if (existing.promotorId !== req.user.id) {
+      return res.status(403).json({ success: false, message: 'Akses ditolak.' });
+    }
+
+    const newName = tierName === undefined ? existing.tierName : String(tierName).trim();
+    if (!newName) return res.status(400).json({ success: false, message: 'Nama tier tidak boleh kosong.' });
+    const newPrice = minPrice === undefined ? Number(existing.minPrice) : Number(minPrice);
+    if (!Number.isFinite(newPrice) || newPrice < 0) {
+      return res.status(400).json({ success: false, message: 'Harga minimum tidak valid.' });
+    }
+
+    const { eventId, promotorId } = existing;
+    const oldName = existing.tierName;
+
+    // Uniqueness dalam (promotorId, eventId) — kecuali row ini sendiri. Cegah dua tier senama di 1 event.
+    if (newName !== oldName) {
+      const clash = await prisma.sponsorThreshold.findFirst({
+        where: { promotorId, eventId, tierName: newName, id: { not: id } },
+        select: { id: true },
+      });
+      if (clash) {
+        return res.status(409).json({ success: false, message: `Tier "${newName}" sudah ada di event ini. Pakai nama lain.` });
+      }
+    }
+
+    // Ambil id paket tier ini SEBELUM rename (by oldName) — id tidak berubah oleh rename, dipakai untuk
+    // cascade harga ke deal berbasis-paket (totalValue-nya diturunkan dari harga paket saat deal dibuat).
+    const pkgs = await prisma.sponsorPackage.findMany({
+      where: { promotorId, eventId, name: oldName },
+      select: { id: true },
+    });
+    const pkgIds = pkgs.map((p) => p.id);
+
+    const ops = [
+      // 1. Threshold-nya sendiri.
+      prisma.sponsorThreshold.update({ where: { id }, data: { tierName: newName, minPrice: newPrice } }),
+      // 2. SponsorPackage (paket = cermin tier) → nama & harga baru.
+      prisma.sponsorPackage.updateMany({ where: { promotorId, eventId, name: oldName }, data: { name: newName, price: newPrice } }),
+      // 3. Label tier di SEMUA deal tier ini → nama baru.
+      prisma.sponsorDeal.updateMany({ where: { promotorId, eventId, tier: oldName }, data: { tier: newName } }),
+    ];
+    // 4. Harga deal BERBASIS-PAKET dari tier ini → harga baru. Deal berbasis-benefit TIDAK disentuh
+    //    nilainya (nilainya dari benefit, bukan tier). Filter by packageId → tak terpengaruh langkah 3.
+    if (pkgIds.length > 0) {
+      ops.push(prisma.sponsorDeal.updateMany({ where: { promotorId, eventId, packageId: { in: pkgIds } }, data: { totalValue: newPrice } }));
+    }
+
+    const results = await prisma.$transaction(ops);
+    return res.status(200).json({ success: true, data: results[0] });
+  } catch (error) {
+    console.error('[SPONSOR ERROR]', error.message, error.stack);
+    return res.status(500).json({ success: false, message: error.message });
+  }
+};
+
+// DELETE /api/sponsor/thresholds/:id — hapus tier by id. DIBLOKIR (409) kalau masih dipakai paket
+// sponsor (name-based) supaya tidak ada paket dengan tier menggantung — hapus paketnya dulu.
+const deleteThreshold = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const existing = await prisma.sponsorThreshold.findUnique({ where: { id } });
+    if (!existing) return res.status(404).json({ success: false, message: 'Tier tidak ditemukan.' });
+    if (existing.promotorId !== req.user.id) {
+      return res.status(403).json({ success: false, message: 'Akses ditolak.' });
+    }
+    const usedByPackage = await prisma.sponsorPackage.count({
+      where: { promotorId: existing.promotorId, eventId: existing.eventId, name: existing.tierName },
+    });
+    if (usedByPackage > 0) {
+      return res.status(409).json({ success: false, message: 'Tier ini masih dipakai di paket sponsor, hapus paket tersebut dulu atau pilih tier lain.' });
+    }
+    await prisma.sponsorThreshold.delete({ where: { id } });
+    return res.status(200).json({ success: true });
+  } catch (error) {
+    console.error('[SPONSOR ERROR]', error.message, error.stack);
+    return res.status(500).json({ success: false, message: error.message });
+  }
+};
+
 // ─── Client Accounts ──────────────────────────────────────────────────────────
 
 const createAccount = async (req, res) => {
@@ -749,6 +842,8 @@ module.exports = {
   deletePackage,
   getThresholds,
   saveThresholds,
+  updateThreshold,
+  deleteThreshold,
   createAccount,
   verifyAccount,
   resendCredential,

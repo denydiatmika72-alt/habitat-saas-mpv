@@ -52,6 +52,10 @@ const fromPackageParam = async (req) => {
   const r = await prisma.sponsorPackage.findUnique({ where: { id: req.params.id }, select: { eventId: true } });
   return r?.eventId || null;
 };
+const fromThresholdParam = async (req) => {
+  const r = await prisma.sponsorThreshold.findUnique({ where: { id: req.params.id }, select: { eventId: true } });
+  return r?.eventId || null;
+};
 const fromDealParam = async (req) => {
   const r = await prisma.sponsorDeal.findUnique({ where: { id: req.params.id }, select: { eventId: true } });
   return r?.eventId || null;
@@ -138,6 +142,7 @@ module.exports = {
   fromParam,
   fromBenefitParam,
   fromPackageParam,
+  fromThresholdParam,
   fromDealParam,
   fromDealBody,
   fromDeliverableParam,
