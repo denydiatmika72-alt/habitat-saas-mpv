@@ -1,7 +1,8 @@
 "use client"
 
-import { useEffect, useState } from "react"
+import { Suspense, useEffect, useState } from "react"
 import Link from "next/link"
+import { useSearchParams } from "next/navigation"
 import {
   ArrowLeft,
   BadgeCheck,
@@ -1844,7 +1845,10 @@ function ThresholdSettings({ onThresholdChange, eventId }: { onThresholdChange: 
             <div
               key={row.key}
               className={cn(
-                "flex flex-col gap-3 p-5 sm:flex-row sm:items-center sm:gap-4",
+                // sm:flex-wrap → di kolom kanan yang sempit (layout lg:grid-cols-2) elemen berlebih
+                // (tombol "Isi dari Paket" + ringkasan harga + hapus) TURUN ke baris kedua alih-alih
+                // terpotong keluar kartu. Di 1 kolom lebar semua tetap muat 1 baris (fix overflow 2026-07-19).
+                "flex flex-col gap-3 p-5 sm:flex-row sm:flex-wrap sm:items-center sm:gap-4",
                 idx > 0 && "border-t border-slate-200",
               )}
             >
@@ -1869,9 +1873,10 @@ function ThresholdSettings({ onThresholdChange, eventId }: { onThresholdChange: 
                     inputMode="numeric"
                     value={row.minPrice === 0 ? "" : formatRupiah(String(row.minPrice))}
                     onChange={(e) => updateRow(row.key, { minPrice: parseRupiah(e.target.value) })}
-                    // min-w-[200px] override base Input `min-w-0`: cegah kolom harga (flex-1) diperas
-                    // sibling di baris ini sampai angka besar (mis. "Rp 999.999.999.999") harus di-scroll.
-                    className="pl-9 font-mono min-w-[200px]"
+                    // min-w-[160px] override base Input `min-w-0`: jaga lebar minimum agar angka besar
+                    // tetap terbaca tanpa menyusut saat mengetik, TAPI cukup ramping supaya baris tidak
+                    // meng-overflow kolom kanan yang sempit (200px dulu memicu clip — fix 2026-07-19).
+                    className="pl-9 font-mono min-w-[160px]"
                   />
                 </div>
               </div>
@@ -1953,15 +1958,29 @@ function ThresholdSettings({ onThresholdChange, eventId }: { onThresholdChange: 
 }
 
 // ─── Page ─────────────────────────────────────────────────────────────────────
+// useSearchParams (Next 16) WAJIB dibungkus <Suspense> — pola wrapper + *Inner sama seperti
+// invoice/pl-report/expenses. Tanpa Suspense build gagal / halaman jatuh ke dynamic rendering.
 export default function SponsorManagementPage() {
+  return (
+    <Suspense fallback={<div className="p-10 text-center text-slate-400">Memuat...</div>}>
+      <SponsorManagementInner />
+    </Suspense>
+  )
+}
+
+function SponsorManagementInner() {
   const { isPro, loading: userLoading } = useUser()
+  const searchParams = useSearchParams()
   const [benefits, setBenefits] = useState<ApiBenefit[]>([])
   const [benefitsLoading, setBenefitsLoading] = useState(true)
   const [thresholds, setThresholds] = useState<ApiThreshold[]>([])
   // Katalog sponsor kini di-scope PER-EVENT (fix cross-event bleed 2026-07-19). Event dipilih SEKALI
   // di level halaman → diturunkan ke InvitationCodeGenerator + BenefitBuilder/PackageBuilder/ThresholdSettings.
   const [events, setEvents] = useState<{ id: string; title: string }[]>([])
-  const [selectedEventId, setSelectedEventId] = useState<string>("")
+  // Inisialisasi dari ?eventId= kalau ada (fix 2026-07-19: navigasi dari Dashboard Kerjasama membawa
+  // event terpilih supaya TIDAK ke-reset ke events[0]/event Starter). Pemilih event di halaman tetap
+  // ada — user boleh pindah event; ini hanya menghormati pilihan yang diwariskan saat masuk halaman.
+  const [selectedEventId, setSelectedEventId] = useState<string>(searchParams.get("eventId") ?? "")
   // Katalog sponsor dijaga requireActivePro PER-EVENT → 402 kalau event terpilih belum Pro.
   // Gate `isPro` global di bawah tidak menangkap kasus "akun Pro, tapi untuk event lain".
   const [proLocked, setProLocked] = useState(false)
@@ -1972,7 +1991,13 @@ export default function SponsorManagementPage() {
       .then((data) => {
         const list = Array.isArray(data) ? data : (data.data ?? [])
         setEvents(list)
-        if (list.length > 0) setSelectedEventId(String(list[0].id))
+        // Pertahankan pilihan yang sudah ada (mis. dari ?eventId=) selama masih valid di daftar event;
+        // hanya jatuh ke event pertama kalau belum ada pilihan / pilihan tidak dikenal. JANGAN timpa
+        // eventId yang diwariskan dari navigasi (akar BUG 1: dropdown ini dulu selalu reset ke events[0]).
+        setSelectedEventId((prev) => {
+          if (prev && list.some((ev: { id: string | number }) => String(ev.id) === prev)) return prev
+          return list.length > 0 ? String(list[0].id) : ""
+        })
       })
       .catch(() => {})
   }, [])
@@ -2044,9 +2069,9 @@ export default function SponsorManagementPage() {
 
   return (
     <div className="mx-auto flex w-full max-w-7xl flex-col gap-6">
-      {/* Kembali ke hub kategori Kerjasama. Tanpa ?eventId= — Dashboard Kerjasama tidak mengoper
-          event ke halaman ini (Sponsor & Partner lintas-event: daftar semua deal + pemilih event
-          sendiri untuk kode undangan), jadi tidak ada konteks event tunggal untuk diwariskan. */}
+      {/* Kembali ke hub kategori Kerjasama. Sejak fix 2026-07-19 Dashboard Kerjasama MENGOPER ?eventId=
+          ke halaman ini supaya event terpilih tidak ke-reset; halaman Sponsor tetap lintas-event
+          (punya dropdown sendiri, daftar semua deal). Tombol back sendiri tak perlu bawa eventId. */}
       <div>
         <Link
           href="/dashboard/kerjasama"

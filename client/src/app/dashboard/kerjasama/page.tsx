@@ -110,8 +110,11 @@ function KerjasamaDashboardInner() {
           </div>
         </div>
         <div className="flex shrink-0 flex-wrap gap-2">
+          {/* Oper event terpilih supaya Manajemen Sponsor membuka event yang sama (fix 2026-07-19:
+              dulu tanpa eventId → halaman reset ke events[0]/event Starter). Halaman Sponsor tetap
+              lintas-event (punya dropdown sendiri); ini hanya menghormati pilihan awal. */}
           <Link
-            href="/dashboard/sponsor"
+            href={selectedEventId ? `/dashboard/sponsor?eventId=${selectedEventId}` : "/dashboard/sponsor"}
             className="inline-flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-3.5 py-2 text-sm font-semibold text-slate-700 transition-colors hover:bg-slate-50"
           >
             <Handshake className="size-4 text-emerald-700" />
