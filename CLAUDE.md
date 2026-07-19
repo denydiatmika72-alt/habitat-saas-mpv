@@ -102,6 +102,24 @@ belum dikerjakan, hanya catatan pencegahan agar kelas bug ini tidak berulang di 
 
 ## Fixed / Completed
 
+### Batas 1 Event per Akun (non-admin) — monetisasi (2026-07-19)
+`createEvent` (`server/controllers/event.controller.js`) DULU tidak punya cek apa pun → akun mana pun (Starter/Pro,
+admin/bukan) bisa buat event tanpa batas (celah monetisasi, bukan sekadar artefak testing). **Diperbaiki:** sebelum
+`prisma.event.create`, kalau user **bukan admin** dan sudah punya ≥ 1 event → tolak **403** dengan pesan
+`"Akun Anda sudah mencapai batas 1 event aktif. Hubungi kami untuk kebutuhan multi-event."`.
+- **Admin dikecualikan** (tanpa batas) — akun internal testing butuh banyak event (mis. uji isolasi cross-event).
+- **Konvensi admin = `isAdmin` (Boolean) dibaca FRESH dari DB** (sama seperti `requireAdmin`), **BUKAN** `role==='admin'`
+  — `role` di sistem ini hanya `"promotor"|"crew"|"scanner"` (kedua akun admin produksi ber-`role=promotor` tapi
+  `isAdmin=true`). Payload JWT (`req.user`) TIDAK memuat `isAdmin`, jadi wajib query DB.
+- Count pakai kolom **`promotor_id`** (bukan `promotorId`) sesuai schema `Event`.
+- **TIDAK menyentuh gating fitur Pro** (`proEventId`/`proExpiresAt`) — ini murni batas JUMLAH event, bukan fitur mana
+  yang aktif di dalam sebuah event. Tidak ada endpoint duplicate/clone/template event lain (satu-satunya `event.create`).
+- Frontend `create-event/page.tsx` sudah menampilkan `data.message` via `alert` pada respons non-ok → pesan 403 tampil
+  jelas (bukan silent/generic).
+- **Status: code-complete, verified lokal (`node --check` controller OK; 0 akun non-admin saat ini >1 event → tak ada
+  yang terkunci retroaktif). PENDING deploy manual founder** — field `role`/`isAdmin` SUDAH ada di schema, jadi **`db push`
+  TIDAK diperlukan**; cukup `git pull` → `pm2 restart nexevent-api` (opsional `npx prisma generate`).
+
 ### Isolasi Data Invoice & Purchase Order (Juli 2026)
 - **SponsorInvoice** kini WAJIB punya `eventId` + `promotorId` (`dealId` sekarang opsional/nullable — invoice manual
   tidak lagi menempel paksa ke `deals[0]`).

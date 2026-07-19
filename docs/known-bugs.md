@@ -2522,3 +2522,13 @@ tidak akan terhitung** → catatan jadi bohong dan promotor salah membaca sisa k
   diperlukan (tabel kosong). PENDING deploy manual founder (git pull → `prisma db push` → `prisma generate` → pm2 restart);
   verifikasi produksi penuh setelah deploy.
 - Tag: #security #sponsor #data-isolation #cross-event #schema-migration #benefit #package #threshold #fixed #pending-deploy
+
+---
+
+## [2026-07-19] createEvent tanpa batas — akun mana pun bisa buat event tak terbatas (celah monetisasi)
+
+- Gejala: Founder tes buat event di akun tier Pro, ternyata bisa bikin sampai 3 event; harusnya model bisnis membatasi 1 event per akun promotor. Audit menunjukkan TIDAK ada batas sama sekali untuk akun mana pun (Starter/Pro, admin/bukan).
+- Root cause: `createEvent` langsung `prisma.event.create` setelah validasi field — tidak pernah menghitung jumlah event milik user, tidak pernah membaca plan/subscription. Bukan bypass admin (tidak ada gate yang di-bypass), murni gate yang tidak pernah dibuat → celah monetisasi.
+- File terkait: `server/controllers/event.controller.js` (`createEvent`)
+- Fix: Sebelum create, ambil `isAdmin` FRESH dari DB (payload JWT tidak memuatnya) — kalau **bukan admin** DAN `prisma.event.count({ where: { promotor_id: req.user.id } }) >= 1` → tolak **403** dengan pesan `"Akun Anda sudah mencapai batas 1 event aktif. Hubungi kami untuk kebutuhan multi-event."`. Admin (`isAdmin=true`) dikecualikan (akun internal testing butuh banyak event, mis. uji isolasi cross-event). CATATAN PENTING: pakai `isAdmin` (Boolean, konvensi `requireAdmin`), BUKAN `role==='admin'` — `role` di sistem ini hanya `promotor|crew|scanner` (kedua akun admin produksi ber-`role=promotor` tapi `isAdmin=true`; memakai `role==='admin'` justru akan salah mengunci akun testing). Kolom ownership Event = `promotor_id` (bukan `promotorId`). TIDAK menyentuh gating fitur Pro (`proEventId`/`proExpiresAt`). Tidak ada endpoint duplicate/clone/template lain. Frontend `create-event/page.tsx` sudah menampilkan `data.message` via `alert` → 403 tampil jelas. Verifikasi lokal: `node --check` controller OK; query produksi konfirmasi 0 akun non-admin saat ini >1 event (tak ada yang terkunci retroaktif). Field `role`/`isAdmin` sudah ada di schema → `db push` TIDAK perlu; cukup `git pull` → `pm2 restart nexevent-api`. PENDING deploy manual founder.
+- Tag: #monetization #event #limit-enforcement #business-logic #isAdmin #403 #fixed #pending-deploy
