@@ -685,10 +685,15 @@ function InvoicePage() {
 
   return (
     <div className="mx-auto max-w-5xl space-y-6 px-4 py-6 md:px-6">
-      {/* Tombol Kembali */}
+      {/* Tombol Kembali — teruskan ?eventId= yang dibawa dari Dashboard Kerjasama (round-trip) supaya
+          event yang dipilih di hub dipulihkan saat kembali. Halaman Invoice sendiri lintas-event
+          (tidak memakai eventId ini untuk daftarnya), hanya meneruskannya kembali. */}
       <div>
         <button
-          onClick={() => router.push("/dashboard/kerjasama")}
+          onClick={() => {
+            const backEventId = searchParams.get("eventId")
+            router.push(backEventId ? `/dashboard/kerjasama?eventId=${backEventId}` : "/dashboard/kerjasama")
+          }}
           className="flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-600 transition-colors hover:bg-slate-50 hover:text-slate-900"
         >
           <ArrowLeft className="size-4" />

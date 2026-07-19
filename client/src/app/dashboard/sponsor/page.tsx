@@ -2069,12 +2069,12 @@ function SponsorManagementInner() {
 
   return (
     <div className="mx-auto flex w-full max-w-7xl flex-col gap-6">
-      {/* Kembali ke hub kategori Kerjasama. Sejak fix 2026-07-19 Dashboard Kerjasama MENGOPER ?eventId=
-          ke halaman ini supaya event terpilih tidak ke-reset; halaman Sponsor tetap lintas-event
-          (punya dropdown sendiri, daftar semua deal). Tombol back sendiri tak perlu bawa eventId. */}
+      {/* Kembali ke hub kategori Kerjasama, MEMBAWA ?eventId= (round-trip) supaya event yang dipilih
+          di hub dipulihkan saat kembali — pola sama tombol "Kembali ke Dashboard Keuangan" di halaman
+          Expense Tracker / Laporan Akhir Event. Dashboard Kerjasama membaca ?eventId= saat mount. */}
       <div>
         <Link
-          href="/dashboard/kerjasama"
+          href={selectedEventId ? `/dashboard/kerjasama?eventId=${selectedEventId}` : "/dashboard/kerjasama"}
           className="inline-flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm font-semibold text-slate-700 transition-colors hover:bg-slate-50"
         >
           <ArrowLeft className="size-4" />
