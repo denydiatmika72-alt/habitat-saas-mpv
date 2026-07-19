@@ -29,9 +29,13 @@ type NavGroup = "Perencanaan" | "Kerjasama" | "Operasional" | "Keuangan" | "Tike
 
 const GROUP_ORDER: NavGroup[] = ["Perencanaan", "Kerjasama", "Operasional", "Keuangan", "Tiket & Pencairan"]
 
+// `activePrefix` (opsional) MEMISAHKAN "kemana link menuju" (href) dari "kapan item disorot aktif".
+// Dipakai saat dua item berbagi href yang sama (mis. "Dashboard" & "RAB Builder" sama-sama /dashboard)
+// atau saat sebuah item memiliki sub-route sendiri: kalau diisi, item aktif HANYA untuk subtree prefix
+// itu (pathname === prefix atau diawali `prefix/`), BUKAN exact-match href — sehingga tidak bentrok.
 type NavItem =
-  | { label: string; icon: React.ElementType; href: string; badge?: string; adminOnly?: boolean; hidden?: boolean; group?: NavGroup; onClick?: never }
-  | { label: string; icon: React.ElementType; onClick: () => void; badge?: string; adminOnly?: boolean; hidden?: boolean; group?: NavGroup; href?: never }
+  | { label: string; icon: React.ElementType; href: string; activePrefix?: string; badge?: string; adminOnly?: boolean; hidden?: boolean; group?: NavGroup; onClick?: never }
+  | { label: string; icon: React.ElementType; onClick: () => void; activePrefix?: string; badge?: string; adminOnly?: boolean; hidden?: boolean; group?: NavGroup; href?: never }
 
 const nav: NavItem[] = [
   { label: "Dashboard", icon: LayoutDashboard, href: "/dashboard" },
@@ -40,7 +44,10 @@ const nav: NavItem[] = [
   // & "Invoice & Purchase Order" (/dashboard/invoice) SUDAH DIHAPUS dari sidebar; halamannya tetap ada,
   // dicapai lewat tombol nav di Dashboard Kerjasama + tombol "Kembali ke Dashboard Kerjasama" antar-halaman.
   { label: "Dashboard Kerjasama", icon: BarChart2, href: "/dashboard/kerjasama", badge: "Pro", group: "Kerjasama" },
-  { label: "RAB Builder", icon: ClipboardList, href: "/dashboard", group: "Perencanaan" },
+  // href /dashboard (tempat RAB di-list & dibuat via document table), tapi disorot aktif HANYA di
+  // editor RAB (/dashboard/rab/*) — supaya tidak ikut menyala di /dashboard bareng item "Dashboard"
+  // (dulu keduanya exact-match /dashboard → dua-duanya aktif; itu bug yang diperbaiki).
+  { label: "RAB Builder", icon: ClipboardList, href: "/dashboard", activePrefix: "/dashboard/rab", group: "Perencanaan" },
   { label: "Simulasi Harga Tiket", icon: Calculator, href: "/dashboard/simulasi", badge: "Pro", group: "Perencanaan" },
   { label: "Vendor & Talent", icon: Users, onClick: () => alert("Fitur Vendor Segera Hadir"), hidden: true },
   // Pola hub (Layer 2): "Dashboard Tiket & Pencairan" adalah SATU-SATUNYA pintu masuk kategori ini.
@@ -79,7 +86,11 @@ export function Sidebar() {
   })
 
   const renderItem = (item: NavItem) => {
-    const isActive = !!item.href && pathname === item.href
+    // activePrefix diisi → aktif untuk subtree prefix (bukan exact href) supaya item ber-href sama
+    // tidak menyala bersamaan. Default (tanpa activePrefix) tetap exact-match href.
+    const isActive = item.activePrefix
+      ? pathname === item.activePrefix || pathname.startsWith(`${item.activePrefix}/`)
+      : !!item.href && pathname === item.href
     const baseClass = cn(
       "flex w-full items-center gap-3 rounded-md px-3 py-2.5 text-sm font-medium transition-colors",
       isActive
