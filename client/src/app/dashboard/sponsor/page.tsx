@@ -101,6 +101,7 @@ type ApiPackage = {
 }
 
 type ApiThreshold = {
+  id?: string
   tierName: string
   minPrice: number
 }
@@ -1691,66 +1692,107 @@ function PackageBuilder({ benefits, thresholds, eventId }: { benefits: ApiBenefi
 }
 
 // ─── ThresholdSettings ────────────────────────────────────────────────────────
+// Baris form threshold. `id` HANYA ada kalau baris sudah tersimpan di DB (dikembalikan backend).
+// `key` = key React yang stabil — JANGAN pakai tierName sebagai key/lookup: nama tier bisa diedit
+// promotor, dan itulah akar bug "tier custom hilang setelah reload" (lihat known-bugs [2026-07-19]).
+type ThresholdRow = {
+  key: string
+  id?: string
+  tierName: string
+  minPrice: number
+}
+
+let thresholdRowSeq = 0
+const newRowKey = () => `new-${++thresholdRowSeq}`
+
+const toRows = (data: ApiThreshold[]): ThresholdRow[] =>
+  data.map((t) => ({
+    key: t.id ?? newRowKey(),
+    id: t.id,
+    tierName: t.tierName,
+    minPrice: Number(t.minPrice),
+  }))
+
+// Saran awal HANYA untuk event yang belum punya threshold sama sekali — bukan sumber kebenaran render.
+const suggestionRows = (): ThresholdRow[] =>
+  DEFAULT_TIERS.map((t) => ({ key: newRowKey(), tierName: t, minPrice: 0 }))
+
 function ThresholdSettings({ onThresholdChange, eventId }: { onThresholdChange: () => void; eventId: string }) {
-  const [rows, setRows] = useState<ApiThreshold[]>(
-    DEFAULT_TIERS.map((t) => ({ tierName: t, minPrice: 0 })),
-  )
+  const [rows, setRows] = useState<ThresholdRow[]>(suggestionRows)
   const [packages, setPackages] = useState<ApiPackage[]>([])
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [saved, setSaved] = useState(false)
-  const [activeDropdown, setActiveDropdown] = useState<number | null>(null)
+  const [error, setError] = useState<string | null>(null)
+  const [activeDropdown, setActiveDropdown] = useState<string | null>(null)
 
   useEffect(() => {
-    if (!eventId) { setRows(DEFAULT_TIERS.map((t) => ({ tierName: t, minPrice: 0 }))); setPackages([]); setLoading(false); return }
+    if (!eventId) { setRows(suggestionRows()); setPackages([]); setLoading(false); return }
     setLoading(true)
     Promise.all([
       fetch(`${API_BASE}/sponsor/thresholds?eventId=${eventId}`, { headers: authHeaders() }).then((r) => safeJson(r)),
       fetch(`${API_BASE}/sponsor/packages?eventId=${eventId}`, { headers: authHeaders() }).then((r) => safeJson(r)),
     ])
       .then(([thrData, pkgData]) => {
-        if (thrData.success && Array.isArray(thrData.data) && (thrData.data as ApiThreshold[]).length > 0) {
-          const apiMap: Record<string, number> = {}
-          ;(thrData.data as ApiThreshold[]).forEach((t) => {
-            apiMap[t.tierName] = Number(t.minPrice)
-          })
-          setRows(DEFAULT_TIERS.map((t) => ({ tierName: t, minPrice: apiMap[t] ?? 0 })))
-        } else {
-          // Event tanpa threshold tersimpan → reset ke default 0 (jangan bocorkan angka event sebelumnya).
-          setRows(DEFAULT_TIERS.map((t) => ({ tierName: t, minPrice: 0 })))
-        }
+        const stored = thrData.success && Array.isArray(thrData.data) ? (thrData.data as ApiThreshold[]) : []
+        // Render APA ADANYA dari DB (berapa pun jumlahnya, nama apa pun). Kalau kosong → saran default.
+        setRows(stored.length > 0 ? toRows(stored) : suggestionRows())
         if (pkgData.success) setPackages((pkgData.data as ApiPackage[]) ?? [])
       })
       .catch(() => {})
       .finally(() => setLoading(false))
   }, [eventId])
 
-  function updateRow(idx: number, update: Partial<ApiThreshold>) {
-    setRows((prev) => prev.map((r, i) => (i === idx ? { ...r, ...update } : r)))
+  function updateRow(key: string, update: Partial<ThresholdRow>) {
+    setRows((prev) => prev.map((r) => (r.key === key ? { ...r, ...update } : r)))
+  }
+
+  function addRow() {
+    setRows((prev) => [...prev, { key: newRowKey(), tierName: "", minPrice: 0 }])
+  }
+
+  // Backend hanya punya upsert (POST /sponsor/thresholds) — tidak ada endpoint DELETE. Jadi baris yang
+  // SUDAH tersimpan tidak bisa dihapus dari sini; hanya baris baru (belum disimpan) yang bisa dibuang.
+  function removeRow(key: string) {
+    setRows((prev) => prev.filter((r) => r.key !== key))
   }
 
   async function handleSave() {
     if (!eventId) return
+    const payload = rows
+      .map((r) => ({ tierName: r.tierName.trim(), minPrice: Number(r.minPrice) }))
+      .filter((r) => r.tierName.length > 0)
+    if (payload.length === 0) {
+      setError("Isi minimal satu nama tier.")
+      return
+    }
+    const names = payload.map((r) => r.tierName.toLowerCase())
+    if (new Set(names).size !== names.length) {
+      setError("Nama tier tidak boleh sama.")
+      return
+    }
+    setError(null)
     setSaving(true)
     try {
       const res = await fetch(`${API_BASE}/sponsor/thresholds`, {
         method: "POST",
         headers: { "Content-Type": "application/json", ...authHeaders() },
-        body: JSON.stringify({
-          eventId,
-          thresholds: rows.map((r) => ({
-            tierName: r.tierName,
-            minPrice: Number(r.minPrice),
-          })),
-        }),
+        body: JSON.stringify({ eventId, thresholds: payload }),
       })
       const d = await safeJson(res)
       if (d.success) {
+        // Sinkronkan dari respons server (sudah membawa id) supaya baris baru langsung punya id
+        // tanpa perlu reload — tampilan = data nyata di DB.
+        if (Array.isArray(d.data)) setRows(toRows(d.data as ApiThreshold[]))
         setSaved(true)
         onThresholdChange()
         window.setTimeout(() => setSaved(false), 2000)
+      } else {
+        setError(typeof d.message === "string" ? d.message : "Gagal menyimpan threshold.")
       }
-    } catch {}
+    } catch {
+      setError("Gagal menyimpan threshold.")
+    }
     finally { setSaving(false) }
   }
 
@@ -1800,7 +1842,7 @@ function ThresholdSettings({ onThresholdChange, eventId }: { onThresholdChange: 
         <div className="mt-8 overflow-hidden rounded-2xl border border-slate-200 bg-white">
           {rows.map((row, idx) => (
             <div
-              key={idx}
+              key={row.key}
               className={cn(
                 "flex flex-col gap-3 p-5 sm:flex-row sm:items-center sm:gap-4",
                 idx > 0 && "border-t border-slate-200",
@@ -1809,8 +1851,11 @@ function ThresholdSettings({ onThresholdChange, eventId }: { onThresholdChange: 
               <div className="w-full sm:w-44 shrink-0">
                 <Input
                   value={row.tierName}
-                  onChange={(e) => updateRow(idx, { tierName: e.target.value })}
-                  className="font-medium"
+                  onChange={(e) => updateRow(row.key, { tierName: e.target.value })}
+                  placeholder="Nama tier"
+                  disabled={Boolean(row.id)}
+                  title={row.id ? "Nama tier yang sudah tersimpan tidak bisa diubah — tambahkan tier baru." : undefined}
+                  className="font-medium disabled:bg-slate-50 disabled:text-slate-600"
                 />
               </div>
               <div className="flex flex-1 flex-col gap-1.5">
@@ -1823,7 +1868,7 @@ function ThresholdSettings({ onThresholdChange, eventId }: { onThresholdChange: 
                     type="text"
                     inputMode="numeric"
                     value={row.minPrice === 0 ? "" : formatRupiah(String(row.minPrice))}
-                    onChange={(e) => updateRow(idx, { minPrice: parseRupiah(e.target.value) })}
+                    onChange={(e) => updateRow(row.key, { minPrice: parseRupiah(e.target.value) })}
                     className="pl-9 font-mono"
                   />
                 </div>
@@ -1834,20 +1879,20 @@ function ThresholdSettings({ onThresholdChange, eventId }: { onThresholdChange: 
                   variant="outline"
                   size="sm"
                   onClick={() =>
-                    setActiveDropdown(activeDropdown === idx ? null : idx)
+                    setActiveDropdown(activeDropdown === row.key ? null : row.key)
                   }
                   className="gap-2 text-xs"
                 >
                   Isi dari Paket
                 </Button>
-                {activeDropdown === idx && packages.length > 0 && (
+                {activeDropdown === row.key && packages.length > 0 && (
                   <div className="absolute right-0 top-full z-10 mt-1 w-60 rounded-xl border border-slate-200 bg-white py-1 shadow-lg">
                     {packages.map((pkg) => (
                       <button
                         key={pkg.id}
                         type="button"
                         onClick={() => {
-                          updateRow(idx, { minPrice: Number(pkg.price) })
+                          updateRow(row.key, { minPrice: Number(pkg.price) })
                           setActiveDropdown(null)
                         }}
                         className="flex w-full items-center justify-between px-4 py-2.5 text-left text-sm hover:bg-slate-50"
@@ -1860,7 +1905,7 @@ function ThresholdSettings({ onThresholdChange, eventId }: { onThresholdChange: 
                     ))}
                   </div>
                 )}
-                {activeDropdown === idx && packages.length === 0 && (
+                {activeDropdown === row.key && packages.length === 0 && (
                   <div className="absolute right-0 top-full z-10 mt-1 w-48 rounded-xl border border-slate-200 bg-white px-4 py-3 shadow-lg">
                     <p className="text-xs text-slate-500">Belum ada paket dibuat.</p>
                   </div>
@@ -1872,10 +1917,35 @@ function ThresholdSettings({ onThresholdChange, eventId }: { onThresholdChange: 
                 </p>
                 <p className="text-xs text-slate-500">minimum</p>
               </div>
+              <div className="shrink-0">
+                {!row.id && (
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="icon"
+                    onClick={() => removeRow(row.key)}
+                    aria-label={`Hapus baris ${row.tierName || "tier baru"}`}
+                    className="text-slate-400 hover:text-rose-600"
+                  >
+                    <Trash2 className="size-4" />
+                  </Button>
+                )}
+              </div>
             </div>
           ))}
+          <div className="flex flex-col gap-2 border-t border-slate-200 bg-slate-50/60 p-4 sm:flex-row sm:items-center sm:justify-between">
+            <Button type="button" variant="outline" size="sm" onClick={addRow} className="gap-2 text-xs">
+              <Plus className="size-3.5" />
+              Tambah Tier
+            </Button>
+            <p className="text-xs text-slate-500">
+              Nama tier yang sudah tersimpan tidak bisa diubah — buat tier baru bila perlu.
+            </p>
+          </div>
         </div>
       )}
+
+      {error && <p className="mt-3 text-sm text-rose-600">{error}</p>}
     </section>
   )
 }
