@@ -1727,6 +1727,10 @@ function ThresholdSettings({ onThresholdChange, eventId }: { onThresholdChange: 
   const [error, setError] = useState<string | null>(null)
   const [activeDropdown, setActiveDropdown] = useState<string | null>(null)
   const [deletingKey, setDeletingKey] = useState<string | null>(null)
+  // Error yang MELEKAT ke satu baris (409 hapus "tier dipakai paket" / 409 rename "nama sudah dipakai").
+  // Ditampilkan tepat di bawah baris pemicunya supaya terlihat tanpa scroll — dulu semua error menumpuk
+  // di bawah seluruh form sehingga mudah terlewat saat daftar tier panjang.
+  const [rowError, setRowError] = useState<{ key: string; message: string } | null>(null)
 
   useEffect(() => {
     if (!eventId) { setRows(suggestionRows()); setPackages([]); setLoading(false); return }
@@ -1747,6 +1751,8 @@ function ThresholdSettings({ onThresholdChange, eventId }: { onThresholdChange: 
 
   function updateRow(key: string, update: Partial<ThresholdRow>) {
     setRows((prev) => prev.map((r) => (r.key === key ? { ...r, ...update } : r)))
+    // Buang error baris ini begitu user mengeditnya (mis. mengganti nama yang tadi bentrok).
+    setRowError((prev) => (prev?.key === key ? null : prev))
   }
 
   function addRow() {
@@ -1765,6 +1771,7 @@ function ThresholdSettings({ onThresholdChange, eventId }: { onThresholdChange: 
   async function handleRemoveRow(row: ThresholdRow) {
     if (!row.id) { setRows((prev) => prev.filter((r) => r.key !== row.key)); return }
     setError(null)
+    setRowError(null)
     setDeletingKey(row.key)
     try {
       const res = await fetch(`${API_BASE}/sponsor/thresholds/${row.id}`, { method: "DELETE", headers: authHeaders() })
@@ -1773,10 +1780,11 @@ function ThresholdSettings({ onThresholdChange, eventId }: { onThresholdChange: 
         setRows((prev) => prev.filter((r) => r.key !== row.key))
         onThresholdChange()
       } else {
-        setError(typeof d.message === "string" ? d.message : "Gagal menghapus tier.")
+        // Error 409 "tier masih dipakai paket" ditempel ke baris ini (terlihat tanpa scroll).
+        setRowError({ key: row.key, message: typeof d.message === "string" ? d.message : "Gagal menghapus tier." })
       }
     } catch {
-      setError("Gagal menghapus tier.")
+      setRowError({ key: row.key, message: "Gagal menghapus tier." })
     } finally { setDeletingKey(null) }
   }
 
@@ -1795,6 +1803,7 @@ function ThresholdSettings({ onThresholdChange, eventId }: { onThresholdChange: 
       return
     }
     setError(null)
+    setRowError(null)
     setSaving(true)
     try {
       // Baris TERSIMPAN (punya id) → PATCH per baris: rename/reprice by id. Perubahan cascade ke
@@ -1807,7 +1816,8 @@ function ThresholdSettings({ onThresholdChange, eventId }: { onThresholdChange: 
         })
         const d = await safeJson(res)
         if (!d.success) {
-          setError(typeof d.message === "string" ? d.message : "Gagal memperbarui tier.")
+          // Error 409 "nama tier sudah dipakai" ditempel ke baris pemicunya (terlihat tanpa scroll).
+          setRowError({ key: r.key, message: typeof d.message === "string" ? d.message : "Gagal memperbarui tier." })
           return
         }
       }
@@ -1871,6 +1881,13 @@ function ThresholdSettings({ onThresholdChange, eventId }: { onThresholdChange: 
           {saved ? "Tersimpan!" : "Simpan Threshold"}
         </Button>
       </div>
+
+      {/* Error tingkat-form (validasi nama kosong/duplikat, gagal simpan tier baru) tampil di ATAS
+          daftar — dulu di bawah seluruh form sehingga mudah terlewat saat daftar tier panjang.
+          Error spesifik-baris (409 hapus/rename) ditampilkan per-baris, bukan di sini. */}
+      {error && (
+        <p className="mt-4 rounded-lg bg-rose-50 px-3 py-2 text-sm font-medium text-rose-700">{error}</p>
+      )}
 
       {loading ? (
         <div className="mt-8 flex flex-col gap-3">
@@ -1978,6 +1995,13 @@ function ThresholdSettings({ onThresholdChange, eventId }: { onThresholdChange: 
                   {deletingKey === row.key ? <RotateCw className="size-4 animate-spin" /> : <Trash2 className="size-4" />}
                 </Button>
               </div>
+              {/* Error khusus baris ini (409 hapus/rename). basis-full → tampil sebaris penuh tepat di
+                  bawah kontrol baris pemicunya, jadi terlihat tanpa scroll berapa pun panjang daftar. */}
+              {rowError?.key === row.key && (
+                <p className="w-full basis-full rounded-lg bg-rose-50 px-3 py-2 text-sm font-medium text-rose-700">
+                  {rowError.message}
+                </p>
+              )}
             </div>
           ))}
           <div className="flex flex-col gap-2 border-t border-slate-200 bg-slate-50/60 p-4 sm:flex-row sm:items-center sm:justify-between">
@@ -1992,8 +2016,6 @@ function ThresholdSettings({ onThresholdChange, eventId }: { onThresholdChange: 
           </div>
         </div>
       )}
-
-      {error && <p className="mt-3 text-sm text-rose-600">{error}</p>}
     </section>
   )
 }
