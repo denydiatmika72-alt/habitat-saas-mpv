@@ -1869,7 +1869,9 @@ function ThresholdSettings({ onThresholdChange, eventId }: { onThresholdChange: 
                     inputMode="numeric"
                     value={row.minPrice === 0 ? "" : formatRupiah(String(row.minPrice))}
                     onChange={(e) => updateRow(row.key, { minPrice: parseRupiah(e.target.value) })}
-                    className="pl-9 font-mono"
+                    // min-w-[200px] override base Input `min-w-0`: cegah kolom harga (flex-1) diperas
+                    // sibling di baris ini sampai angka besar (mis. "Rp 999.999.999.999") harus di-scroll.
+                    className="pl-9 font-mono min-w-[200px]"
                   />
                 </div>
               </div>
