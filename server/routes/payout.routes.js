@@ -1,6 +1,5 @@
 const express = require('express');
 const { protect, requireAdmin } = require('../src/middleware/auth.middleware');
-const { requireActivePro } = require('../middleware/pro.middleware');
 const {
   getAvailableBalance,
   requestPayout,
@@ -12,16 +11,15 @@ const {
   getPayoutStatementPDF,
 } = require('../controllers/payout.controller');
 
-// Promotor-facing → mount di /api/payout. Payout = fitur Pro, TAPI LINTAS-EVENT (saldo agregat, tak ada
-// satu eventId) → requireActivePro() memakai fallback user-level: pemanggil harus punya Pro aktif untuk
-// event mana pun. Admin routes TIDAK di-gate (admin yang eksekusi transfer). CATATAN BISNIS: ini berarti
-// Starter yang menjual tiket (komisi) belum bisa menarik saldo tanpa Pro — sesuai daftar fitur founder.
+// Promotor-facing → mount di /api/payout. Payout = fitur STARTER (TIDAK di-gate Pro): mencairkan hasil
+// penjualan tiket yang monetisasinya lewat komisi transaksi (1.5–3.5%), konsisten dengan Ticketing/Storefront
+// — bukan fitur langganan Pro. Hanya `protect` (auth). Admin routes juga tidak di-gate Pro (admin eksekusi transfer).
 // Route statis ('/balance', '/my-requests') di atas '/:id/...' agar tidak ketubruk wildcard.
 const payoutRoutes = express.Router();
-payoutRoutes.get('/balance', protect, requireActivePro(), getAvailableBalance);
-payoutRoutes.get('/my-requests', protect, requireActivePro(), getMyPayoutRequests);
-payoutRoutes.get('/:id/statement-pdf', protect, requireActivePro(), getPayoutStatementPDF);
-payoutRoutes.post('/request', protect, requireActivePro(), requestPayout);
+payoutRoutes.get('/balance', protect, getAvailableBalance);
+payoutRoutes.get('/my-requests', protect, getMyPayoutRequests);
+payoutRoutes.get('/:id/statement-pdf', protect, getPayoutStatementPDF);
+payoutRoutes.post('/request', protect, requestPayout);
 
 // Admin-facing → mount di /api/admin/payout (mirror pola fee-debt).
 // Route spesifik ('/pending') di atas '/:id/...' agar tidak ketubruk wildcard.

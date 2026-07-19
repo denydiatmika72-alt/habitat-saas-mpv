@@ -112,24 +112,29 @@ frontend `isPro` juga global (bukan per-event) & mudah dilewati.
 - eventId di-resolve dari request: default `body/query/params.eventId`; untuk route by-`:id` ada resolver turunan-resource
   (`fromPOParam`, `fromBenefitParam`, `fromDealParam`, `fromInvoiceParam`, `fromExpenseParam`, `fromCrewParam`,
   `fromPettyAccountBody`, `fromDeliverableParam`, `fromDealBody`, `fromInvoiceGenerate`, dll — semua di-export dari middleware).
-- Fitur **lintas-event tanpa satu eventId** (Payout, daftar agregat invoice/deal, audiens all-events) → fallback cek
+- Fitur **lintas-event tanpa satu eventId** (daftar agregat invoice/deal, audiens all-events) → fallback cek
   **user-level** (pemanggil punya Pro aktif untuk event mana pun).
 - Gagal → **402 Payment Required** (`"Fitur ini memerlukan Pro aktif untuk event ini. Upgrade di halaman pembayaran."`).
 - **GATED:** sponsor (codes/benefits/packages/thresholds/deals GET+mutasi/accounts/deliverables mutasi/dashboard-summary),
   invoice (list/generate/by-id/status/delete), PO (semua), expenses (semua, TERMASUK budget-categories dropdown-nya),
-  crew (getEventCrew/invite/remove), petty cash (semua), P&L (report+export), payout promotor (balance/my-requests/request/
-  statement-pdf), audiens (event + all-events), Laporan Akhir Event (finish + summary-pdf), scanner (invite/list/remove/
+  crew (getEventCrew/invite/remove), petty cash (semua), P&L (report+export),
+  audiens (event + all-events), Laporan Akhir Event (finish + summary-pdf), scanner (invite/list/remove/
   validate), Simulasi Harga Tiket (frontend).
 - **SENGAJA TIDAK di-gate (Starter/gratis atau bukan customer):** RAB/Budget (`budget.routes` + `events/:id/rab-items`),
   SELURUH Ticketing/Storefront/Merch/Bundling/Ticket Box (`ticket.routes` — monetisasi via komisi 1.5–3.5%, sudah bersih
-  dari cek Pro — DIVERIFIKASI), createEvent/getEvents/publish/delete, endpoint PUBLIK sponsor-portal (`/codes/validate`,
-  `/portal/catalog`, `/public/tier-price`, `POST /deals`, `/accounts/verify`, `GET /deliverables`, `GET /invoices/deal/:dealId`),
-  navigasi akun crew/scanner (`/crew/my-events`, `/scanner/my-events`), dan admin payout routes.
+  dari cek Pro — DIVERIFIKASI), **Payout/Pencairan Dana promotor** (`payout.routes` — balance/my-requests/request/
+  statement-pdf; mencairkan hasil penjualan tiket yang monetisasinya lewat komisi transaksi, konsisten dengan Ticketing —
+  BUKAN fitur Pro; lihat koreksi 2026-07-19 di bawah), createEvent/getEvents/publish/delete, endpoint PUBLIK
+  sponsor-portal (`/codes/validate`, `/portal/catalog`, `/public/tier-price`, `POST /deals`, `/accounts/verify`,
+  `GET /deliverables`, `GET /invoices/deal/:dealId`), navigasi akun crew/scanner (`/crew/my-events`, `/scanner/my-events`),
+  dan admin payout routes.
 - **Frontend:** `useUser` dapat `isProForEvent(eventId)` + `hasActivePro` (mirror aturan backend). Simulasi Harga Tiket
   kini gating PER-EVENT: selector event tetap tampil, tool terkunci bila event terpilih belum Pro → komponen reusable
   `client/src/components/dashboard/pro-lock.tsx` (`ProLockPanel`/`ProLockModal`: gembok + modal "Upgrade untuk event ini").
-- **CATATAN BISNIS (perlu konfirmasi founder):** karena Payout=Pro, promotor **Starter yang menjual tiket (komisi) belum
-  bisa menarik saldo tanpa beli Pro**. Sesuai daftar fitur founder, tapi implikasinya perlu dikonfirmasi sebelum deploy.
+- **KOREKSI BISNIS (2026-07-19, RESOLVED):** Payout/Pencairan Dana **STARTER-accessible (TIDAK di-gate Pro)**. Sempat
+  ke-gate Pro di `0fdbb61` atas asumsi keliru, tapi Payout mencairkan hasil penjualan tiket yang monetisasinya lewat
+  **komisi transaksi (model Ticketing)**, bukan langganan Pro → promotor Starter yang menjual tiket **berhak menarik
+  saldonya tanpa beli Pro**. Dikoreksi sebelum deploy (0fdbb61 belum sampai VPS) → nol dampak produksi. Lihat known-bugs [2026-07-19].
 - **Status: code-complete, verified lokal** (`node --check` semua middleware+routes OK; `tsc --noEmit` client OK). TIDAK
   butuh `db push` (tak ada perubahan schema). PENDING deploy manual founder (`git pull` → `pm2 restart nexevent-api`).
 
