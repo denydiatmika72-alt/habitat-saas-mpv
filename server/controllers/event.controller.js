@@ -28,26 +28,11 @@ const createEvent = async (req, res) => {
       return res.status(400).json({ success: false, message: 'Semua field wajib diisi.' });
     }
 
-    // ── Batas 1 event per akun non-admin (monetisasi, 2026-07-19) ──────────────────
-    // Model bisnis: 1 akun promotor = 1 event. Admin (akun internal testing) DIKECUALIKAN —
-    // uji isolasi cross-event butuh banyak event di satu akun. Konvensi admin di codebase ini =
-    // `isAdmin` (Boolean) yang dibaca FRESH dari DB (sama seperti requireAdmin), BUKAN role==='admin'
-    // (role hanya "promotor"|"crew"|"scanner"). req.user (payload JWT) TIDAK memuat isAdmin, jadi
-    // wajib query DB. Ini murni batas JUMLAH event — TIDAK menyentuh gating fitur Pro
-    // (proEventId/proExpiresAt) yang mengatur fitur apa yang aktif DI DALAM sebuah event.
-    const me = await prisma.user.findUnique({
-      where: { id: req.user.id },
-      select: { isAdmin: true },
-    });
-    if (!me?.isAdmin) {
-      const eventCount = await prisma.event.count({ where: { promotor_id: req.user.id } });
-      if (eventCount >= 1) {
-        return res.status(403).json({
-          success: false,
-          message: 'Akun Anda sudah mencapai batas 1 event aktif. Hubungi kami untuk kebutuhan multi-event.',
-        });
-      }
-    }
+    // CATATAN MODEL BISNIS: pembuatan event TIDAK dibatasi jumlahnya — akun mana pun boleh buat event
+    // sebanyak yang diinginkan. Monetisasi bukan pada JUMLAH event, tapi pada FITUR Pro PER-EVENT yang
+    // digate lewat proEventId/proExpiresAt (Pro Per-Event Rp 499.000, aktif 90 hari per event). Sempat
+    // ada batas "1 event per akun non-admin" (commit 9a8c2fc) berdasarkan requirement yang salah paham —
+    // sudah di-revert (tidak pernah dideploy ke produksi). JANGAN tambahkan lagi batas jumlah event di sini.
 
     const baseSlug = generateSlug(title);
     const existingSlug = await prisma.event.findUnique({ where: { slug: baseSlug } });

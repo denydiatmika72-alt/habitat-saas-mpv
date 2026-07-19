@@ -2532,3 +2532,13 @@ tidak akan terhitung** → catatan jadi bohong dan promotor salah membaca sisa k
 - File terkait: `server/controllers/event.controller.js` (`createEvent`)
 - Fix: Sebelum create, ambil `isAdmin` FRESH dari DB (payload JWT tidak memuatnya) — kalau **bukan admin** DAN `prisma.event.count({ where: { promotor_id: req.user.id } }) >= 1` → tolak **403** dengan pesan `"Akun Anda sudah mencapai batas 1 event aktif. Hubungi kami untuk kebutuhan multi-event."`. Admin (`isAdmin=true`) dikecualikan (akun internal testing butuh banyak event, mis. uji isolasi cross-event). CATATAN PENTING: pakai `isAdmin` (Boolean, konvensi `requireAdmin`), BUKAN `role==='admin'` — `role` di sistem ini hanya `promotor|crew|scanner` (kedua akun admin produksi ber-`role=promotor` tapi `isAdmin=true`; memakai `role==='admin'` justru akan salah mengunci akun testing). Kolom ownership Event = `promotor_id` (bukan `promotorId`). TIDAK menyentuh gating fitur Pro (`proEventId`/`proExpiresAt`). Tidak ada endpoint duplicate/clone/template lain. Frontend `create-event/page.tsx` sudah menampilkan `data.message` via `alert` → 403 tampil jelas. Verifikasi lokal: `node --check` controller OK; query produksi konfirmasi 0 akun non-admin saat ini >1 event (tak ada yang terkunci retroaktif). Field `role`/`isAdmin` sudah ada di schema → `db push` TIDAK perlu; cukup `git pull` → `pm2 restart nexevent-api`. PENDING deploy manual founder.
 - Tag: #monetization #event #limit-enforcement #business-logic #isAdmin #403 #fixed #pending-deploy
+
+---
+
+## [2026-07-19] REVERT: batas 1 event per akun (9a8c2fc) — requirement salah paham
+
+- Gejala: Bukan bug runtime — koreksi requirement. Commit `9a8c2fc` menambahkan hard-limit "max 1 event per akun non-admin" (403 pada event ke-2) di `createEvent`, mengira model bisnis membatasi 1 event/akun.
+- Root cause: Salah paham model bisnis. Yang benar: pembuatan event UNLIMITED; monetisasi ada pada FITUR Pro PER-EVENT (Pro Per-Event Rp 499.000 / 90 hari) yang digate lewat `proEventId`/`proExpiresAt`, bukan pada jumlah event.
+- File terkait: `server/controllers/event.controller.js` (`createEvent`), `CLAUDE.md`, `docs/known-bugs.md`
+- Fix: Revert blok limit (isAdmin lookup + `prisma.event.count` + 403) dari `createEvent` → kembali ke perilaku sebelum `9a8c2fc` (buat event tanpa batas). Field `role`/`isAdmin` di schema TIDAK disentuh (masih dipakai `requireAdmin` + exemption testing). Limit `9a8c2fc` TIDAK pernah dideploy ke produksi (VPS masih `8666cf6`) → nol dampak user. `node --check` controller OK. Commit lokal saja (tidak di-push — founder review diff dulu).
+- Tag: #revert #monetization #event #requirement-correction #no-user-impact #pro-per-event
