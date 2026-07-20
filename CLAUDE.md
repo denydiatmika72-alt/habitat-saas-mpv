@@ -63,7 +63,7 @@ Route promotor pakai `verifyToken`; route admin (`admin.routes.js`, `fee-debt.ro
 - **Sponsor Management**: Generate invite code → sponsor daftar di portal → buat deal. Config sponsor (benefits/packages/thresholds catalog) via `/api/sponsor/{benefits,packages,thresholds}`; harga paket diambil dari threshold tier bernama sama. **Semua data sponsor (deal/benefit/package/threshold) dimiliki per-promotor via `promotorId` — lihat section "Keamanan: Isolasi Data Per-Promotor" di bawah.**
 - **Promoter Settings** (`/api/settings/promoter`): satu settings per EO (upsert by `userId`) — `companyName`/`logoUrl` + rekening bank (`bankName`/`bankAccount`/`accountHolder`). Rekening ini di-REUSE untuk "Transfer Ke" di Invoice PDF sponsor DAN rekening tujuan Payout (tidak ada field bank duplikat di `User`).
 - **Invoice**: Generate invoice PDF dari deal sponsor, update status (Belum Dibayar / DP Terbayar / Lunas)
-- **Document Table** (`/dashboard`): Tab "Invoice" menampilkan **semua invoice langsung** (bukan filter per event), karena deal historis punya `eventId = null`
+- **Document Table** (kini di `/dashboard/perencanaan`): indeks RAB per event. **KOREKSI 2026-07-20:** dulu tertulis di sini bahwa tab "Invoice" sengaja menampilkan semua invoice lintas-event "karena deal historis punya `eventId = null`" — **itu SALAH, dan alasannya sudah tidak berlaku** (`SponsorDeal.eventId` NOT NULL sejak 2026-07-18). Invoice sekarang **strictly per-event**; Document Table tidak lagi memanggil `/api/invoices` sama sekali. Lihat known-bugs [2026-07-20] Daftar Invoice lintas-event.
 - **Plan/Tier System**: Field `plan` di tabel `users`. Values: `"starter"` (default) atau `"pro"`. Hook `useUser.ts` expose `{ user, loading, isPro }` untuk feature gating di frontend. `user_plan` disimpan di localStorage setelah login.
 
 ## Keamanan: Isolasi Data Per-Promotor (WAJIB — prinsip anti-kebocoran lintas akun)
@@ -96,7 +96,9 @@ event milik promotor login (403 kalau bukan); `createDeal` mengambil `eventId` l
    Jangan pernah menjadikan endpoint yang mengembalikan data milik-user sebagai publik-tanpa-scope.
 
 Referensi implementasi: `server/controllers/sponsor.controller.js` + `server/routes/sponsor.routes.js`.
-**Catatan (di luar scope task ini, untuk sesi mendatang):** audit kolom pemilik + filter query serupa layak dilakukan
+**✅ AUDIT SELESAI 2026-07-20** (catatan di bawah sudah dieksekusi — dipertahankan sebagai konteks). Temuan
+terakhirnya adalah `getInvoices` yang masih menerima `eventId` opsional → sudah diperbaiki jadi WAJIB;
+lihat known-bugs [2026-07-20]. Catatan asli: audit kolom pemilik + filter query serupa layak dilakukan
 untuk tabel lain (mis. pastikan `Expense`/`OtherIncome`/`PurchaseOrder`/`Budget`/dst benar-benar ter-scope) —
 belum dikerjakan, hanya catatan pencegahan agar kelas bug ini tidak berulang di tempat lain.
 
@@ -135,8 +137,8 @@ frontend `isPro` juga global (bukan per-event) & mudah dilewati.
   ke-gate Pro di `0fdbb61` atas asumsi keliru, tapi Payout mencairkan hasil penjualan tiket yang monetisasinya lewat
   **komisi transaksi (model Ticketing)**, bukan langganan Pro → promotor Starter yang menjual tiket **berhak menarik
   saldonya tanpa beli Pro**. Dikoreksi sebelum deploy (0fdbb61 belum sampai VPS) → nol dampak produksi. Lihat known-bugs [2026-07-19].
-- **Status: code-complete, verified lokal** (`node --check` semua middleware+routes OK; `tsc --noEmit` client OK). TIDAK
-  butuh `db push` (tak ada perubahan schema). PENDING deploy manual founder (`git pull` → `pm2 restart nexevent-api`).
+- **Status: ✅ DEPLOYED & VERIFIED di production** (dikonfirmasi audit 2026-07-19/20 — wording "PENDING deploy"
+  yang lama sudah STALE dan dikoreksi 2026-07-20). Tidak butuh `db push` (tak ada perubahan schema).
 
 ### Pembuatan Event TIDAK Dibatasi Jumlahnya — monetisasi = fitur Pro per-event (2026-07-19, koreksi)
 **Model bisnis yang BENAR:** akun mana pun boleh membuat event **tanpa batas jumlah**. Monetisasi BUKAN pada jumlah
@@ -181,8 +183,8 @@ schema change, jadi tidak perlu backfill):
 - **Frontend** (`client/src/app/dashboard/sponsor/page.tsx`): `selectedEventId` di-lift ke level halaman (pemilih event
   tunggal governs seluruh katalog), diturunkan sebagai prop ke `InvitationCodeGenerator`/`BenefitBuilder`/`PackageBuilder`/
   `ThresholdSettings`; semua fetch pakai `?eventId=` & re-fetch saat event berubah; form create ikut kirim `eventId`.
-- **Status: code-complete, schema compiles (`prisma generate` OK), client typecheck OK. PENDING deploy manual founder**
-  (git pull → `npx prisma db push` → `npx prisma generate` → `pm2 restart`; tidak perlu backfill — tabel kosong).
+- **Status: ✅ DEPLOYED & VERIFIED di production** (dikonfirmasi audit 2026-07-19/20 — wording "PENDING deploy"
+  yang lama sudah STALE dan dikoreksi 2026-07-20). Tidak perlu backfill (tabel kosong saat schema change).
 
 ### Backfill script env loading bug — FIXED (2026-07-19)
 `prisma/backfill-invoice-owner.js` dulu tidak memuat `.env` saat dijalankan standalone → `DATABASE_URL` undefined →
@@ -207,15 +209,19 @@ Alur: **homepage discovery → storefront event → checkout.** `is_published` d
 3. Sponsor validasi kode di `/sponsor-portal` → response mengandung `eventId`
 4. Sponsor submit form → deal dibuat dengan `eventId`
 5. Promotor generate invoice dari deal
-6. Document Table tab "Invoice": GET `/api/invoices` → tampilkan semua invoice langsung sebagai baris terpisah (bukan filter event). Kolom: sponsor, tanggal, nomor invoice, nilai, status dropdown, aksi PDF+WA.
+6. Invoice dilihat/dikelola di `/dashboard/invoice` (dicapai dari Dashboard Kerjasama): `GET /api/invoices?eventId=` — **`eventId` WAJIB sejak 2026-07-20**, daftar selalu per-event. Kolom: sponsor, tanggal, nomor invoice, nilai, status dropdown, aksi PDF+WA.
 
 ## Document Table (`document-table.tsx`)
 
-- Tab "Invoice": render `allInvoices` state langsung (bukan event rows)
-- Tab "Semua"/"RAB": render event rows dengan RAB budget info
-- `invoiceStatusBadge(status)`: "Lunas" → emerald, "DP Terbayar" → blue, default → amber
-- Status dropdown di baris invoice: PATCH `/api/invoices/:id/status`
-- PDF download: GET `/api/pdf?path=${pdfUrl}`
+Sejak 2026-07-20 komponen ini di-render di **`/dashboard/perencanaan`** (bukan `/dashboard`) dan isinya
+**hanya indeks RAB per event**:
+- Satu baris = satu event + nilai RAB-nya + aksi "Kelola RAB" (→ `/dashboard/rab/[id]`) & hapus event.
+- Baris event yang sedang aktif di `EventProvider` disorot; tombol "Pilih" menjadikan baris itu event aktif.
+- **Tab "Invoice" & "Purchase Order" DICABUT.** Invoice pindah ke `/dashboard/invoice` (per-event, di bawah
+  Dashboard Kerjasama); PO pindah ke seksi tersendiri di `/dashboard/perencanaan`. Komponen ini **tidak lagi
+  memanggil `/api/invoices`** — dulu memanggilnya TANPA `eventId` hanya untuk badge "Ada Invoice".
+- Tabel ini SENGAJA lintas-event: ia jalur navigasi untuk menemukan RAB tiap event (satu event = satu RAB).
+- PDF download (di halaman Invoice): GET `/api/pdf?path=${pdfUrl}`
 
 ## Invoice Model
 
@@ -536,7 +542,7 @@ Fitur-fitur berikut wajib diselesaikan untuk kesiapan penuh nexEvent.
 Dikerjakan SATU PER SATU sesuai urutan (ada ketergantungan teknis antar fitur).
 Prinsip: selesai tuntas per fitur, bukan banyak yang setengah jadi.
 
-### 1. Bundling Paket Kurasi (✅ SELESAI — code-complete, pending deploy + E2E)
+### 1. Bundling Paket Kurasi (✅ SELESAI — DEPLOYED & VERIFIED; wording "pending deploy" dikoreksi 2026-07-20)
 Promotor buat paket khusus, contoh: "Tiket VIP + Kaos = Rp 200.000".
 
 Keputusan final:
@@ -578,7 +584,7 @@ Implementasi final:
 - **SATU-SATUNYA batas teknis**: stok/kuota tidak boleh diset/dipindah di bawah jumlah yang SUDAH TERJUAL
   (perlindungan agar tiket/merch terjual tidak hilang).
 
-### 3. Box Office Offline (Ticket Box) (✅ SELESAI v1 — code-complete, pending deploy + E2E)
+### 3. Box Office Offline (Ticket Box) (✅ SELESAI v1 — DEPLOYED & VERIFIED; wording "pending deploy" dikoreksi 2026-07-20)
 UI khusus penjualan tiket offline di lokasi fisik.
 
 Konteks pasar: Bali & komunitas belum siap online-only. Cash masih dominan.
@@ -600,8 +606,11 @@ Solusi: fee dari transaksi cash dicatat sebagai PIUTANG nexEvent ke promotor.
 Keputusan final:
 - Setiap tiket offline bertanda "cash" → fee tercatat sebagai hutang promotor
 - Butuh dashboard rekonsiliasi: total fee terhutang per promotor
-- Mekanisme penekan promotor nakal: BELUM DIPUTUSKAN
-  (opsi: blokir buka event baru sampai lunas, ATAU deposit di muka)
+- Mekanisme penekan promotor nakal: **✅ DONE (dikonfirmasi founder 2026-07-20)** — sudah tercakup oleh
+  pelunasan hutang otomatis saat pencairan (Payout item #2): hutang fee cash wajib muat di saldo
+  (`nominal + hutang ≤ available`) sebelum pencairan disetujui, jadi promotor tidak bisa menarik dana
+  sambil membiarkan hutang. Opsi lama (blokir buat event baru / deposit di muka) TIDAK jadi dipakai —
+  blokir event bertentangan dgn "event tidak dibatasi jumlahnya".
 
 ### 5. Scanner Tiket (Validasi di Venue) — ✅ SELESAI & DEPLOYED (2026-07-08, commit `16fcbb2`)
 Validasi QR tiket saat penukaran/masuk venue. Keputusan yang dulu "belum diputuskan" SUDAH final:
@@ -725,7 +734,8 @@ Keputusan final:
 8. ✅ Fee Platform Implementation (fee per tipe order + kelola fee editable di admin)
 9. ✅ Merchandise Storefront + Approval
 10. ✅ Payout / Pencairan Dana (manual-transfer, commit 4df3f1c — deployed + verified production)
-11. 🔴 URGENT: Midtrans Production (menunggu approval KYC — sistem masih Sandbox)
+11. 🔴 URGENT: Midtrans Production (menunggu approval KYC — sistem masih Sandbox). **Dikonfirmasi founder
+    2026-07-20: TETAP TERBUKA & masih prioritas merah** — satu-satunya blocker monetisasi yang tersisa.
 12. ✅ Storefront advanced features → SELESAI SEMUA. Lihat section "Storefront Feature Roadmap"
     (bundling paket kurasi ✅, Ticket Box offline ✅, hutang fee/rekonsiliasi ✅, scanner tiket ✅,
     Edit Stok + Pindah Stok Antar Jenis Tiket ✅ — deployed ke production 2026-07-12, commit `0577daf`).
@@ -749,13 +759,20 @@ Keputusan final:
     panel "Pemasukan vs Pengeluaran" = progress bar horizontal, donut "Komposisi Pengeluaran" tetap recharts).
     Struktur data & fungsi TIDAK berubah. Font/ikon baru baru dipakai di halaman INI (halaman lain masih font lama;
     rollout app-wide = pekerjaan terpisah). Lihat known-bugs.md entry [2026-07-14] redesign P&L.
-16. CRON Job booking timeout (sudah ada — verifikasi)
+16. ✅ CRON Job booking timeout — **verifikasi SELESAI (founder, 2026-07-20)**. Job release expired orders
+    berjalan normal; tidak ada tindakan tersisa.
+17. ✅ Audit ownership-scoping tabel lain (`Expense`/`OtherIncome`/`PurchaseOrder`/`Budget`/dst) —
+    **DONE (2026-07-20)**. Catatan pencegahan lama di section "Keamanan: Isolasi Data Per-Promotor" sudah
+    dieksekusi; Invoice adalah temuan terakhirnya (lihat known-bugs [2026-07-20] scoping invoice).
+18. ✅ Restrukturisasi navigasi — Dashboard KPI + Dashboard Perencanaan + EventProvider (2026-07-20).
+    Lihat section "Navigasi: Pemilih Event TUNGGAL di Dashboard KPI".
 
-**Belum pernah dibangun (dari PRD awal, TIDAK ada status terlacak — founder perlu putuskan):**
+**Ditunda resmi (keputusan founder, BUKAN lagi "perlu diputuskan"):**
 - **Tenant/Lapak Booth Booking (B2B)** — di PRD asli (Sprint 2: "peta booth interaktif + kurasi promotor +
   self-registration + auto-invoice tenant"). Saat ini HANYA ada tab "Tenant" placeholder ber-label
   "Coming Soon" di halaman Invoice (`/dashboard/invoice`); TIDAK ada model, controller, atau logic apa pun di
-  backend. Founder perlu memutuskan: revive, deprioritaskan resmi, atau konfirmasi tidak lagi dibutuhkan.
+  backend. **KEPUTUSAN 2026-07-20: DITUNDA sampai ada 5 promotor aktif.** Jangan mulai membangunnya sebelum
+  ambang itu tercapai, dan jangan tanyakan ulang statusnya — biarkan tab placeholder apa adanya.
 
 _Update bagian ini setiap prioritas berubah, supaya Claude Code dan Claude.ai selalu tahu fokus development saat ini._
 
@@ -765,7 +782,46 @@ Founder berencana suatu saat mengubah nexEvent dari web app menjadi aplikasi mob
 
 **Aturan sampai saat itu tiba:** SEMUA fitur baru (termasuk Ticket Scanner) dibangun **web-based only** — tidak ada pertimbangan native mobile wrapping di tahap ini. Catatan ini hanya placeholder perencanaan, bukan tugas aktif.
 
+## Navigasi: Pemilih Event TUNGGAL di Dashboard KPI (berlaku sejak 2026-07-20)
+
+> **PENTING — ini MENGGANTIKAN pola per-kategori yang dijelaskan di section "Roadmap Navigasi 3-Lapis" di
+> bawah.** Section itu DIPERTAHANKAN sebagai catatan sejarah (isi tiap hub, endpoint, keputusan UI-nya masih
+> akurat & berguna), tapi **bagian "tiap dashboard kategori punya pemilih event sendiri + mewariskan
+> `?eventId=` ke turunannya" SUDAH TIDAK BERLAKU.** Kalau dua section berbeda, YANG INI yang menang.
+
+**Pola sekarang: satu pemilih event untuk SELURUH `/dashboard`.**
+- **`client/src/contexts/event-context.tsx`** — `EventProvider` + hook `useSelectedEvent()` (`selectedEventId`
+  + setter), dipasang di `app/dashboard/layout.tsx` membungkus `{children}`. **Ini SATU-SATUNYA sumber
+  kebenaran pemilihan event.** JANGAN buat `useState` event baru di halaman mana pun.
+- **Sinkronisasi URL**: `?eventId=` tetap dipakai supaya deep-link & Back/Forward jalan. Aturannya:
+  **URL menang** kalau param ada; **state menang** kalau URL kosong (provider menulis balik via
+  `router.replace`, BUKAN `push` — hindari riwayat membengkak). State bertahan lintas navigasi client-side
+  karena layout tidak re-mount.
+- **`/dashboard` = Dashboard KPI**: tempat event dipilih (satu-satunya dropdown yang "berwenang"), ringkasan
+  StatCards mengikuti event terpilih (fallback akumulasi semua event kalau belum ada pilihan), tombol Buat
+  Event Baru, 4 kartu akses cepat (Perencanaan / Kerjasama / Ticketing / Keuangan).
+- **`/dashboard/perencanaan` = Dashboard Perencanaan**: indeks RAB + Purchase Order per-event + pintu ke
+  Simulasi Harga Tiket. **PO pindah ke sini dari halaman Invoice** (keputusan founder: PO = alat perencanaan
+  belanja, bukan dokumen kerjasama).
+- Halaman lain boleh tetap punya dropdown event demi kenyamanan, **tapi WAJIB menulis ke context yang SAMA**
+  (`setSelectedEventId`), bukan state lokal.
+- **`/dashboard/payout` PENGECUALIAN — bebas event.** Provider bahkan sengaja tidak menulis `?eventId=` ke
+  URL-nya (`EVENT_FREE_PATHS`). JANGAN tambahkan pemilih event/redirect ke sana.
+
+**Tiga jebakan yang WAJIB diingat saat menyentuh area ini** (ketiganya sudah menggigit sekali — lihat
+known-bugs [2026-07-20] Restrukturisasi navigasi):
+1. **Guard redirect baca context, BUKAN `searchParams`.** URL menyusul satu tick setelah navigasi; guard
+   berbasis URL akan memantulkan user yang sudah memilih event.
+2. **`<Suspense fallback>` provider TIDAK boleh merender `{children}`** — kalau dirender di fallback, children
+   ada di LUAR provider → `useSelectedEvent()` melempar. Fallback = `null`.
+3. **JANGAN auto-pilih `events[0]`** di halaman mana pun. Dengan pilihan global, fallback itu diam-diam
+   mengubah event aktif untuk SELURUH dashboard. (Sudah dicabut dari Sponsor & Simulasi.)
+
 ## Roadmap Navigasi 3-Lapis
+
+> ⚠️ **SEBAGIAN SUPERSEDED (2026-07-20)** — lihat section di atas. Mekanisme pemilihan event per-kategori
+> (dropdown sendiri + wariskan `?eventId=` dari hub ke turunan) sudah diganti pemilih tunggal di Dashboard
+> KPI. Deskripsi ISI tiap hub, endpoint, dan keputusan UI di bawah masih berlaku.
 
 - **Layer-2 — Dashboard Kerjasama (`/dashboard/kerjasama`, label sidebar "Dashboard Kerjasama", badge Pro, item PERTAMA
   di grup "Kerjasama")** — dibangun dari 0 (2026-07-18, pola sama Dashboard Ticketing). Hub ringkasan per-event kategori
@@ -791,7 +847,7 @@ Founder berencana suatu saat mengubah nexEvent dari web app menjadi aplikasi mob
   Laporan Akhir Event (`/dashboard/event-summary`) — keduanya **bukan item sidebar**, hanya dicapai lewat tombol di hub.
   **✅ Pola SUDAH divalidasi manual oleh founder di production (2026-07-15) — jalan sesuai harapan, siap direplikasi ke 4
   kategori sisanya.** Lihat known-bugs entry [2026-07-15].
-  **Layer-2 KEDUA — Dashboard Tiket & Pencairan (`/dashboard/ticketing`)**, dibangun dari 0 (2026-07-15, pending deploy):
+  **Layer-2 KEDUA — Dashboard Tiket & Pencairan (`/dashboard/ticketing`)**, dibangun dari 0 (2026-07-15, ✅ deployed & verified — wording "pending deploy" dikoreksi 2026-07-20):
   hub kategori "Tiket & Pencairan" — 3 kartu (tiket/merch/bundling), grafik tren penjualan, kartu Saldo Payout lintas-event.
   **Tombol "Data Audience" per-event ada di header hub ini (sejak 2026-07-17, dipindah dari Manajemen Tiket)** — unduh PDF
   audiens event yang dipilih di selector hub (`GET /api/tickets/audience-report/event/:id`), dinonaktifkan sampai event

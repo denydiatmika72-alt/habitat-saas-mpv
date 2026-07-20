@@ -2627,3 +2627,97 @@ tidak akan terhitung** → catatan jadi bohong dan promotor salah membaca sisa k
 - Verifikasi: `node --check` controller/routes/middleware OK; `npx tsc --noEmit` client OK. Mutasi TIDAK diuji live ke produksi (menghindari mengubah data produksi).
 - Deploy: TIDAK butuh `prisma db push` (tak ada perubahan schema). Backend: `git pull` + `pm2 restart nexevent-api`. Frontend: Vercel auto-deploy.
 - Tag: #fitur #sponsor #threshold #rename #delete #cascade #app-level #no-schema-change #data-safety
+
+## [2026-07-20] Hardening `isActivePro`: jalur lintas-event tidak menolak `proEventId` null
+
+- Gejala: (laten — belum pernah terpicu di produksi). Endpoint agregat yang tidak punya satu `eventId`
+  (mis. daftar deal lintas-event) memakai fallback user-level `isActivePro(me, null)`. Fallback itu hanya
+  mengecek `plan === 'pro' && proExpiresAt > now`, TIDAK pernah memastikan user benar-benar punya event
+  berbayar. Akun dengan `plan:'pro'` tapi `proEventId: null` (mis. hasil `PATCH /api/users/plan` manual
+  atau edit admin) akan LOLOS dan mendapat akses fitur Pro agregat tanpa pernah membayar event mana pun.
+- Root cause: lisensi Pro nexEvent SELALU melekat ke satu event (`proEventId`), tapi `isActivePro` hanya
+  memakai `proEventId` untuk membandingkan saat `eventId` diberikan. Saat `eventId` null, kolom itu
+  diabaikan sepenuhnya — jadi "null" diperlakukan sama dengan "punya lisensi".
+- Verifikasi data produksi (read-only, 2026-07-20): query `plan='pro' AND proEventId IS NULL` → **0 baris**
+  (3 akun Pro, semuanya punya `proEventId` valid yang menunjuk event milik sendiri + `ProTransaction`
+  berbayar). Jadi celah ini TIDAK pernah tereksploitasi; fix ini menutup kelas bug, bukan kebocoran berjalan.
+  **Konsekuensi: TODO "user pro-legacy" di entry [2026-07-02] sekarang OBSOLETE — tidak ada akun legacy
+  tersisa, tidak perlu migrasi/penghapusan apa pun.**
+- File terkait: `server/middleware/pro.middleware.js`
+- Fix: tambah guard eksplisit `if (!user.proEventId) return false;` sebelum percabangan `eventId` di
+  `isActivePro`. Berlaku untuk KEDUA jalur (per-event & lintas-event).
+- Catatan (BELUM dikerjakan, sengaja): `server/controllers/payment.controller.js:21` punya `isActivePro`
+  LOKAL sendiri yang juga tidak mengecek `proEventId`. Di sana efeknya berbeda — akun pro-legacy justru
+  ter-STUCK (activation ditolak karena dianggap sudah Pro, extension ditolak karena `proEventId` tidak
+  cocok). Tidak diubah di sesi ini karena menyentuh alur pembayaran; aman selama tidak ada akun legacy.
+- Tag: #pro-gating #security #middleware #monetization #hardening
+
+---
+
+## [2026-07-20] Daftar Invoice lintas-event — scoping bug, BUKAN keputusan desain
+
+- Gejala: `GET /api/invoices` tanpa `?eventId=` mengembalikan SELURUH invoice milik promotor lintas semua
+  event. Tampil di dua tempat: tab "Semua Invoice" di `/dashboard/invoice` dan badge "Ada Invoice" di
+  Document Table `/dashboard`. Selama ini terdokumentasi di CLAUDE.md sebagai perilaku SENGAJA
+  ("karena deal historis punya `eventId = null`").
+- Root cause: `eventId` dibuat OPSIONAL saat fix isolasi per-promotor sebelumnya, semata-mata supaya dua
+  call site lama itu tidak pecah — bukan karena ada kebutuhan bisnis lintas-event. Alasan historis
+  "deal `eventId` null" juga sudah tidak berlaku sejak `SponsorDeal.eventId` dijadikan NOT NULL (2026-07-18).
+  Dikonfirmasi founder 2026-07-20: *"semua di sini berdasarkan event, walaupun 1 akun promotor, itu harus
+  per event, karena performanya per-event bukan per-akun."*
+- File terkait: `server/controllers/invoice.controller.js`, `server/routes/invoice.routes.js`,
+  `client/src/app/dashboard/invoice/page.tsx`, `client/src/components/dashboard/document-table.tsx`
+- Fix:
+  1. `getInvoices` kini WAJIB `?eventId=` → 400 kalau kosong, 404 kalau event tidak ada, 403 kalau event
+     bukan milik pemanggil (pola sama Sponsor catalog / PO / Budget).
+  2. Efek lanjutan yang DIINGINKAN: `requireActivePro()` pada route ini kini gating PER-EVENT (resolver
+     default membaca `query.eventId`), bukan lagi jatuh ke fallback user-level lintas-event.
+  3. `getInvoice/:id`, `updateInvoiceStatus`, `deleteInvoice` TIDAK diubah — ketiganya sudah ter-scope
+     by-record lewat `promotorId`, dan record-nya sendiri membawa `eventId`.
+  4. Frontend: halaman Invoice membaca event dari EventProvider; Document Table tidak lagi memanggil
+     `/api/invoices` sama sekali (badge "Ada Invoice" dicabut — invoice kini hidup di Dashboard Kerjasama).
+- Tag: #invoice #scoping #per-event #security #breaking-change
+
+---
+
+## [2026-07-20] Restrukturisasi navigasi: Dashboard KPI + Dashboard Perencanaan + EventProvider
+
+- Gejala/latar: tiap hub kategori (Keuangan, Kerjasama, Ticketing, Sponsor, Crew) punya `useState` +
+  dropdown event SENDIRI-SENDIRI, sebagian juga membaca/menulis `?eventId=` dengan cara masing-masing.
+  Akibatnya: pilihan event tidak konsisten antar halaman, tiap hub perlu logika sinkronisasi URL sendiri,
+  dan `/dashboard` bentrok href dengan "RAB Builder" di sidebar (workaround `activePrefix` di `db09109`).
+- Perubahan (arsitektur, disetujui founder — B9 opsi 1 "layout-level React Context"):
+  1. **`client/src/contexts/event-context.tsx` (BARU)** — `EventProvider` + `useSelectedEvent()`, dipasang
+     di `app/dashboard/layout.tsx` membungkus `{children}`. Aturan sinkronisasi: **URL menang** kalau
+     `?eventId=` ada (deep-link / Back-Forward); **state menang** kalau URL kosong (provider menulis balik
+     via `router.replace`, BUKAN `push`). State bertahan lintas navigasi karena layout tidak re-mount.
+  2. **`/dashboard` = Dashboard KPI (BARU)** — pemilih event SATU-SATUNYA, StatCards yang ikut event
+     terpilih (fallback akumulasi semua event kalau belum ada pilihan), tombol Buat Event Baru, 4 kartu
+     akses cepat.
+  3. **`/dashboard/perencanaan` (BARU)** — indeks RAB (pindahan `document-table` dari `/dashboard`) +
+     Purchase Order per-event (pindahan dari halaman Invoice) + pintu ke Simulasi.
+  4. **PO pindah dari Kerjasama ke Perencanaan** (keputusan founder: PO alat perencanaan belanja, bukan
+     dokumen kerjasama). Halaman Invoice tidak lagi punya tab PO.
+  5. Halaman lain migrasi ke context: `pl-report`, `ticketing`, `kerjasama`, `crew`, `sponsor` (dropdown
+     dipertahankan tapi menulis ke context yang SAMA); `expenses`, `event-summary`, `petty-cash`,
+     `tickets` (baca context, guard redirect ikut context).
+- **JEBAKAN PENTING — guard redirect WAJIB baca context, BUKAN `searchParams`:** URL baru menyusul satu
+  tick setelah navigasi client-side. Halaman ber-guard "tanpa eventId → `router.replace` balik ke hub"
+  yang membaca `searchParams` langsung akan memantulkan user yang SUDAH memilih event. Semua guard
+  (`expenses`, `event-summary`, `petty-cash`, `tickets`) sudah dipindah ke `useSelectedEvent()`.
+- **Jebakan kedua — `<Suspense fallback>` provider TIDAK boleh merender `{children}`:** kalau dirender di
+  fallback, children berada di LUAR provider → `useSelectedEvent()` melempar error. Fallback = `null`.
+- **Jebakan ketiga — hapus auto-pilih `events[0]`:** halaman Sponsor & Simulasi dulu otomatis memilih event
+  pertama kalau belum ada pilihan. Dengan pilihan GLOBAL, fallback itu diam-diam mengubah event aktif untuk
+  SELURUH dashboard. Keduanya dicabut; keduanya kini menampilkan ajakan "pilih event di Dashboard".
+- `activePrefix` di sidebar **DIPERTAHANKAN** (diverifikasi masih perlu): "Dashboard Perencanaan" dan
+  "RAB Builder" sama-sama ber-href `/dashboard/perencanaan`, jadi tanpa `activePrefix: "/dashboard/rab"`
+  item RAB Builder tidak akan menyala saat user berada di editor `/dashboard/rab/[id]`.
+- `/dashboard/payout` **TIDAK disentuh** — bebas event by design; provider bahkan sengaja tidak menulis
+  `?eventId=` ke URL-nya (`EVENT_FREE_PATHS`).
+- `client/src/components/dashboard/EventPurchaseOrderList.tsx` **DIHAPUS** — yatim setelah tab PO di
+  Document Table dicabut (fungsinya sudah dicakup `PurchaseOrderTab`).
+- Verifikasi: `npx tsc --noEmit` bersih; `npx next build` sukses (29 route, termasuk `/dashboard/perencanaan`).
+- Tag: #arsitektur #navigasi #react-context #event-selection #refactor
+
+---

@@ -496,6 +496,19 @@ function PLReportPageInner() {
         />
       )}
 
+      {/* Belum ada event dipilih (mis. login pertama / user belum punya event) —
+          tanpa ini halaman hanya menampilkan header + dropdown kosong. */}
+      {!selectedEventId && (
+        <Card padding={0} radius={16}>
+          <div style={{ display: "flex", minHeight: 200, flexDirection: "column", gap: 8, alignItems: "center", justifyContent: "center", font: "400 13px/1.5 var(--font-body)", color: "var(--text-faint)" }}>
+            <span>Pilih event untuk melihat laporan laba/rugi.</span>
+            <Link href="/dashboard" style={{ fontWeight: 600, color: "var(--emerald-dark)", textDecoration: "underline" }}>
+              Pilih event di Dashboard
+            </Link>
+          </div>
+        </Card>
+      )}
+
       {/* Empty state */}
       {!loading && !proLocked && !plData && selectedEventId && (
         <Card padding={0} radius={16}>

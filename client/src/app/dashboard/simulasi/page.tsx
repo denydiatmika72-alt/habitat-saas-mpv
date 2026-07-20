@@ -282,7 +282,18 @@ export default function RevenueStrategyCenter() {
         </Card>
       </div>
 
-      {unlocked ? (
+      {/* Tanpa event terpilih, `unlocked` selalu false — tapi menampilkan gembok "upgrade"
+          di situ menyesatkan (masalahnya belum pilih event, bukan belum Pro). */}
+      {!eventId ? (
+        <Card className="p-10 text-center">
+          <p className="text-sm text-slate-500">
+            Pilih event terlebih dahulu untuk menjalankan simulasi harga tiket.
+          </p>
+          <Link href="/dashboard" className="mt-2 inline-block text-sm font-semibold text-emerald-700 underline">
+            Pilih event di Dashboard
+          </Link>
+        </Card>
+      ) : unlocked ? (
       <>
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
         <Card className="flex flex-col justify-between p-6">
