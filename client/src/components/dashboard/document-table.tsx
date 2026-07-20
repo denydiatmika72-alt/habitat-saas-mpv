@@ -1,16 +1,30 @@
 "use client"
 
+// ============================================================================
+// DocumentTable — indeks RAB per event (dipakai di Dashboard Perencanaan).
+// ----------------------------------------------------------------------------
+// Tabel ini SENGAJA lintas-event: ia adalah jalur navigasi untuk menemukan &
+// membuka RAB tiap event (satu event = satu RAB). Baris yang cocok dengan event
+// aktif di EventProvider disorot supaya konteks pilihan tetap terasa.
+//
+// Kolom/aksi Invoice DIHAPUS 2026-07-20: dulu komponen ini memanggil
+// GET /api/invoices TANPA eventId hanya untuk menyalakan badge "Ada Invoice".
+// Invoice kini strictly per-event dan tinggal di Dashboard Kerjasama, jadi
+// panggilan lintas-event itu tidak ada lagi. Tab "Purchase Order" juga dicabut —
+// PO punya seksinya sendiri di Dashboard Perencanaan, ter-scope event aktif.
+// ============================================================================
+
 import { useEffect, useState } from "react"
 import axios from "axios"
 import Link from "next/link"
-import { CalendarRange, FileText, RotateCw, Trash2 } from "lucide-react"
+import { CalendarRange, RotateCw, Trash2 } from "lucide-react"
 import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from "@/components/ui/table"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
-import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs"
-import { EventPurchaseOrderList } from "@/components/dashboard/EventPurchaseOrderList"
+import { cn } from "@/lib/utils"
+import { useSelectedEvent } from "@/contexts/event-context"
 
 function formatCurrency(amount: number): string {
   return new Intl.NumberFormat("id-ID", {
@@ -26,79 +40,27 @@ function formatDate(dateStr: string): string {
 }
 
 interface Event {
-  id: number
+  id: number | string
   title: string
   location: string
   event_date: string
   target_profit: number | string
 }
 
-interface InvoiceData {
-  id: string
-  invoiceNumber: string
-  dealId: string
-  sponsorName: string
-  contactName: string
-  grandTotal: number
-  status: string
-  currentTier: string
-  createdAt: string
-  pdfUrl: string | null
-}
-
-interface DealData {
-  id: string
-  eventId: string | null
-}
-
-interface InvoiceEventInfo {
-  invoiceId: string
-  invoiceNumber: string
-  invoiceDate: string
-  invoiceStatus: string
-  grandTotal: number
-}
-
-type Filter = "Semua" | "RAB" | "PO"
-
 export function DocumentTable() {
-  const [filter, setFilter] = useState<Filter>("Semua")
   const [events, setEvents] = useState<Event[]>([])
   const [isLoading, setIsLoading] = useState(true)
-  const [invoicesByEventId, setInvoicesByEventId] = useState<Map<string, InvoiceEventInfo>>(new Map())
+  const { selectedEventId, setSelectedEventId } = useSelectedEvent()
 
   const fetchData = () => {
     const token = localStorage.getItem("token")
     const headers = { Authorization: `Bearer ${token}` }
 
-    Promise.all([
-      axios.get(`/api/events`, { headers }),
-      axios.get(`/api/invoices`, { headers }).catch(() => ({ data: { data: [] } })),
-      axios.get(`/api/sponsor/deals`, { headers }).catch(() => ({ data: { data: [] } })),
-    ])
-      .then(([eventsRes, invoicesRes, dealsRes]) => {
-        const eventList: Event[] = Array.isArray(eventsRes.data) ? eventsRes.data : eventsRes.data.data ?? []
-        const invoiceList: InvoiceData[] = invoicesRes.data?.data ?? []
-        const dealList: DealData[] = dealsRes.data?.data ?? []
-
+    axios
+      .get(`/api/events`, { headers })
+      .then((res) => {
+        const eventList: Event[] = Array.isArray(res.data) ? res.data : res.data.data ?? []
         setEvents(eventList)
-
-        // Build event → invoice mapping via deals (works when deal.eventId is set)
-        const map = new Map<string, InvoiceEventInfo>()
-        for (const deal of dealList) {
-          if (!deal.eventId) continue
-          const invoice = invoiceList.find((i) => i.dealId === deal.id)
-          if (invoice) {
-            map.set(String(deal.eventId), {
-              invoiceId: invoice.id,
-              invoiceNumber: invoice.invoiceNumber,
-              invoiceDate: invoice.createdAt,
-              invoiceStatus: invoice.status,
-              grandTotal: Number(invoice.grandTotal),
-            })
-          }
-        }
-        setInvoicesByEventId(map)
       })
       .catch((err) => console.error("Gagal mengambil data", err))
       .finally(() => setIsLoading(false))
@@ -106,35 +68,23 @@ export function DocumentTable() {
 
   useEffect(() => {
     fetchData()
-  }, []) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [])
 
-  const filteredEvents = filter === "RAB" ? events : events
-
-  const colSpan = 6
+  const colSpan = 5
 
   return (
     <section className="rounded-xl border border-slate-200 bg-white">
       <div className="flex flex-col gap-4 border-b border-slate-200 p-5 md:flex-row md:items-center md:justify-between">
         <div>
-          <h2 className="text-xl font-semibold tracking-tight text-slate-900">Tabel Dokumen Event</h2>
+          <h2 className="text-xl font-semibold tracking-tight text-slate-900">Rencana Anggaran Biaya (RAB)</h2>
           <p className="mt-0.5 text-sm text-slate-500">
-            Pantau status perancangan anggaran dan kelola dokumen RAB untuk setiap event.
+            Satu RAB per event. Klik &ldquo;Kelola RAB&rdquo; untuk membuka RAB Builder.
           </p>
         </div>
-        <Tabs value={filter} onValueChange={(v) => setFilter(v as Filter)}>
-          <TabsList className="bg-slate-100">
-            <TabsTrigger value="Semua">Semua</TabsTrigger>
-            <TabsTrigger value="RAB">RAB</TabsTrigger>
-            <TabsTrigger value="PO">Purchase Order</TabsTrigger>
-          </TabsList>
-        </Tabs>
       </div>
 
       <div className="overflow-x-auto">
-        {filter === "PO" ? (
-          <EventPurchaseOrderList />
-        ) : null}
-        {filter !== "PO" && <Table>
+        <Table>
           <TableHeader>
             <TableRow className="border-slate-200 hover:bg-transparent">
               <TableHead className="py-3.5 pl-5 text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-500">
@@ -149,9 +99,6 @@ export function DocumentTable() {
               <TableHead className="text-right text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-500">
                 Nilai RAB
               </TableHead>
-              <TableHead className="text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-500">
-                Status
-              </TableHead>
               <TableHead className="sticky right-0 bg-white z-10 pr-5 text-right text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-500">
                 Aksi
               </TableHead>
@@ -165,46 +112,46 @@ export function DocumentTable() {
                   Memuat data...
                 </TableCell>
               </TableRow>
+            ) : events.length === 0 ? (
+              <TableRow>
+                <TableCell colSpan={colSpan} className="py-16 text-center">
+                  <div className="flex flex-col items-center justify-center min-h-[240px] gap-4">
+                    <p className="text-sm text-slate-500">Belum ada event. Silakan buat Event pertama Anda.</p>
+                    <Link href="/dashboard/create-event">
+                      <Button className="h-9 bg-emerald-800 text-white hover:bg-emerald-900">Buat Event</Button>
+                    </Link>
+                  </div>
+                </TableCell>
+              </TableRow>
             ) : (
-              /* ── Tab Semua / RAB: tampilkan rows event ── */
-              events.length === 0 ? (
-                <TableRow>
-                  <TableCell colSpan={colSpan} className="py-16 text-center">
-                    <div className="flex flex-col items-center justify-center min-h-[300px] gap-4">
-                      <p className="text-sm text-slate-500">Belum ada event. Silakan buat Event pertama Anda.</p>
-                      <Link href="/dashboard/create-event">
-                        <Button className="h-9 bg-emerald-800 text-white hover:bg-emerald-900">Buat Event</Button>
-                      </Link>
-                    </div>
-                  </TableCell>
-                </TableRow>
-              ) : (
-                filteredEvents.map((event) => (
-                  <EventTableRow
-                    key={event.id}
-                    event={event}
-                    invoiceInfo={invoicesByEventId.get(String(event.id)) ?? null}
-                    onDeleteSuccess={fetchData}
-                  />
-                ))
-              )
+              events.map((event) => (
+                <EventTableRow
+                  key={event.id}
+                  event={event}
+                  isSelected={String(event.id) === selectedEventId}
+                  onSelect={() => setSelectedEventId(String(event.id))}
+                  onDeleteSuccess={fetchData}
+                />
+              ))
             )}
           </TableBody>
-        </Table>}
+        </Table>
       </div>
     </section>
   )
 }
 
-// ── EventTableRow: baris event untuk tab Semua / RAB ────────────────────────────
+// ── EventTableRow: satu baris = satu event & RAB-nya ────────────────────────────
 
 function EventTableRow({
   event,
-  invoiceInfo,
+  isSelected,
+  onSelect,
   onDeleteSuccess,
 }: {
   event: Event
-  invoiceInfo: InvoiceEventInfo | null
+  isSelected: boolean
+  onSelect: () => void
   onDeleteSuccess: () => void
 }) {
   const [budgetTotal, setBudgetTotal] = useState<number | null>(null)
@@ -242,7 +189,12 @@ function EventTableRow({
   }
 
   return (
-    <TableRow className="border-slate-200 transition-colors hover:bg-slate-50">
+    <TableRow
+      className={cn(
+        "border-slate-200 transition-colors hover:bg-slate-50",
+        isSelected && "bg-emerald-50/60 hover:bg-emerald-50",
+      )}
+    >
       {/* Dokumen */}
       <TableCell className="py-4 pl-5">
         <div className="flex items-center gap-3">
@@ -251,7 +203,7 @@ function EventTableRow({
           </div>
           <div className="leading-tight">
             <p className="font-mono text-sm font-medium text-slate-900">{event.title}</p>
-            <span className="text-xs text-slate-500">Event</span>
+            <span className="text-xs text-slate-500">{isSelected ? "Event aktif" : "Event"}</span>
           </div>
         </div>
       </TableCell>
@@ -272,54 +224,42 @@ function EventTableRow({
         {isLoadingBudget ? (
           <span className="text-xs text-slate-400 animate-pulse">Menghitung...</span>
         ) : (
-          <span className="font-mono text-sm font-semibold tabular-nums text-slate-900">
-            {formatCurrency(budgetTotal || 0)}
-          </span>
+          <div className="flex flex-col items-end gap-1">
+            <span className="font-mono text-sm font-semibold tabular-nums text-slate-900">
+              {formatCurrency(budgetTotal || 0)}
+            </span>
+            {budgetTotal !== null ? (
+              <Badge variant="outline" className="rounded-full px-2.5 py-0.5 text-xs font-medium border-emerald-200 bg-emerald-50 text-emerald-700">
+                Ada RAB
+              </Badge>
+            ) : (
+              <Badge variant="outline" className="rounded-full px-2.5 py-0.5 text-xs font-medium border-amber-200 bg-amber-50 text-amber-700">
+                Belum Ada RAB
+              </Badge>
+            )}
+          </div>
         )}
-      </TableCell>
-
-      {/* Status */}
-      <TableCell>
-        <div className="flex flex-col gap-1">
-          {isLoadingBudget ? (
-            <span className="text-xs text-slate-400">...</span>
-          ) : budgetTotal !== null ? (
-            <Badge variant="outline" className="rounded-full px-2.5 py-0.5 text-xs font-medium border-emerald-200 bg-emerald-50 text-emerald-700">
-              Ada RAB
-            </Badge>
-          ) : (
-            <Badge variant="outline" className="rounded-full px-2.5 py-0.5 text-xs font-medium border-amber-200 bg-amber-50 text-amber-700">
-              Belum Ada RAB
-            </Badge>
-          )}
-          {invoiceInfo ? (
-            <Badge variant="outline" className="rounded-full px-2.5 py-0.5 text-xs font-medium border-emerald-200 bg-emerald-50 text-emerald-700">
-              Ada Invoice
-            </Badge>
-          ) : (
-            <Badge variant="outline" className="rounded-full px-2.5 py-0.5 text-xs font-medium border-slate-200 bg-slate-50 text-slate-500">
-              Belum Ada Invoice
-            </Badge>
-          )}
-        </div>
       </TableCell>
 
       {/* Aksi */}
       <TableCell className="sticky right-0 bg-white z-10 pr-5">
         <div className="flex items-center justify-end gap-1.5">
+          {!isSelected && (
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={onSelect}
+              className="h-8 border-slate-200 text-slate-600 hover:bg-slate-100"
+              title="Jadikan event aktif"
+            >
+              Pilih
+            </Button>
+          )}
           <Link href={`/dashboard/rab/${event.id}`}>
             <Button size="sm" className="h-8 bg-emerald-800 text-white hover:bg-emerald-900">
               Kelola RAB
             </Button>
           </Link>
-          {invoiceInfo && (
-            <Link href="/dashboard/invoice">
-              <Button size="sm" variant="outline" className="h-8 gap-1.5 border-emerald-200 text-emerald-700 hover:bg-emerald-50">
-                <FileText className="size-3.5" />
-                Lihat Invoice
-              </Button>
-            </Link>
-          )}
           <Button
             size="icon"
             variant="outline"

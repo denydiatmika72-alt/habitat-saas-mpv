@@ -27,6 +27,7 @@ function formatNumber(value: number): string {
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 interface EventData {
+  id?: number | string
   venue_capacity?: number | string
   target_profit?: number | string
   target_sponsorship?: number | string
@@ -56,24 +57,35 @@ function SkeletonCard() {
 }
 
 // ─── Main Component ────────────────────────────────────────────────────────────
-export function StatCards() {
+// `eventId` opsional: kalau diisi, kartu menampilkan angka SATU event itu.
+// Kalau kosong (belum ada event terpilih / user baru tanpa event) kartu jatuh ke
+// akumulasi seluruh event — tetap informatif, tidak pernah kosong/blank.
+export function StatCards({ eventId }: { eventId?: string } = {}) {
   const [kpis, setKpis] = useState<KPI[] | null>(null)
   const [isLoading, setIsLoading] = useState(true)
 
   useEffect(() => {
     const token = localStorage.getItem("token")
+    setIsLoading(true)
     axios
       .get('/api/events', {
         headers: { Authorization: `Bearer ${token}` },
       })
       .then((res) => {
         const raw = Array.isArray(res.data) ? res.data : (res.data.data ?? [])
-        const events: EventData[] = raw
+        const allEvents: EventData[] = raw
 
-        const totalEvents   = events.length
-        const totalCapacity = events.reduce((acc, e) => acc + Number(e.venue_capacity   ?? 0), 0)
-        const totalProfit   = events.reduce((acc, e) => acc + Number(e.target_profit    ?? 0), 0)
-        const totalSponsor  = events.reduce((acc, e) => acc + Number(e.target_sponsorship ?? 0), 0)
+        const scoped = eventId
+          ? allEvents.filter((e) => String(e.id) === eventId)
+          : allEvents
+        const isScoped = Boolean(eventId) && scoped.length > 0
+
+        const totalEvents   = allEvents.length
+        const totalCapacity = scoped.reduce((acc, e) => acc + Number(e.venue_capacity   ?? 0), 0)
+        const totalProfit   = scoped.reduce((acc, e) => acc + Number(e.target_profit    ?? 0), 0)
+        const totalSponsor  = scoped.reduce((acc, e) => acc + Number(e.target_sponsorship ?? 0), 0)
+
+        const scopeSub = isScoped ? "Event terpilih" : "Seluruh event"
 
         setKpis([
           {
@@ -85,9 +97,9 @@ export function StatCards() {
             iconColor: "text-emerald-600",
           },
           {
-            label:     "Total Kapasitas",
+            label:     "Kapasitas Venue",
             value:     formatNumber(totalCapacity),
-            sub:       "Total kapasitas venue",
+            sub:       scopeSub,
             icon:      Users,
             iconBg:    "bg-sky-50",
             iconColor: "text-sky-600",
@@ -95,7 +107,7 @@ export function StatCards() {
           {
             label:     "Target Profit",
             value:     formatCompact(totalProfit),
-            sub:       "Akumulasi target profit",
+            sub:       scopeSub,
             icon:      TrendingUp,
             iconBg:    "bg-indigo-50",
             iconColor: "text-indigo-600",
@@ -103,7 +115,7 @@ export function StatCards() {
           {
             label:     "Target Sponsorship",
             value:     formatCompact(totalSponsor),
-            sub:       "Akumulasi target sponsor",
+            sub:       scopeSub,
             icon:      Sparkles,
             iconBg:    "bg-amber-50",
             iconColor: "text-amber-600",
@@ -149,7 +161,7 @@ export function StatCards() {
         ])
       })
       .finally(() => setIsLoading(false))
-  }, [])
+  }, [eventId])
 
   return (
     <section
