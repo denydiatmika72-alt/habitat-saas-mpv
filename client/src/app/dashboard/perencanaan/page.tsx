@@ -16,6 +16,7 @@
 import Link from "next/link"
 import { ArrowLeft, Calculator, ClipboardList, PackageOpen, ArrowRight } from "lucide-react"
 import { DocumentTable } from "@/components/dashboard/document-table"
+import { BudgetAllocationCard } from "@/components/dashboard/budget-donut-chart"
 import PurchaseOrderTab from "@/components/dashboard/PurchaseOrderTab"
 import { Button } from "@/components/ui/button"
 import { useSelectedEvent } from "@/contexts/event-context"
@@ -56,8 +57,13 @@ export default function PerencanaanPage() {
         </Link>
       </div>
 
-      {/* ── Indeks RAB (lintas event) ────────────────────────────────────── */}
+      {/* ── RAB event aktif ──────────────────────────────────────────────── */}
       <DocumentTable />
+
+      {/* ── Distribusi Biaya Event (donut alokasi RAB) ───────────────────────
+          Dipulihkan 2026-07-21: chart ini hilang tanpa sengaja saat /dashboard
+          ditulis ulang jadi Dashboard KPI (commit 0842e0d). */}
+      {selectedEventId && <BudgetAllocationCard eventId={selectedEventId} />}
 
       {/* ── Purchase Order (per event aktif) ─────────────────────────────── */}
       <section className="rounded-xl border border-slate-200 bg-white">

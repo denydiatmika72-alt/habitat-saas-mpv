@@ -1,29 +1,28 @@
 "use client"
 
 // ============================================================================
-// DocumentTable — indeks RAB per event (dipakai di Dashboard Perencanaan).
+// DocumentTable — RAB untuk SATU event (event aktif di EventProvider).
 // ----------------------------------------------------------------------------
-// Tabel ini SENGAJA lintas-event: ia adalah jalur navigasi untuk menemukan &
-// membuka RAB tiap event (satu event = satu RAB). Baris yang cocok dengan event
-// aktif di EventProvider disorot supaya konteks pilihan tetap terasa.
+// PERUBAHAN 2026-07-21 (keputusan founder): komponen ini dulu menampilkan tabel
+// SELURUH event milik promotor sebagai alat navigasi ("pilih event mana yang mau
+// dibuka RAB-nya"). Itu DICABUT — data RAB bersifat privat per-event dan tidak
+// boleh dicampur lintas event, termasuk untuk keperluan navigasi.
 //
-// Kolom/aksi Invoice DIHAPUS 2026-07-20: dulu komponen ini memanggil
-// GET /api/invoices TANPA eventId hanya untuk menyalakan badge "Ada Invoice".
-// Invoice kini strictly per-event dan tinggal di Dashboard Kerjasama, jadi
-// panggilan lintas-event itu tidak ada lagi. Tab "Purchase Order" juga dicabut —
-// PO punya seksinya sendiri di Dashboard Perencanaan, ter-scope event aktif.
+// Sekarang: hanya baris event aktif. Ganti event dilakukan di pemilih tunggal
+// Dashboard KPI (/dashboard) — ada tautan "Ganti event" di bawah. JANGAN bangun
+// ulang daftar lintas-event di sini dalam bentuk apa pun.
 // ============================================================================
 
 import { useEffect, useState } from "react"
 import axios from "axios"
 import Link from "next/link"
 import { CalendarRange, RotateCw, Trash2 } from "lucide-react"
+import { useRouter } from "next/navigation"
 import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from "@/components/ui/table"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
-import { cn } from "@/lib/utils"
 import { useSelectedEvent } from "@/contexts/event-context"
 
 function formatCurrency(amount: number): string {
@@ -39,38 +38,51 @@ function formatDate(dateStr: string): string {
   }).format(new Date(dateStr))
 }
 
-interface Event {
+interface EventDetail {
   id: number | string
   title: string
   location: string
   event_date: string
-  target_profit: number | string
 }
 
 export function DocumentTable() {
-  const [events, setEvents] = useState<Event[]>([])
-  const [isLoading, setIsLoading] = useState(true)
   const { selectedEventId, setSelectedEventId } = useSelectedEvent()
-
-  const fetchData = () => {
-    const token = localStorage.getItem("token")
-    const headers = { Authorization: `Bearer ${token}` }
-
-    axios
-      .get(`/api/events`, { headers })
-      .then((res) => {
-        const eventList: Event[] = Array.isArray(res.data) ? res.data : res.data.data ?? []
-        setEvents(eventList)
-      })
-      .catch((err) => console.error("Gagal mengambil data", err))
-      .finally(() => setIsLoading(false))
-  }
+  const router = useRouter()
+  const [event, setEvent] = useState<EventDetail | null>(null)
+  const [isLoading, setIsLoading] = useState(false)
 
   useEffect(() => {
-    fetchData()
-  }, [])
+    if (!selectedEventId) {
+      setEvent(null)
+      return
+    }
+    const token = localStorage.getItem("token")
+    setIsLoading(true)
+    axios
+      .get(`/api/events/${selectedEventId}`, { headers: { Authorization: `Bearer ${token}` } })
+      .then((res) => {
+        const data = res.data?.data ?? res.data
+        setEvent(data && data.id ? data : null)
+      })
+      .catch(() => setEvent(null))
+      .finally(() => setIsLoading(false))
+  }, [selectedEventId])
 
-  const colSpan = 5
+  const handleDeleteEvent = async () => {
+    if (!event) return
+    if (!confirm(`Hapus event "${event.title}" beserta seluruh datanya secara permanen?`)) return
+    try {
+      const token = localStorage.getItem("token")
+      await axios.delete(`/api/events/${event.id}`, {
+        headers: { Authorization: `Bearer ${token}` },
+      })
+      // Event aktif sudah tidak ada → bersihkan konteks & kembali ke pemilih event.
+      setSelectedEventId("")
+      router.push("/dashboard")
+    } catch {
+      alert("❌ Gagal menghapus event.")
+    }
+  }
 
   return (
     <section className="rounded-xl border border-slate-200 bg-white">
@@ -78,87 +90,85 @@ export function DocumentTable() {
         <div>
           <h2 className="text-xl font-semibold tracking-tight text-slate-900">Rencana Anggaran Biaya (RAB)</h2>
           <p className="mt-0.5 text-sm text-slate-500">
-            Satu RAB per event. Klik &ldquo;Kelola RAB&rdquo; untuk membuka RAB Builder.
+            RAB untuk event yang sedang aktif. Satu event = satu RAB.
           </p>
         </div>
+        {selectedEventId && (
+          <Link
+            href="/dashboard"
+            className="shrink-0 text-sm font-medium text-emerald-700 underline underline-offset-2 hover:text-emerald-800"
+          >
+            Ganti event
+          </Link>
+        )}
       </div>
 
-      <div className="overflow-x-auto">
-        <Table>
-          <TableHeader>
-            <TableRow className="border-slate-200 hover:bg-transparent">
-              <TableHead className="py-3.5 pl-5 text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-500">
-                Dokumen
-              </TableHead>
-              <TableHead className="text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-500">
-                Event &amp; Lokasi
-              </TableHead>
-              <TableHead className="text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-500">
-                Tanggal Event
-              </TableHead>
-              <TableHead className="text-right text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-500">
-                Nilai RAB
-              </TableHead>
-              <TableHead className="sticky right-0 bg-white z-10 pr-5 text-right text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-500">
-                Aksi
-              </TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {isLoading ? (
-              <TableRow>
-                <TableCell colSpan={colSpan} className="py-12 text-center text-sm text-slate-500">
-                  <RotateCw className="mx-auto mb-2 size-4 animate-spin text-slate-400" />
-                  Memuat data...
-                </TableCell>
+      {!selectedEventId ? (
+        <div className="flex flex-col items-center justify-center gap-3 py-16 text-center">
+          <CalendarRange className="size-8 text-slate-300" />
+          <p className="text-sm text-slate-500">Pilih event terlebih dahulu untuk melihat RAB-nya.</p>
+          <Link href="/dashboard">
+            <Button variant="outline" className="border-emerald-200 text-emerald-700 hover:bg-emerald-50">
+              Pilih event di Dashboard
+            </Button>
+          </Link>
+        </div>
+      ) : (
+        <div className="overflow-x-auto">
+          <Table>
+            <TableHeader>
+              <TableRow className="border-slate-200 hover:bg-transparent">
+                <TableHead className="py-3.5 pl-5 text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-500">
+                  Dokumen
+                </TableHead>
+                <TableHead className="text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-500">
+                  Event &amp; Lokasi
+                </TableHead>
+                <TableHead className="text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-500">
+                  Tanggal Event
+                </TableHead>
+                <TableHead className="text-right text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-500">
+                  Nilai RAB
+                </TableHead>
+                <TableHead className="sticky right-0 bg-white z-10 pr-5 text-right text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-500">
+                  Aksi
+                </TableHead>
               </TableRow>
-            ) : events.length === 0 ? (
-              <TableRow>
-                <TableCell colSpan={colSpan} className="py-16 text-center">
-                  <div className="flex flex-col items-center justify-center min-h-[240px] gap-4">
-                    <p className="text-sm text-slate-500">Belum ada event. Silakan buat Event pertama Anda.</p>
-                    <Link href="/dashboard/create-event">
-                      <Button className="h-9 bg-emerald-800 text-white hover:bg-emerald-900">Buat Event</Button>
-                    </Link>
-                  </div>
-                </TableCell>
-              </TableRow>
-            ) : (
-              events.map((event) => (
-                <EventTableRow
-                  key={event.id}
-                  event={event}
-                  isSelected={String(event.id) === selectedEventId}
-                  onSelect={() => setSelectedEventId(String(event.id))}
-                  onDeleteSuccess={fetchData}
-                />
-              ))
-            )}
-          </TableBody>
-        </Table>
-      </div>
+            </TableHeader>
+            <TableBody>
+              {isLoading ? (
+                <TableRow>
+                  <TableCell colSpan={5} className="py-12 text-center text-sm text-slate-500">
+                    <RotateCw className="mx-auto mb-2 size-4 animate-spin text-slate-400" />
+                    Memuat data...
+                  </TableCell>
+                </TableRow>
+              ) : !event ? (
+                <TableRow>
+                  <TableCell colSpan={5} className="py-12 text-center text-sm text-slate-500">
+                    Event tidak ditemukan atau sudah dihapus.
+                  </TableCell>
+                </TableRow>
+              ) : (
+                <EventTableRow event={event} onDelete={handleDeleteEvent} />
+              )}
+            </TableBody>
+          </Table>
+        </div>
+      )}
     </section>
   )
 }
 
-// ── EventTableRow: satu baris = satu event & RAB-nya ────────────────────────────
+// ── EventTableRow: baris RAB event aktif ────────────────────────────────────────
 
-function EventTableRow({
-  event,
-  isSelected,
-  onSelect,
-  onDeleteSuccess,
-}: {
-  event: Event
-  isSelected: boolean
-  onSelect: () => void
-  onDeleteSuccess: () => void
-}) {
+function EventTableRow({ event, onDelete }: { event: EventDetail; onDelete: () => void }) {
   const [budgetTotal, setBudgetTotal] = useState<number | null>(null)
   const [isLoadingBudget, setIsLoadingBudget] = useState(true)
 
   useEffect(() => {
     const token = localStorage.getItem("token")
+    setIsLoadingBudget(true)
     axios
       .get(`/api/budgets/${event.id}`, { headers: { Authorization: `Bearer ${token}` } })
       .then((res) => {
@@ -175,26 +185,8 @@ function EventTableRow({
       .finally(() => setIsLoadingBudget(false))
   }, [event.id])
 
-  const handleDeleteEvent = async () => {
-    if (!confirm(`Hapus event "${event.title}" beserta seluruh datanya secara permanen?`)) return
-    try {
-      const token = localStorage.getItem("token")
-      await axios.delete(`/api/events/${event.id}`, {
-        headers: { Authorization: `Bearer ${token}` },
-      })
-      onDeleteSuccess()
-    } catch {
-      alert("❌ Gagal menghapus event.")
-    }
-  }
-
   return (
-    <TableRow
-      className={cn(
-        "border-slate-200 transition-colors hover:bg-slate-50",
-        isSelected && "bg-emerald-50/60 hover:bg-emerald-50",
-      )}
-    >
+    <TableRow className="border-slate-200 transition-colors hover:bg-slate-50">
       {/* Dokumen */}
       <TableCell className="py-4 pl-5">
         <div className="flex items-center gap-3">
@@ -203,7 +195,7 @@ function EventTableRow({
           </div>
           <div className="leading-tight">
             <p className="font-mono text-sm font-medium text-slate-900">{event.title}</p>
-            <span className="text-xs text-slate-500">{isSelected ? "Event aktif" : "Event"}</span>
+            <span className="text-xs text-slate-500">Event aktif</span>
           </div>
         </div>
       </TableCell>
@@ -244,17 +236,6 @@ function EventTableRow({
       {/* Aksi */}
       <TableCell className="sticky right-0 bg-white z-10 pr-5">
         <div className="flex items-center justify-end gap-1.5">
-          {!isSelected && (
-            <Button
-              size="sm"
-              variant="outline"
-              onClick={onSelect}
-              className="h-8 border-slate-200 text-slate-600 hover:bg-slate-100"
-              title="Jadikan event aktif"
-            >
-              Pilih
-            </Button>
-          )}
           <Link href={`/dashboard/rab/${event.id}`}>
             <Button size="sm" className="h-8 bg-emerald-800 text-white hover:bg-emerald-900">
               Kelola RAB
@@ -263,7 +244,7 @@ function EventTableRow({
           <Button
             size="icon"
             variant="outline"
-            onClick={handleDeleteEvent}
+            onClick={onDelete}
             className="h-8 w-8 text-red-500 border-red-200 hover:bg-red-50 hover:text-red-600"
             title="Hapus Event"
           >
