@@ -2721,3 +2721,100 @@ tidak akan terhitung** → catatan jadi bohong dan promotor salah membaca sisa k
 - Tag: #arsitektur #navigasi #react-context #event-selection #refactor
 
 ---
+
+## [2026-07-21] RAB tidak lagi dilisting lintas-event (keputusan founder)
+
+- Konteks: `document-table.tsx` menampilkan tabel SELURUH event promotor (satu baris per event + nilai
+  RAB-nya) dan dipakai sebagai alat navigasi "pilih event mana yang mau dibuka RAB-nya". Saat restrukturisasi
+  2026-07-20 hal ini SENGAJA dipertahankan & dilaporkan sebagai tradeoff.
+- Keputusan founder 2026-07-21: **dibalik.** Data RAB privat per-event dan tidak boleh dicampur lintas event
+  **termasuk untuk keperluan navigasi**. Konsisten dgn prinsip "semua per-event, bukan per-akun" yang sama
+  yang mendasari fix scoping Invoice [2026-07-20] & Sponsor deals [2026-07-21].
+- File terkait: `client/src/components/dashboard/document-table.tsx`,
+  `client/src/app/dashboard/perencanaan/page.tsx`
+- Fix: komponen kini memuat SATU event (`GET /api/events/:id`, sudah ter-scope `promotor_id` di backend)
+  yaitu event aktif di `EventProvider`. Tanpa event terpilih → ajakan "Pilih event di Dashboard".
+  Ganti event lewat pemilih tunggal di Dashboard KPI (ada tautan "Ganti event" di header kartu).
+  Hapus event kini membersihkan konteks (`setSelectedEventId("")`) lalu kembali ke `/dashboard` — kalau tidak,
+  context menyimpan id event yang sudah tidak ada.
+- **JANGAN bangun ulang daftar lintas-event di sini** dalam bentuk apa pun (tabel, dropdown, atau "recent events").
+- Tag: #rab #scoping #per-event #navigasi #keputusan-founder
+
+---
+
+## [2026-07-21] `GET /api/sponsor/deals` lintas-event — kelas bug yang sama dgn Invoice
+
+- Gejala: endpoint daftar deal sponsor mengembalikan SELURUH deal milik promotor lintas semua event
+  (`where: { promotorId }` saja, tanpa `eventId`). Dipakai di dua tempat: pencarian deal di tab Sponsorship
+  halaman Invoice, dan `DealTracker` di halaman Sponsor & Partner.
+- Root cause: sama persis dgn `getInvoices` — saat fix isolasi per-promotor, filter yang ditambahkan hanya
+  `promotorId`; `eventId` tidak pernah ikut karena waktu itu belum ada konsep katalog/laporan per-event.
+  Ditandai di laporan 2026-07-20 sebagai "kelas bug yang sama, di luar scope"; founder konfirmasi 2026-07-21: fix.
+- File terkait: `server/controllers/sponsor.controller.js` (`getDeals`), `server/routes/sponsor.routes.js`,
+  `client/src/app/dashboard/invoice/page.tsx`, `client/src/app/dashboard/sponsor/page.tsx`
+- Fix: `eventId` WAJIB lewat `verifyEventOwnership` (400 kosong / 404 event tak ada / 403 bukan milik pemanggil).
+  `promotorId` TETAP ikut di-filter — defense in depth, jangan diganti eventId saja.
+- **JEBAKAN — ada DUA call site, bukan satu.** Task awal hanya menyebut halaman Invoice; kalau `DealTracker`
+  di halaman Sponsor tidak ikut diubah, daftar deal di sana langsung 400. `DealTracker` kini menerima prop
+  `eventId` (sejajar dgn `BenefitBuilder`/`PackageBuilder`/`ThresholdSettings` yang sudah begitu) dan
+  `eventId` masuk dependency array effect-nya supaya ikut refetch saat event berganti.
+- Efek lanjutan yang DIINGINKAN: `requireActivePro()` pada route ini kini gating PER-EVENT (resolver default
+  membaca `query.eventId`), bukan lagi fallback user-level lintas-event.
+- Tag: #sponsor #deals #scoping #per-event #security #breaking-change
+
+---
+
+## [2026-07-21] Hardening `isActivePro` LOKAL di payment.controller.js (deadlock akun pro-legacy)
+
+- Gejala (laten): `payment.controller.js:21` punya perhitungan `isActivePro` SENDIRI, terpisah dari
+  `middleware/pro.middleware.js` yang sudah di-harden di commit `173a584`. Versi lokal ini tidak mengecek
+  `proEventId`, sehingga akun `plan='pro'` + `proEventId=null` **TERKUNCI TOTAL**:
+  - `activation` → 400 "Anda sudah memiliki lisensi Pro aktif" (karena `isActivePro` true)
+  - `extension` → 400 "Event ini bukan event Pro aktif Anda" (karena `null !== eventId` apa pun)
+  Tidak ada jalan keluar lewat UI sama sekali. Ini persis bug yang dicatat di [2026-07-02] sebagai TODO
+  "user pro-legacy" dan tidak pernah di-fix.
+- Root cause: dua sumber kebenaran untuk konsep yang sama. Saat middleware di-harden, salinan lokal di
+  controller pembayaran terlewat — `git grep isActivePro` menemukannya, tapi saat itu sengaja tidak disentuh
+  karena menyangkut alur pembayaran.
+- File terkait: `server/controllers/payment.controller.js`
+- Fix: tambah `!!user.proEventId` ke perhitungan `isActivePro` lokal. Perilaku baru untuk akun seperti itu:
+  activation JALAN NORMAL (akun bisa membeli lisensi per-event yang benar dan keluar dari state itu sendiri),
+  extension tetap ditolak (memang tidak ada lisensi yang bisa diperpanjang) — **predictable, bukan deadlock**.
+  Untuk akun normal (`proEventId` selalu terisi saat `plan='pro'`) TIDAK ada perubahan perilaku.
+- Audit produksi 2026-07-20: 0 baris `plan='pro' AND proEventId IS NULL` → pencegahan, bukan perbaikan
+  kerusakan berjalan.
+- **Catatan untuk sesi mendatang:** kalau menambah aturan Pro baru, cek KEDUA tempat — `middleware/pro.middleware.js`
+  DAN `controllers/payment.controller.js`. Idealnya `isActivePro` diekspor dari satu modul & dipakai bersama;
+  belum dilakukan karena kedua tempat butuh bentuk data berbeda (middleware pakai select parsial).
+- Tag: #pro-gating #monetization #payment #midtrans #hardening #duplicate-logic
+
+---
+
+## [2026-07-21] Donut "Distribusi Biaya Event" hilang dari Dashboard Perencanaan
+
+- Gejala: chart donut alokasi RAB yang dulu tampil di `/dashboard` tidak ada lagi di mana pun setelah
+  restrukturisasi 2026-07-20. Founder melaporkannya hilang saat testing.
+- Root cause (DIPASTIKAN lewat git, bukan tebakan): **regresi tidak disengaja di commit `0842e0d`.**
+  `git log -S "BudgetDonutChart" -- client/src/app/dashboard/page.tsx` → hanya dua commit: `99aebb0`
+  (dibuat) dan `0842e0d` (hilang). Chart itu didefinisikan INLINE di `app/dashboard/page.tsx` lama
+  (fungsi `BudgetDonutChart` + `classifyCategory` + panel "Distribusi Biaya Event"). Saat file itu ditulis
+  ULANG WHOLESALE jadi Dashboard KPI (`-277/+147` baris), chart-nya ikut terhapus dan **tidak pernah
+  dipindahkan** ke Perencanaan. `git grep BudgetDonutChart HEAD` → nihil sebelum fix ini.
+  **BUKAN** bagian dari `stat-cards.tsx` (itu 4 kartu KPI angka, tidak pernah punya chart), dan **BUKAN**
+  keputusan desain.
+- Pelajaran: menulis ulang file halaman secara wholesale (Write, bukan Edit) menghilangkan bagian yang tidak
+  disebut dalam spesifikasi tugas tanpa jejak di typecheck maupun build. **Sebelum menimpa file halaman
+  besar, inventarisasi dulu apa saja yang dirender di dalamnya** dan putuskan eksplisit tiap bagian:
+  pindah / buang / pertahankan.
+- File terkait: `client/src/components/dashboard/budget-donut-chart.tsx` (BARU),
+  `client/src/app/dashboard/perencanaan/page.tsx`
+- Fix: dipulihkan sebagai komponen mandiri `BudgetAllocationCard`, dirender di Dashboard Perencanaan
+  (tempat yang tepat — chart ini membaca RAB), ter-scope SATU event dari `EventProvider` sesuai keputusan
+  RAB per-event 2026-07-21. Logika perhitungan dipertahankan apa adanya, termasuk alasan memakai
+  `estimatedCost` (BUKAN `qty × hargaSatuan` — item pra-migrasi punya `hargaSatuan = 0`) dan koreksi
+  pembulatan agar total segmen = 100%. Blok `console.group` debug dari versi lama TIDAK ikut dipulihkan.
+- **Beda dari donut di `/dashboard/pl-report`**: yang itu "Komposisi Pengeluaran" (realisasi, recharts).
+  Yang ini alokasi RAB (rencana, SVG manual). Dua chart berbeda — jangan dianggap duplikat & digabung.
+- Tag: #regresi #rab #chart #refactor-hazard #dashboard-perencanaan
+
+---
