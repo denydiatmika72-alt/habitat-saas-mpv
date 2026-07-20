@@ -850,7 +850,8 @@ function DealCard({
 }
 
 // ─── DealTracker ──────────────────────────────────────────────────────────────
-function DealTracker() {
+// eventId WAJIB sejak 2026-07-21 — /api/sponsor/deals kini per-event (dulu lintas-event).
+function DealTracker({ eventId }: { eventId: string }) {
   const [deals, setDeals] = useState<Deal[]>([])
   const [loading, setLoading] = useState(true)
   const [approving, setApproving] = useState<string | null>(null)
@@ -862,8 +863,10 @@ function DealTracker() {
 
   useEffect(() => {
     function fetchDeals() {
+      // Tanpa event aktif jangan panggil /sponsor/deals (backend 400) — tampilkan daftar kosong.
+      if (!eventId) { setDeals([]); setLoading(false); return }
       Promise.all([
-        fetch(`${API_BASE}/sponsor/deals`, { headers: authHeaders() }).then(safeJson),
+        fetch(`${API_BASE}/sponsor/deals?eventId=${eventId}`, { headers: authHeaders() }).then(safeJson),
         fetch(`${API_BASE}/settings/promoter`, { headers: authHeaders() }).then(safeJson),
       ])
         .then(([dealsData, settingsData]) => {
@@ -882,7 +885,7 @@ function DealTracker() {
 
     document.addEventListener("visibilitychange", handleVisibilityChange)
     return () => document.removeEventListener("visibilitychange", handleVisibilityChange)
-  }, [])
+  }, [eventId])
 
   async function handleApprove(deal: Deal) {
     setApproving(deal.id)
@@ -2207,7 +2210,7 @@ function SponsorManagementInner() {
       <div className="grid gap-6 lg:grid-cols-2 lg:items-start">
         <div className="flex flex-col [&>*:first-child]:mt-0">
           <InvitationCodeGenerator selectedEventId={selectedEventId} />
-          <DealTracker />
+          <DealTracker eventId={selectedEventId} />
         </div>
         <div className="flex flex-col [&>*:first-child]:mt-0">
           <BenefitBuilder benefits={benefits} loading={benefitsLoading} onBenefitChange={fetchBenefits} eventId={selectedEventId} />

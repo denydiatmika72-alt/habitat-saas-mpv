@@ -65,6 +65,9 @@ router.post('/benefits', verifyToken, requireActivePro(), createBenefit);
 router.delete('/benefits/:id', verifyToken, requireActivePro(fromBenefitParam), deleteBenefit);
 
 // Deals — GET lintas-event (cek Pro user); mutasi di-scope event deal
+// ?eventId= WAJIB (2026-07-21) — daftar deal selalu per-event. Karena eventId kini selalu ada,
+// requireActivePro() default resolver membacanya dari query → gating Pro jadi PER-EVENT
+// (sebelumnya jatuh ke fallback user-level lintas-event).
 router.get('/deals', verifyToken, requireActivePro(), getDeals);
 router.post('/deals', createDeal);                          // public — portal sponsor (owner diturunkan dari kode)
 router.patch('/deals/:id', verifyToken, requireActivePro(fromDealParam), updateDealStatus);

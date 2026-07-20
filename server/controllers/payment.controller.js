@@ -18,7 +18,24 @@ const createProPayment = async (req, res) => {
     const user = await prisma.user.findUnique({ where: { id: req.user.id } });
     if (!user) return res.status(404).json({ success: false, message: 'User tidak ditemukan.' });
 
-    const isActivePro = user.plan === 'pro' && user.proExpiresAt && new Date(user.proExpiresAt) > new Date();
+    // `proEventId` WAJIB non-null (hardening 2026-07-21, menyamakan dgn middleware/pro.middleware.js
+    // yang di-harden di commit 173a584). Lisensi Pro SELALU melekat ke satu event yang dibayar; baris
+    // dengan plan='pro' tapi proEventId=null (mis. hasil edit plan manual) BUKAN lisensi sah.
+    //
+    // SEBELUM fix, akun seperti itu TERKUNCI TOTAL — dua-duanya 400:
+    //   • activation ditolak karena `isActivePro` true ("sudah punya lisensi Pro aktif")
+    //   • extension ditolak karena `proEventId !== eventId` (null tidak pernah cocok event mana pun)
+    // Tidak ada jalan keluar lewat UI sama sekali (bug lama yang tercatat di known-bugs [2026-07-02]).
+    //
+    // SESUDAH fix: proEventId null → dianggap TIDAK punya Pro aktif → activation NORMAL (akun bisa
+    // membeli lisensi per-event yang benar & keluar dari state itu sendiri), extension tetap ditolak
+    // (memang tidak ada lisensi yang bisa diperpanjang). Audit 2026-07-20: 0 baris seperti ini di
+    // produksi, jadi ini pencegahan — bukan perbaikan kerusakan berjalan.
+    const isActivePro =
+      user.plan === 'pro' &&
+      !!user.proEventId &&
+      user.proExpiresAt &&
+      new Date(user.proExpiresAt) > new Date();
 
     if (type === 'activation' && isActivePro)
       return res.status(400).json({ success: false, message: 'Anda sudah memiliki lisensi Pro aktif. Gunakan perpanjangan jika ingin menambah durasi.' });

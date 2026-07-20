@@ -219,10 +219,20 @@ const deleteBenefit = async (req, res) => {
 
 // ─── Deals ────────────────────────────────────────────────────────────────────
 
+// GET /api/sponsor/deals?eventId=  — eventId WAJIB sejak 2026-07-21.
+// Dulu mengembalikan SELURUH deal promotor lintas event. Itu kelas bug yang sama dengan
+// daftar invoice lintas-event (lihat known-bugs [2026-07-20]): data kerjasama dihitung
+// per-event, bukan per-akun. Pola scoping identik dgn getInvoices / katalog sponsor:
+// 400 kalau kosong, 404 event tak ada, 403 kalau bukan milik pemanggil.
+// Catatan: `promotorId` TETAP ikut di-filter (bukan hanya eventId) — defense in depth.
 const getDeals = async (req, res) => {
   try {
+    const { eventId } = req.query;
+    const own = await verifyEventOwnership(eventId, req.user.id);
+    if (!own.ok) return res.status(own.status).json({ success: false, message: own.message });
+
     const deals = await prisma.sponsorDeal.findMany({
-      where: { promotorId: req.user.id },
+      where: { promotorId: req.user.id, eventId: String(eventId) },
       orderBy: { createdAt: 'desc' },
       include: {
         account: { select: { id: true } },

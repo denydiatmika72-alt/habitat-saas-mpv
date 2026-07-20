@@ -387,14 +387,15 @@ function InvoicePage() {
   useEffect(() => {
     loadSettings()
     loadEvents()
-    const dealIdParam = searchParams.get("dealId")
-    loadDeals(dealIdParam ?? undefined)
-  }, [searchParams])
+  }, [])
 
-  // Daftar invoice ikut event aktif — dimuat ulang tiap event berganti.
+  // Invoice DAN deal sama-sama per-event → dimuat ulang tiap event berganti.
+  // (deal ikut ke sini sejak 2026-07-21: /api/sponsor/deals kini wajib eventId)
   useEffect(() => {
     loadInvoices()
-  }, [selectedEventId]) // eslint-disable-line react-hooks/exhaustive-deps
+    const dealIdParam = searchParams.get("dealId")
+    loadDeals(dealIdParam ?? undefined)
+  }, [selectedEventId, searchParams]) // eslint-disable-line react-hooks/exhaustive-deps
 
   async function loadEvents() {
     const res = await fetch(`${API_BASE}/events`, { headers: authHeaders() })
@@ -410,7 +411,9 @@ function InvoicePage() {
   }
 
   async function loadDeals(preselectedDealId?: string) {
-    const res = await fetch(`${API_BASE}/sponsor/deals`, { headers: authHeaders() })
+    // eventId WAJIB di backend sejak 2026-07-21 → tanpa event aktif jangan memanggil (akan 400).
+    if (!selectedEventId) { setDeals([]); return }
+    const res = await fetch(`${API_BASE}/sponsor/deals?eventId=${selectedEventId}`, { headers: authHeaders() })
     if (res.status === 402) { setProLocked(true); return }
     const json = await res.json()
     if (json.success) {
