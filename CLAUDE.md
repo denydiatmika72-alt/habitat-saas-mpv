@@ -218,6 +218,13 @@ Sejak 2026-07-20 komponen ini di-render di **`/dashboard/perencanaan`** (bukan `
 - Memuat `GET /api/events/:id` (sudah ter-scope `promotor_id` di backend) + `GET /api/budgets/:eventId`.
 - Aksi: "Kelola RAB" (→ `/dashboard/rab/[id]`) & hapus event. Hapus event membersihkan konteks
   (`setSelectedEventId("")`) lalu kembali ke `/dashboard` — kalau tidak, context memegang id event hantu.
+- **Hapus event TERSEDIA untuk promotor biasa** (diverifikasi 2026-07-21 — jangan diasumsikan
+  admin-only lagi): `DELETE /api/events/:id` dijaga `verifyToken` SAJA + cek kepemilikan
+  `promotor_id` (404 kalau bukan miliknya). Tombolnya ada di komponen ini. **Catatan risiko yang
+  BELUM ditangani:** `deleteEvent` tidak mengecek hutang fee cash / payout pending / order tiket
+  berbayar, dan relasi cascade menghapus data turunannya — jalur penghindaran hutang lewat hapus
+  event masih terbuka. Kalau suatu saat mau ditutup, tempatnya di `deleteEvent`
+  (`server/controllers/event.controller.js`), bukan di frontend. Lihat known-bugs [2026-07-21].
 - Tanpa event terpilih → ajakan "Pilih event di Dashboard". Ganti event lewat pemilih tunggal di Dashboard
   KPI (ada tautan "Ganti event" di header kartu).
 - **⛔ JANGAN kembalikan daftar lintas-event di sini.** Dulu (sebelum 2026-07-21) komponen ini melisting
