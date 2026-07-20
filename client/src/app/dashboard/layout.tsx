@@ -2,6 +2,7 @@ import { Sidebar, MobileNav } from "@/components/dashboard/sidebar"
 import { TopBar } from "@/components/dashboard/top-bar"
 import { DashboardGuard } from "@/components/dashboard/dashboard-guard"
 import { ProExpiryBanner } from "@/components/dashboard/pro-expiry-banner"
+import { EventProvider } from "@/contexts/event-context"
 
 export default function DashboardLayout({
   children,
@@ -22,7 +23,10 @@ export default function DashboardLayout({
           {/* Page Content — extra bottom padding on mobile for the nav bar */}
           <main className="flex-1 px-4 py-6 pb-24 md:px-8 md:py-8 lg:pb-8">
             <ProExpiryBanner />
-            {children}
+            {/* Pemilihan event dibagi ke SELURUH halaman /dashboard lewat context ini
+                (lihat contexts/event-context.tsx). Sidebar & TopBar sengaja di luar
+                provider — keduanya tidak bergantung event. */}
+            <EventProvider>{children}</EventProvider>
           </main>
         </div>
       </div>
