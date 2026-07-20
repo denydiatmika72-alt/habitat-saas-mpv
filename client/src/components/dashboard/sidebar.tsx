@@ -18,9 +18,11 @@ import {
 import { cn } from "@/lib/utils"
 import { useUser } from "@/hooks/useUser"
 
+// Dashboard = KPI + pemilih event (satu-satunya). Perencanaan menggantikan
+// "Simulasi" di slot kedua: ia hub yang memuat RAB, PO, dan pintu ke Simulasi.
 const mobileNavItems = [
   { label: "Dashboard", icon: LayoutDashboard, href: "/dashboard" },
-  { label: "Simulasi", icon: Calculator, href: "/dashboard/simulasi" },
+  { label: "Perencanaan", icon: ClipboardList, href: "/dashboard/perencanaan" },
   { label: "Sponsor", icon: Handshake, href: "/dashboard/sponsor" },
   { label: "Invoice", icon: ReceiptText, href: "/dashboard/invoice" },
 ]
@@ -44,10 +46,12 @@ const nav: NavItem[] = [
   // & "Invoice & Purchase Order" (/dashboard/invoice) SUDAH DIHAPUS dari sidebar; halamannya tetap ada,
   // dicapai lewat tombol nav di Dashboard Kerjasama + tombol "Kembali ke Dashboard Kerjasama" antar-halaman.
   { label: "Dashboard Kerjasama", icon: BarChart2, href: "/dashboard/kerjasama", badge: "Pro", group: "Kerjasama" },
-  // href /dashboard (tempat RAB di-list & dibuat via document table), tapi disorot aktif HANYA di
-  // editor RAB (/dashboard/rab/*) — supaya tidak ikut menyala di /dashboard bareng item "Dashboard"
-  // (dulu keduanya exact-match /dashboard → dua-duanya aktif; itu bug yang diperbaiki).
-  { label: "RAB Builder", icon: ClipboardList, href: "/dashboard", activePrefix: "/dashboard/rab", group: "Perencanaan" },
+  // Sejak 2026-07-20 RAB & Purchase Order punya rumah sendiri di /dashboard/perencanaan
+  // (dulu RAB nebeng di /dashboard sehingga bentrok href dengan item "Dashboard").
+  // `activePrefix` "/dashboard/rab" DIPERTAHANKAN — href & subtree editor RAB memang beda
+  // path, jadi tanpa ini item tidak menyala saat user berada di /dashboard/rab/[id].
+  { label: "Dashboard Perencanaan", icon: ClipboardList, href: "/dashboard/perencanaan", group: "Perencanaan" },
+  { label: "RAB Builder", icon: ClipboardList, href: "/dashboard/perencanaan", activePrefix: "/dashboard/rab", group: "Perencanaan" },
   { label: "Simulasi Harga Tiket", icon: Calculator, href: "/dashboard/simulasi", badge: "Pro", group: "Perencanaan" },
   { label: "Vendor & Talent", icon: Users, onClick: () => alert("Fitur Vendor Segera Hadir"), hidden: true },
   // Pola hub (Layer 2): "Dashboard Tiket & Pencairan" adalah SATU-SATUNYA pintu masuk kategori ini.

@@ -3,7 +3,8 @@
 import { Suspense, useEffect, useState, useCallback } from "react"
 import { Ticket as TicketIcon, Plus, Trash2, Pencil, Copy, Check, ExternalLink, Upload, Package, ArrowLeftRight, ArrowLeft } from "lucide-react"
 import Link from "next/link"
-import { useRouter, useSearchParams } from "next/navigation"
+import { useRouter } from "next/navigation"
+import { useSelectedEvent } from "@/contexts/event-context"
 import { useUser } from "@/hooks/useUser"
 import { formatIDRInput, parseIDRInput } from "@/lib/formatNumber"
 
@@ -206,12 +207,12 @@ export default function TicketsPage() {
 function TicketsPageInner() {
   const { loading: userLoading } = useUser()
   const router = useRouter()
-  const searchParams = useSearchParams()
 
   const [events, setEvents] = useState<Event[]>([])
-  // Event diwarisi dari Dashboard Tiket & Pencairan — halaman ini bukan pintu masuk sendiri
-  // (pola hub Layer 2, sama dgn Expense Tracker yang mewarisi dari Dashboard Keuangan).
-  const selectedEventId = searchParams.get("eventId") ?? ""
+  // Event diwarisi dari EventProvider — halaman ini bukan pintu masuk sendiri.
+  // Sengaja dari context, BUKAN searchParams: URL menyusul satu tick setelah navigasi,
+  // jadi guard berbasis URL bisa salah memantulkan user yang sudah memilih event.
+  const { selectedEventId } = useSelectedEvent()
   const [event, setEvent] = useState<FullEvent | null>(null)
   const [ticketTypes, setTicketTypes] = useState<TicketType[]>([])
   const [orders, setOrders] = useState<Order[]>([])

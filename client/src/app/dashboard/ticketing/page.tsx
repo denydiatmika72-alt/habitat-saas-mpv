@@ -2,7 +2,7 @@
 
 import { Suspense, useCallback, useEffect, useState } from "react"
 import Link from "next/link"
-import { useSearchParams } from "next/navigation"
+import { useSelectedEvent } from "@/contexts/event-context"
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, ResponsiveContainer, Tooltip, Cell } from "recharts"
 import {
   Ticket,
@@ -218,10 +218,10 @@ export default function TicketingDashboardPage() {
 }
 
 function TicketingDashboardInner() {
-  const searchParams = useSearchParams()
-
   const [events, setEvents] = useState<Event[]>([])
-  const [selectedEventId, setSelectedEventId] = useState(searchParams.get("eventId") ?? "")
+  // Event dari EventProvider (dipilih di Dashboard KPI) — state lokal DIHAPUS
+  // 2026-07-20. Dropdown di halaman ini menulis ke context yang SAMA.
+  const { selectedEventId, setSelectedEventId } = useSelectedEvent()
   const [summary, setSummary] = useState<SummaryData | null>(null)
   const [breakdown, setBreakdown] = useState<BreakdownData | null>(null)
   const [trend, setTrend] = useState<TrendData | null>(null)

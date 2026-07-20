@@ -2,12 +2,14 @@
 
 import { useMemo, useState, useEffect } from "react"
 import { useRouter } from "next/navigation"
+import Link from "next/link"
 import axios from "axios"
 import {
   Activity, Sparkles, Users, Wallet, Target, Gauge, Ticket, TrendingUp, CheckCircle2, ArrowLeft, Loader2,
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { useUser } from "@/hooks/useUser"
+import { useSelectedEvent } from "@/contexts/event-context"
 import { ProLockPanel } from "@/components/dashboard/pro-lock"
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -102,7 +104,9 @@ export default function RevenueStrategyCenter() {
   const [loadingEvents, setLoadingEvents] = useState(true)
   const [loadingBudget, setLoadingBudget] = useState(false)
 
-  const [eventId,             setEventId]             = useState<string>("")
+  // Event dari EventProvider (dipilih di Dashboard KPI). Dropdown "Pilih Event
+  // (Sinkron API)" milik halaman ini DIHAPUS 2026-07-20 — redundan dgn pemilih tunggal.
+  const { selectedEventId: eventId } = useSelectedEvent()
   const [targetProfit,        setTargetProfit]        = useState(250_000_000)
   const [sponsorInjection,    setSponsorInjection]    = useState(0)
   const [includeSponsorInPrice, setIncludeSponsorInPrice] = useState(false)
@@ -117,7 +121,7 @@ export default function RevenueStrategyCenter() {
       .then((res) => {
         const data: EventFromAPI[] = Array.isArray(res.data) ? res.data : (res.data.data ?? [])
         setEvents(data)
-        if (data.length > 0) setEventId(String(data[0].id))
+        // TIDAK auto-pilih event pertama lagi — event ditentukan EventProvider.
       })
       .catch(() => setEvents([]))
       .finally(() => setLoadingEvents(false))
@@ -226,14 +230,22 @@ export default function RevenueStrategyCenter() {
       </div>
 
       <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
+        {/* Dropdown "Pilih Event (Sinkron API)" DIHAPUS 2026-07-20 — event tunggal
+            berasal dari EventProvider (dipilih di Dashboard KPI). Kartu ini kini
+            hanya MENAMPILKAN event aktif. */}
         <Card className="p-5">
-          <label className="text-xs font-medium uppercase tracking-wider text-slate-500">Pilih Event (Sinkron API)</label>
+          <label className="text-xs font-medium uppercase tracking-wider text-slate-500">Event Aktif</label>
           {loadingEvents ? (
             <div className="mt-3 flex items-center gap-2 text-sm text-slate-400"><Loader2 className="h-4 w-4 animate-spin" /> Memuat event…</div>
+          ) : selectedEvent ? (
+            <p className="mt-3 truncate text-base font-semibold text-slate-900">{selectedEvent.title}</p>
           ) : (
-            <select value={eventId} onChange={(e) => setEventId(e.target.value)} className="mt-3 h-11 w-full rounded-lg border border-slate-200 bg-white px-3 text-sm text-slate-900 outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500/30 transition-colors">
-              {events.length > 0 ? events.map((e) => (<option key={e.id} value={String(e.id)}>{e.title}</option>)) : <option value="" disabled>Belum ada event</option>}
-            </select>
+            <p className="mt-3 text-sm text-slate-500">
+              Belum ada event dipilih.{" "}
+              <Link href="/dashboard" className="font-semibold text-emerald-700 underline">
+                Pilih di Dashboard
+              </Link>
+            </p>
           )}
         </Card>
 

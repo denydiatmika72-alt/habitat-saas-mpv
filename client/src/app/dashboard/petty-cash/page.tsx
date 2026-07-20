@@ -3,7 +3,8 @@
 import { Suspense, useEffect, useState } from "react"
 import { ArrowLeft, Lock, Wallet, Users, ChevronDown, ChevronUp, ArrowUpCircle } from "lucide-react"
 import Link from "next/link"
-import { useRouter, useSearchParams } from "next/navigation"
+import { useRouter } from "next/navigation"
+import { useSelectedEvent } from "@/contexts/event-context"
 import { useUser } from "@/hooks/useUser"
 import { ProLockPanel } from "@/components/dashboard/pro-lock"
 
@@ -45,12 +46,11 @@ export default function PettyCashPage() {
 function PettyCashPageInner() {
   const { isPro, loading: userLoading } = useUser()
   const router = useRouter()
-  const searchParams = useSearchParams()
 
-  // Petty Cash sekarang PER-EVENT: event diwarisi dari Dashboard Keuangan lewat ?eventId=
-  // (mengikuti pola hub yang sama dengan Expense Tracker & Laporan Akhir Event).
-  // Bukan lagi halaman lintas-konteks dengan dropdown sendiri.
-  const selectedEventId = searchParams.get("eventId") ?? ""
+  // Petty Cash PER-EVENT: event diwarisi dari EventProvider (bukan lagi halaman
+  // lintas-konteks dengan dropdown sendiri). Sengaja dari context, BUKAN searchParams —
+  // URL menyusul satu tick setelah navigasi, guard berbasis URL bisa salah memantulkan.
+  const { selectedEventId } = useSelectedEvent()
 
   const [events, setEvents] = useState<Event[]>([])
   const [crew, setCrew] = useState<CrewMember[]>([])

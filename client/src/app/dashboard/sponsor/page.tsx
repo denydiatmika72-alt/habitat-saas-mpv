@@ -2,7 +2,7 @@
 
 import { Suspense, useEffect, useState } from "react"
 import Link from "next/link"
-import { useSearchParams } from "next/navigation"
+import { useSelectedEvent } from "@/contexts/event-context"
 import {
   ArrowLeft,
   BadgeCheck,
@@ -2033,17 +2033,15 @@ export default function SponsorManagementPage() {
 
 function SponsorManagementInner() {
   const { isPro, loading: userLoading } = useUser()
-  const searchParams = useSearchParams()
   const [benefits, setBenefits] = useState<ApiBenefit[]>([])
   const [benefitsLoading, setBenefitsLoading] = useState(true)
   const [thresholds, setThresholds] = useState<ApiThreshold[]>([])
   // Katalog sponsor kini di-scope PER-EVENT (fix cross-event bleed 2026-07-19). Event dipilih SEKALI
   // di level halaman → diturunkan ke InvitationCodeGenerator + BenefitBuilder/PackageBuilder/ThresholdSettings.
   const [events, setEvents] = useState<{ id: string; title: string }[]>([])
-  // Inisialisasi dari ?eventId= kalau ada (fix 2026-07-19: navigasi dari Dashboard Kerjasama membawa
-  // event terpilih supaya TIDAK ke-reset ke events[0]/event Starter). Pemilih event di halaman tetap
-  // ada — user boleh pindah event; ini hanya menghormati pilihan yang diwariskan saat masuk halaman.
-  const [selectedEventId, setSelectedEventId] = useState<string>(searchParams.get("eventId") ?? "")
+  // Event dari EventProvider (dipilih di Dashboard KPI) — state lokal DIHAPUS 2026-07-20.
+  // Dropdown di halaman ini tetap ada, tapi menulis ke context yang SAMA.
+  const { selectedEventId, setSelectedEventId } = useSelectedEvent()
   // Katalog sponsor dijaga requireActivePro PER-EVENT → 402 kalau event terpilih belum Pro.
   // Gate `isPro` global di bawah tidak menangkap kasus "akun Pro, tapi untuk event lain".
   const [proLocked, setProLocked] = useState(false)
@@ -2054,13 +2052,10 @@ function SponsorManagementInner() {
       .then((data) => {
         const list = Array.isArray(data) ? data : (data.data ?? [])
         setEvents(list)
-        // Pertahankan pilihan yang sudah ada (mis. dari ?eventId=) selama masih valid di daftar event;
-        // hanya jatuh ke event pertama kalau belum ada pilihan / pilihan tidak dikenal. JANGAN timpa
-        // eventId yang diwariskan dari navigasi (akar BUG 1: dropdown ini dulu selalu reset ke events[0]).
-        setSelectedEventId((prev) => {
-          if (prev && list.some((ev: { id: string | number }) => String(ev.id) === prev)) return prev
-          return list.length > 0 ? String(list[0].id) : ""
-        })
+        // TIDAK auto-pilih events[0] lagi (2026-07-20): pilihan event kini GLOBAL lewat
+        // EventProvider, jadi fallback di sini akan diam-diam mengubah event aktif untuk
+        // SELURUH dashboard. Tanpa event terpilih, katalog tampil kosong + tombol generate
+        // kode dinonaktifkan — user diarahkan memilih event di Dashboard.
       })
       .catch(() => {})
   }, [])

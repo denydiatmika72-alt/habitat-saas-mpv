@@ -3,7 +3,8 @@
 import { Suspense, useEffect, useState } from "react"
 import { ArrowLeft, Lock, Plus, Receipt, X } from "lucide-react"
 import Link from "next/link"
-import { useRouter, useSearchParams } from "next/navigation"
+import { useRouter } from "next/navigation"
+import { useSelectedEvent } from "@/contexts/event-context"
 import { useUser } from "@/hooks/useUser"
 import { ProLockPanel } from "@/components/dashboard/pro-lock"
 
@@ -42,10 +43,11 @@ export default function ExpensesPage() {
 function ExpensesPageInner() {
   const { isPro, loading: userLoading } = useUser()
   const router = useRouter()
-  const searchParams = useSearchParams()
 
-  // Event diwarisi dari Dashboard Keuangan — halaman ini bukan pintu masuk sendiri.
-  const selectedEventId = searchParams.get("eventId") ?? ""
+  // Event diwarisi dari EventProvider — halaman ini bukan pintu masuk sendiri.
+  // Sengaja dari context, BUKAN searchParams: URL menyusul satu tick setelah navigasi,
+  // jadi guard berbasis URL bisa salah memantulkan user yang sudah memilih event.
+  const { selectedEventId } = useSelectedEvent()
 
   const [events, setEvents] = useState<Event[]>([])
   const [expenses, setExpenses] = useState<Expense[]>([])

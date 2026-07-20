@@ -3,7 +3,8 @@
 import { Suspense, useEffect, useState } from "react"
 import { ArrowLeft, Lock, FileCheck, FileDown, CheckCircle2, Loader2, Mail, AlertTriangle } from "lucide-react"
 import Link from "next/link"
-import { useRouter, useSearchParams } from "next/navigation"
+import { useRouter } from "next/navigation"
+import { useSelectedEvent } from "@/contexts/event-context"
 import { useUser } from "@/hooks/useUser"
 import { ProLockModal } from "@/components/dashboard/pro-lock"
 
@@ -25,10 +26,11 @@ export default function EventSummaryPage() {
 function EventSummaryPageInner() {
   const { isPro, loading: userLoading } = useUser()
   const router = useRouter()
-  const searchParams = useSearchParams()
 
-  // Event diwarisi dari Dashboard Keuangan — halaman ini bukan pintu masuk sendiri.
-  const selectedEventId = searchParams.get("eventId") ?? ""
+  // Event diwarisi dari EventProvider — halaman ini bukan pintu masuk sendiri.
+  // Sengaja dari context, BUKAN searchParams: URL menyusul satu tick setelah navigasi,
+  // jadi guard berbasis URL bisa salah memantulkan user yang sudah memilih event.
+  const { selectedEventId } = useSelectedEvent()
 
   const [events, setEvents] = useState<EventItem[]>([])
   const [finishing, setFinishing] = useState(false)

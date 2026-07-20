@@ -4,6 +4,7 @@ import { useEffect, useState } from "react"
 import { Lock, Users, Plus, Trash2, ScanLine, Wallet } from "lucide-react"
 import Link from "next/link"
 import { useUser } from "@/hooks/useUser"
+import { useSelectedEvent } from "@/contexts/event-context"
 import { ProLockPanel } from "@/components/dashboard/pro-lock"
 
 type Event = { id: string; title: string }
@@ -34,7 +35,9 @@ export default function CrewPage() {
   const { isPro, loading: userLoading } = useUser()
 
   const [events, setEvents] = useState<Event[]>([])
-  const [selectedEventId, setSelectedEventId] = useState("")
+  // Event dari EventProvider (dipilih di Dashboard KPI) — state lokal DIHAPUS 2026-07-20.
+  // Dropdown di halaman ini tetap ada, tapi menulis ke context yang SAMA.
+  const { selectedEventId, setSelectedEventId } = useSelectedEvent()
   const [crew, setCrew] = useState<CrewMember[]>([])
   const [fetchingCrew, setFetchingCrew] = useState(false)
   // Pro dicek PER-EVENT di backend (402). Akun Pro untuk event lain lolos gate `isPro` global,

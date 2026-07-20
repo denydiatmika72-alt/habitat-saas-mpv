@@ -2,7 +2,7 @@
 
 import { Suspense, useEffect, useState } from "react"
 import Link from "next/link"
-import { useSearchParams } from "next/navigation"
+import { useSelectedEvent } from "@/contexts/event-context"
 import { useUser } from "@/hooks/useUser"
 import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip } from "recharts"
 import {
@@ -206,12 +206,13 @@ export default function PLReportPage() {
 
 function PLReportPageInner() {
   const { isPro, loading: userLoading } = useUser()
-  const searchParams = useSearchParams()
+
 
   const [events, setEvents] = useState<Event[]>([])
-  // Halaman ini adalah pintu utama kategori Keuangan: event bisa datang dari
-  // query param saat user kembali dari Expense Tracker / Laporan Akhir Event.
-  const [selectedEventId, setSelectedEventId] = useState(searchParams.get("eventId") ?? "")
+  // Event dari EventProvider (dipilih di Dashboard KPI) — state lokal DIHAPUS
+  // 2026-07-20. Dropdown di halaman ini tetap ada untuk kenyamanan, tapi kini
+  // menulis ke context yang SAMA, bukan state terpisah.
+  const { selectedEventId, setSelectedEventId } = useSelectedEvent()
   const [plData, setPlData] = useState<PLData | null>(null)
   const [loading, setLoading] = useState(false)
   const [exportingPdf, setExportingPdf] = useState(false)

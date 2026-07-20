@@ -2,7 +2,7 @@
 
 import { Suspense, useEffect, useState } from "react"
 import Link from "next/link"
-import { useRouter, useSearchParams } from "next/navigation"
+import { useSelectedEvent } from "@/contexts/event-context"
 import {
   Handshake,
   ReceiptText,
@@ -62,19 +62,10 @@ export default function KerjasamaDashboardPage() {
 }
 
 function KerjasamaDashboardInner() {
-  const router = useRouter()
-  const searchParams = useSearchParams()
   const [events, setEvents] = useState<Event[]>([])
-  // Baca ?eventId= saat mount → pilihan dipulihkan saat kembali ke halaman ini (browser Back atau
-  // tombol "Kembali" dari Sponsor/Invoice). Pola sama Dashboard Keuangan (/dashboard/pl-report).
-  const [selectedEventId, setSelectedEventId] = useState(searchParams.get("eventId") ?? "")
-
-  // Simpan pilihan event ke URL (replace — tanpa entry history baru) supaya navigasi kembali ke
-  // halaman ini memulihkan event yang sama, dan URL bisa dibagikan/di-refresh tanpa kehilangan konteks.
-  function handleSelectEvent(id: string) {
-    setSelectedEventId(id)
-    router.replace(id ? `/dashboard/kerjasama?eventId=${id}` : "/dashboard/kerjasama")
-  }
+  // Event dari EventProvider (dipilih di Dashboard KPI). State lokal + router.replace
+  // manual DIHAPUS 2026-07-20 — sinkronisasi ?eventId= kini ditangani provider.
+  const { selectedEventId, setSelectedEventId } = useSelectedEvent()
   const [summary, setSummary] = useState<DashboardSummary | null>(null)
   const [loading, setLoading] = useState(false)
   // Backend requireActivePro membalas 402 kalau event terpilih belum Pro. Tanpa penanganan khusus,
@@ -120,9 +111,8 @@ function KerjasamaDashboardInner() {
           </div>
         </div>
         <div className="flex shrink-0 flex-wrap gap-2">
-          {/* Oper event terpilih supaya Manajemen Sponsor membuka event yang sama (fix 2026-07-19:
-              dulu tanpa eventId → halaman reset ke events[0]/event Starter). Halaman Sponsor tetap
-              lintas-event (punya dropdown sendiri); ini hanya menghormati pilihan awal. */}
+          {/* eventId tidak perlu dioper manual lagi (EventProvider membawanya), tapi tetap
+              disertakan supaya link ini benar juga saat dibuka di tab baru. */}
           <Link
             href={selectedEventId ? `/dashboard/sponsor?eventId=${selectedEventId}` : "/dashboard/sponsor"}
             className="inline-flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-3.5 py-2 text-sm font-semibold text-slate-700 transition-colors hover:bg-slate-50"
@@ -131,14 +121,14 @@ function KerjasamaDashboardInner() {
             Sponsor &amp; Partner
           </Link>
           {/* Deep-link ke sub-tab Sponsorship (mekanisme ?tab= yang sudah ada di invoice page).
-              Oper juga ?eventId= (invoice lintas-event mengabaikannya untuk daftar, tapi meneruskannya
-              kembali di tombol "Kembali" → event terpilih di hub ini dipulihkan). */}
+              Invoice kini PER-EVENT (fix 2026-07-20) → eventId wajib terbawa. Purchase Order
+              SUDAH TIDAK di halaman ini — pindah ke Dashboard Perencanaan. */}
           <Link
             href={selectedEventId ? `/dashboard/invoice?tab=sponsorship&eventId=${selectedEventId}` : "/dashboard/invoice?tab=sponsorship"}
             className="inline-flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-3.5 py-2 text-sm font-semibold text-slate-700 transition-colors hover:bg-slate-50"
           >
             <ReceiptText className="size-4 text-emerald-700" />
-            Invoice &amp; Purchase Order
+            Invoice Sponsor
           </Link>
         </div>
       </div>
@@ -148,7 +138,7 @@ function KerjasamaDashboardInner() {
         <label className="mb-1.5 block text-sm font-medium text-slate-700">Pilih Event</label>
         <select
           value={selectedEventId}
-          onChange={(e) => handleSelectEvent(e.target.value)}
+          onChange={(e) => setSelectedEventId(e.target.value)}
           className="max-w-sm truncate rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-700 outline-none transition-colors focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500/30"
         >
           <option value="">-- Pilih event --</option>
