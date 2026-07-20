@@ -31,6 +31,12 @@ function isActivePro(user, eventId) {
   if (!user) return false;
   const active = user.plan === 'pro' && user.proExpiresAt && new Date(user.proExpiresAt) > new Date();
   if (!active) return false;
+  // Lisensi Pro SELALU melekat ke satu event yang dibayar. `proEventId` null = tidak pernah ada event
+  // yang dibayar (mis. plan diubah manual lewat PATCH /api/users/plan atau edit admin) → BUKAN Pro sah.
+  // Wajib dicek eksplisit: tanpa ini, akun begitu lolos di jalur lintas-event di bawah (eventId null)
+  // dan mendapat akses agregat gratis. Per audit 2026-07-20 tidak ada row seperti ini di produksi —
+  // guard ini mencegah kelas bug itu muncul lagi, bukan memperbaiki kebocoran yang sedang berjalan.
+  if (!user.proEventId) return false;
   // eventId diberikan → harus event yang persis dibayar. Tanpa eventId → cukup punya Pro aktif (lintas-event).
   if (eventId) return user.proEventId === String(eventId);
   return true;
