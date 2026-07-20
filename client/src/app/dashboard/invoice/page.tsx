@@ -2,8 +2,8 @@
 
 import { useEffect, useState, Suspense } from "react"
 import { useSearchParams, useRouter } from "next/navigation"
-import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs"
-import PurchaseOrderTab from "@/components/dashboard/PurchaseOrderTab"
+import Link from "next/link"
+import { useSelectedEvent } from "@/contexts/event-context"
 import {
   ArrowLeft,
   BadgeCheck,
@@ -308,6 +308,9 @@ export default function InvoicePageWrapper() {
 function InvoicePage() {
   const searchParams = useSearchParams()
   const router = useRouter()
+  // Event aktif dari EventProvider — invoice STRICTLY per-event sejak 2026-07-20
+  // (dulu daftarnya lintas-event; itu bug scoping, bukan desain).
+  const { selectedEventId } = useSelectedEvent()
   // Deep-link opsional ke sub-tab tertentu via ?tab= (mis. dari halaman Sponsor & Partner →
   // ?tab=sponsorship). Default tetap "sponsorship" kalau param tidak ada/invalid.
   const tabParam = searchParams.get("tab")
@@ -344,7 +347,6 @@ function InvoicePage() {
   // Event picker untuk invoice manual — invoice manual TIDAK lagi menempel ke deal sponsor mana pun,
   // jadi event dipilih eksplisit di sini (menggantikan hack lama deals[0].id).
   const [events, setEvents] = useState<EventOption[]>([])
-  const [manualEventId, setManualEventId] = useState<string>("")
 
   // Preview
   const [preview, setPreview] = useState<PreviewData | null>(null)
@@ -384,11 +386,15 @@ function InvoicePage() {
 
   useEffect(() => {
     loadSettings()
-    loadInvoices()
     loadEvents()
     const dealIdParam = searchParams.get("dealId")
     loadDeals(dealIdParam ?? undefined)
   }, [searchParams])
+
+  // Daftar invoice ikut event aktif — dimuat ulang tiap event berganti.
+  useEffect(() => {
+    loadInvoices()
+  }, [selectedEventId]) // eslint-disable-line react-hooks/exhaustive-deps
 
   async function loadEvents() {
     const res = await fetch(`${API_BASE}/events`, { headers: authHeaders() })
@@ -421,8 +427,11 @@ function InvoicePage() {
   }
 
   async function loadInvoices() {
+    // eventId WAJIB di backend sejak 2026-07-20 → tanpa event aktif jangan memanggil
+    // sama sekali (akan 400). UI menampilkan ajakan pilih event, bukan daftar kosong.
+    if (!selectedEventId) { setInvoices([]); setLoadingInvoices(false); return }
     setLoadingInvoices(true)
-    const res = await fetch(`${API_BASE}/invoices`, { headers: authHeaders() })
+    const res = await fetch(`${API_BASE}/invoices?eventId=${selectedEventId}`, { headers: authHeaders() })
     if (res.status === 402) { setProLocked(true); setLoadingInvoices(false); return }
     const json = await res.json()
     if (json.success) setInvoices(json.data ?? [])
@@ -553,8 +562,8 @@ function InvoicePage() {
       setError("Pilih deal sponsor terlebih dahulu.")
       return
     }
-    if (!fromDeal && !manualEventId) {
-      setError("Pilih event terlebih dahulu untuk invoice manual.")
+    if (!fromDeal && !selectedEventId) {
+      setError("Pilih event terlebih dahulu di Dashboard untuk membuat invoice manual.")
       return
     }
     setError(null)
@@ -564,7 +573,7 @@ function InvoicePage() {
       // Invoice sponsorship: kirim dealId (eventId & pemilik diturunkan server-side dari deal).
       // Invoice manual: kirim eventId yang dipilih (TIDAK ada dealId — tidak menempel ke deal mana pun).
       dealId: fromDeal ? selectedDeal!.id : undefined,
-      eventId: fromDeal ? undefined : manualEventId,
+      eventId: fromDeal ? undefined : selectedEventId,
       promotorName: settings.companyName,
       bankName: settings.bankName,
       bankAccount: settings.bankAccount,
@@ -707,8 +716,8 @@ function InvoicePage() {
           <FileText className="size-5 text-white" />
         </div>
         <div>
-          <h1 className="text-xl font-bold text-slate-900">Invoice & Purchase Order</h1>
-          <p className="text-sm text-slate-500">Generate invoice dan kelola Purchase Order</p>
+          <h1 className="text-xl font-bold text-slate-900">Invoice Sponsor</h1>
+          <p className="text-sm text-slate-500">Generate dan kelola invoice untuk event aktif</p>
         </div>
       </div>
 
@@ -716,20 +725,13 @@ function InvoicePage() {
           bukan daftar invoice/PO kosong. Tanpa eventId (halaman ini lintas-event). */}
       {proLocked ? (
         <ProLockPanel
-          featureName="Invoice & Purchase Order"
-          description="Belum ada event dengan Pro aktif. Invoice sponsor dan Purchase Order khusus Pro — upgrade salah satu event untuk membukanya."
+          featureName="Invoice Sponsor"
+          description="Event ini belum Pro aktif. Invoice sponsor khusus Pro — upgrade event ini untuk membukanya."
         />
       ) : (
       <>
-      {/* ── Tab utama: Invoice vs Purchase Order ─────────────────────────────── */}
-      <Tabs defaultValue="invoice">
-        <TabsList className="w-full">
-          <TabsTrigger value="invoice" className="flex-1">Invoice</TabsTrigger>
-          <TabsTrigger value="po" className="flex-1">Purchase Order</TabsTrigger>
-        </TabsList>
-
-        {/* ── Tab Invoice: semua konten existing tidak diubah ───────────────── */}
-        <TabsContent value="invoice" className="mt-5 space-y-5">
+      {/* Purchase Order SUDAH TIDAK di halaman ini (2026-07-20) — pindah ke Dashboard
+          Perencanaan. PO adalah alat perencanaan belanja, bukan dokumen kerjasama. */}
 
       {/* Tab bar — Jenis Invoice */}
       <div className="flex gap-1 rounded-xl border border-slate-200 bg-slate-50 p-1">
@@ -763,7 +765,7 @@ function InvoicePage() {
       {/* Tab bar — Navigasi sekunder */}
       <div className="flex gap-1 rounded-lg border border-slate-100 bg-slate-50/60 p-0.5">
         {[
-          { key: "list",     label: "Semua Invoice", icon: <FileText className="size-3.5" /> },
+          { key: "list",     label: "Daftar Invoice", icon: <FileText className="size-3.5" /> },
           { key: "settings", label: "Pengaturan",    icon: <Settings className="size-3.5" /> },
         ].map(({ key, label, icon }) => (
           <button
@@ -981,24 +983,27 @@ function InvoicePage() {
             </div>
           )}
 
+          {/* Dropdown event lokal DIHAPUS 2026-07-20 — event tunggal berasal dari
+              EventProvider (dipilih di Dashboard KPI), jadi di sini read-only. */}
           <SectionCard title="Event" icon={<Building2 className="size-4" />}>
-            <Label htmlFor="manualEvent" className="text-[10px] font-semibold uppercase tracking-wider text-slate-400">
-              Pilih Event <span className="text-red-500">*</span>
-            </Label>
-            <select
-              id="manualEvent"
-              className="mt-2 w-full rounded-lg border border-slate-200 bg-white px-3 py-2.5 text-sm text-slate-700 outline-none focus:border-slate-400"
-              value={manualEventId}
-              onChange={(e) => setManualEventId(e.target.value)}
-            >
-              <option value="">— Pilih event —</option>
-              {events.map((ev) => (
-                <option key={ev.id} value={ev.id}>{ev.title}</option>
-              ))}
-            </select>
-            <p className="mt-2 text-xs text-slate-400">
-              Invoice manual akan ditautkan ke event ini (bukan ke deal sponsor).
-            </p>
+            {selectedEventId ? (
+              <>
+                <p className="text-sm font-medium text-slate-900">
+                  {events.find((ev) => String(ev.id) === selectedEventId)?.title ?? "Event aktif"}
+                </p>
+                <p className="mt-2 text-xs text-slate-400">
+                  Invoice manual akan ditautkan ke event aktif ini (bukan ke deal sponsor).
+                </p>
+              </>
+            ) : (
+              <p className="text-sm text-slate-500">
+                Belum ada event dipilih. Pilih event di{" "}
+                <Link href="/dashboard" className="font-semibold text-emerald-700 underline">
+                  Dashboard
+                </Link>{" "}
+                terlebih dahulu.
+              </p>
+            )}
           </SectionCard>
 
           <SectionCard title="Item Tagihan" icon={<FileText className="size-4" />}>
@@ -1100,7 +1105,7 @@ function InvoicePage() {
       {tab === "list" && (
         <div className="space-y-4">
           <div className="flex items-center justify-between">
-            <p className="text-sm text-slate-500">{invoices.length} invoice tersimpan</p>
+            <p className="text-sm text-slate-500">{invoices.length} invoice untuk event ini</p>
             <Button variant="outline" size="sm" onClick={loadInvoices} className="gap-2">
               <RotateCw className="size-3.5" />
               Refresh
@@ -1116,8 +1121,23 @@ function InvoicePage() {
           {!loadingInvoices && invoices.length === 0 && (
             <div className="rounded-2xl border border-dashed border-slate-200 py-16 text-center text-slate-400">
               <FileText className="mx-auto mb-3 size-10 opacity-30" />
-              <p className="font-medium">Belum ada invoice.</p>
-              <p className="mt-1 text-sm">Klik Buat Invoice untuk memulai.</p>
+              {selectedEventId ? (
+                <>
+                  <p className="font-medium">Belum ada invoice untuk event ini.</p>
+                  <p className="mt-1 text-sm">Klik Buat Invoice untuk memulai.</p>
+                </>
+              ) : (
+                <>
+                  <p className="font-medium">Belum ada event dipilih.</p>
+                  <p className="mt-1 text-sm">
+                    Pilih event di{" "}
+                    <Link href="/dashboard" className="font-semibold text-emerald-700 underline">
+                      Dashboard
+                    </Link>{" "}
+                    untuk melihat invoicenya.
+                  </p>
+                </>
+              )}
             </div>
           )}
 
@@ -1278,14 +1298,9 @@ function InvoicePage() {
 
       <ToastContainer toasts={toasts} onRemove={removeToast} />
 
-        </TabsContent>
-        {/* ── Tab Purchase Order ─────────────────────────────────────────────── */}
-        <TabsContent value="po" className="mt-5">
-          <PurchaseOrderTab />
-        </TabsContent>
-      </Tabs>
       </>
       )}
     </div>
   )
 }
+

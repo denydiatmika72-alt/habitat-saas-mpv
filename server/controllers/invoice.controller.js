@@ -247,19 +247,32 @@ function buildPdf(invoice, outputPath) {
 
 // ─── Controllers ─────────────────────────────────────────────────────────────
 
-// GET /api/invoices  (opsional ?eventId= untuk scope per-event)
+// GET /api/invoices?eventId=  (eventId WAJIB — invoice selalu per-event)
 async function getInvoices(req, res) {
   try {
     // Isolasi per-promotor WAJIB: SELALU filter promotorId (menutup kebocoran lintas akun — dulu findMany
-    // tanpa where sama sekali). eventId opsional: kalau caller mengirim ?eventId= → scope tambahan ke event
-    // itu; kalau tidak → daftar lintas-event milik promotor (dipakai "Semua Invoice" & Document Table).
+    // tanpa where sama sekali).
+    //
+    // eventId WAJIB sejak 2026-07-20. Sebelumnya opsional dan tanpa param mengembalikan daftar
+    // LINTAS-EVENT — itu BUKAN keputusan desain, melainkan efek samping fix isolasi sebelumnya yang
+    // membuat param opsional agar dua call site lama tidak pecah. Performa & pelaporan nexEvent
+    // dihitung per-event, bukan per-akun, jadi invoice mengikuti pola scoping yang sama dengan
+    // Sponsor catalog / PO / Budget: 400 kalau eventId kosong, 403 kalau event bukan milik pemanggil.
     const { eventId } = req.query;
-    const where = {
-      promotorId: req.user.id,
-      ...(eventId ? { eventId } : {}),
-    };
+    if (!eventId) {
+      return res.status(400).json({ success: false, message: 'eventId wajib diisi.' });
+    }
+    const event = await prisma.event.findUnique({
+      where: { id: String(eventId) },
+      select: { promotor_id: true },
+    });
+    if (!event) return res.status(404).json({ success: false, message: 'Event tidak ditemukan.' });
+    if (event.promotor_id !== req.user.id) {
+      return res.status(403).json({ success: false, message: 'Anda tidak memiliki akses ke event ini.' });
+    }
+
     const invoices = await prisma.sponsorInvoice.findMany({
-      where,
+      where: { promotorId: req.user.id, eventId: String(eventId) },
       orderBy: { createdAt: 'desc' },
       select: {
         id: true, invoiceNumber: true, sponsorName: true, contactName: true,
