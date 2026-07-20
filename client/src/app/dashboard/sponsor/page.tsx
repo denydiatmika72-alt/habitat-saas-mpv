@@ -463,7 +463,7 @@ function DeliverableManagerForDeal({ dealId }: { dealId: string }) {
                 className="mb-2 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5"
               >
                 <div className="flex flex-wrap items-center gap-2">
-                  <span className="flex-1 text-sm font-medium text-slate-900">{item.title}</span>
+                  <span className="min-w-0 flex-1 break-words text-sm font-medium text-slate-900">{item.title}</span>
                   <span
                     className={cn(
                       "rounded-full px-2 py-0.5 text-[10px] font-medium ring-1 ring-inset",
@@ -733,7 +733,7 @@ function DealCard({
               </p>
             )}
             {deal.dealBenefits?.length > 0 && (
-              <p className="mt-0.5 text-xs text-slate-500">
+              <p className="mt-0.5 break-words text-xs text-slate-500">
                 📦 {deal.dealBenefits.map((item) => `${item.qty}× ${item.benefit.name}`).join(" · ")}
               </p>
             )}
@@ -741,7 +741,11 @@ function DealCard({
           </div>
         </div>
 
-        <div className="flex shrink-0 flex-wrap items-center gap-2 sm:pt-0.5">
+        {/* shrink-0 DICABUT 2026-07-21: dengan shrink-0 basis action bar = max-content (Disetujui +
+            Lihat Dashboard + Kirim Ulang Credential + Generate Invoice ≈ 500px) sehingga kartu deal
+            menyembul keluar kolom kiri yang hanya ~490px. Tanpa shrink-0 ia menyusut & flex-wrap
+            menurunkan tombol ke baris berikutnya. */}
+        <div className="flex min-w-0 flex-wrap items-center gap-2 sm:pt-0.5">
           {approved ? (
             <>
               <span className="flex items-center gap-1.5 text-sm font-medium text-emerald-800">
@@ -954,7 +958,7 @@ function DealTracker({ eventId }: { eventId: string }) {
   return (
     <section aria-labelledby="deal-tracker-heading" className="mt-12">
       <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
-        <div>
+        <div className="min-w-0">
           <Badge
             variant="outline"
             className="mb-3 gap-1.5 border-emerald-800/30 bg-emerald-50 text-emerald-800"
@@ -1024,9 +1028,9 @@ function DealTracker({ eventId }: { eventId: string }) {
                 Akses Login Sponsor
               </p>
               <div className="space-y-2">
-                <div className="flex items-center justify-between">
-                  <span className="text-sm text-slate-500">Email</span>
-                  <span className="font-mono text-sm font-semibold text-slate-900">{creds.email || '-'}</span>
+                <div className="flex items-center justify-between gap-3">
+                  <span className="shrink-0 text-sm text-slate-500">Email</span>
+                  <span className="min-w-0 break-all text-right font-mono text-sm font-semibold text-slate-900">{creds.email || '-'}</span>
                 </div>
                 <div className="flex items-center justify-between">
                   <span className="text-sm text-slate-500">Username</span>
@@ -1180,8 +1184,10 @@ function BenefitBuilder({
 
   return (
     <section aria-labelledby="benefit-builder-heading" className="mt-12">
+      {/* min-w-0 di blok judul + shrink-0 di tombol: judul boleh wrap, tombol aksi TIDAK ikut
+          menyusut/terpotong saat header ini berada di kolom sempit (fix overflow 2026-07-21). */}
       <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
-        <div>
+        <div className="min-w-0">
           <Badge
             variant="outline"
             className="mb-3 gap-1.5 border-emerald-800/30 bg-emerald-50 text-emerald-800"
@@ -1203,7 +1209,7 @@ function BenefitBuilder({
           type="button"
           variant={adding ? "default" : "outline"}
           onClick={() => setAdding((v) => !v)}
-          className={cn("gap-2", adding && "bg-emerald-800 text-white hover:bg-emerald-900")}
+          className={cn("shrink-0 gap-2", adding && "bg-emerald-800 text-white hover:bg-emerald-900")}
         >
           {adding ? <Check className="size-4" /> : <Plus className="size-4" />}
           {adding ? "Tutup Form" : "Tambah Benefit"}
@@ -1303,7 +1309,7 @@ function BenefitBuilder({
       )}
 
       {loading ? (
-        <div className="mt-8 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+        <div className="mt-8 grid grid-cols-1 gap-4 sm:grid-cols-2">
           {[1, 2, 3].map((i) => (
             <div key={i} className="h-36 animate-pulse rounded-2xl bg-slate-100" />
           ))}
@@ -1315,7 +1321,10 @@ function BenefitBuilder({
           <p className="mt-1 text-sm text-slate-400">Klik "Tambah Benefit" untuk memulai.</p>
         </div>
       ) : (
-        <div className="mt-8 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+        // lg:grid-cols-3 DICABUT 2026-07-21: BenefitBuilder tinggal di kolom KANAN (setengah lebar),
+        // 3 kartu di situ menyisakan ~150px per kartu sehingga harga font-mono & nama benefit
+        // terpotong. Maksimal 2 kolom; di viewport bawah lg halaman memang 1 kolom penuh.
+        <div className="mt-8 grid grid-cols-1 gap-4 sm:grid-cols-2">
           {benefits.map((b) => {
             const available = (b.maxQty ?? 1) - (b.usedQty ?? 0) - (b.heldQty ?? 0)
             return (
@@ -1339,7 +1348,7 @@ function BenefitBuilder({
                     <Trash2 className="size-4" />
                   </button>
                 </div>
-                <h3 className="mt-3 text-base font-semibold text-slate-900">{b.name}</h3>
+                <h3 className="mt-3 break-words text-base font-semibold text-slate-900">{b.name}</h3>
                 {b.description && (
                   <p className="mt-1 text-sm leading-relaxed text-slate-500">{b.description}</p>
                 )}
@@ -1447,7 +1456,7 @@ function PackageBuilder({ benefits, thresholds, eventId }: { benefits: ApiBenefi
   return (
     <section aria-labelledby="package-builder-heading" className="mt-12">
       <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
-        <div>
+        <div className="min-w-0">
           <Badge
             variant="outline"
             className="mb-3 gap-1.5 border-emerald-800/30 bg-emerald-50 text-emerald-800"
@@ -1469,7 +1478,7 @@ function PackageBuilder({ benefits, thresholds, eventId }: { benefits: ApiBenefi
           type="button"
           variant={adding ? "default" : "outline"}
           onClick={() => setAdding((v) => !v)}
-          className={cn("gap-2", adding && "bg-emerald-800 text-white hover:bg-emerald-900")}
+          className={cn("shrink-0 gap-2", adding && "bg-emerald-800 text-white hover:bg-emerald-900")}
         >
           {adding ? <Check className="size-4" /> : <Plus className="size-4" />}
           {adding ? "Tutup Form" : "Buat Paket Baru"}
@@ -1579,8 +1588,8 @@ function PackageBuilder({ benefits, thresholds, eventId }: { benefits: ApiBenefi
             )}
           </div>
 
-          <div className="mt-4 flex items-center justify-between rounded-xl border border-emerald-800/20 bg-white px-4 py-3">
-            <div>
+          <div className="mt-4 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-emerald-800/20 bg-white px-4 py-3">
+            <div className="min-w-0">
               <p className="text-sm text-slate-700">Harga Paket</p>
               <p className="text-[11px] text-slate-400">Dari threshold tier — benefit menentukan isi paket</p>
             </div>
@@ -1668,8 +1677,8 @@ function PackageBuilder({ benefits, thresholds, eventId }: { benefits: ApiBenefi
               {pkg.benefits.length > 0 && (
                 <div className="mt-4 space-y-2 border-t border-slate-100 pt-4">
                   {pkg.benefits.map(({ benefit, qty }) => (
-                    <div key={benefit.id} className="flex items-center justify-between">
-                      <div className="flex items-center gap-2">
+                    <div key={benefit.id} className="flex items-center justify-between gap-3">
+                      <div className="flex min-w-0 flex-wrap items-center gap-2">
                         <span className="size-1.5 rounded-full bg-emerald-800/50" />
                         <span className="text-sm font-medium text-slate-600">{qty}×</span>
                         <span className="text-sm text-slate-700">{benefit.name}</span>
@@ -1680,7 +1689,7 @@ function PackageBuilder({ benefits, thresholds, eventId }: { benefits: ApiBenefi
                           {benefit.category}
                         </Badge>
                       </div>
-                      <span className="font-mono text-sm text-slate-600">
+                      <span className="shrink-0 font-mono text-sm text-slate-600">
                         {currencyIDR.format(Number(benefit.price) * qty)}
                       </span>
                     </div>
@@ -1852,7 +1861,7 @@ function ThresholdSettings({ onThresholdChange, eventId }: { onThresholdChange: 
   return (
     <section aria-labelledby="threshold-heading" className="mt-12">
       <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
-        <div>
+        <div className="min-w-0">
           <Badge
             variant="outline"
             className="mb-3 gap-1.5 border-emerald-800/30 bg-emerald-50 text-emerald-800"
@@ -1874,7 +1883,7 @@ function ThresholdSettings({ onThresholdChange, eventId }: { onThresholdChange: 
           type="button"
           disabled={saving}
           onClick={handleSave}
-          className="gap-2 bg-emerald-800 text-white hover:bg-emerald-900"
+          className="shrink-0 gap-2 bg-emerald-800 text-white hover:bg-emerald-900"
         >
           {saving ? (
             <RotateCw className="size-4 animate-spin" />
@@ -2207,12 +2216,16 @@ function SponsorManagementInner() {
           description="Event ini belum aktif Pro. Kode undangan sponsor, katalog benefit/paket/tier, dan tracking deal khusus Pro — upgrade untuk membuka fitur ini untuk event terpilih."
         />
       ) : (
+      // min-w-0 pada KEDUA kolom itu WAJIB: track grid `1fr` sebenarnya `minmax(auto, 1fr)`, jadi
+      // kolom yang isinya punya min-content lebar (kartu benefit, action bar deal, baris tier)
+      // MELEBAR melewati 1fr dan isinya terpotong keluar kartu. min-w-0 mengunci track ke 1fr
+      // sehingga isi dipaksa wrap ke bawah, bukan menyembul keluar (fix overflow 2026-07-21).
       <div className="grid gap-6 lg:grid-cols-2 lg:items-start">
-        <div className="flex flex-col [&>*:first-child]:mt-0">
+        <div className="flex min-w-0 flex-col [&>*:first-child]:mt-0">
           <InvitationCodeGenerator selectedEventId={selectedEventId} />
           <DealTracker eventId={selectedEventId} />
         </div>
-        <div className="flex flex-col [&>*:first-child]:mt-0">
+        <div className="flex min-w-0 flex-col [&>*:first-child]:mt-0">
           <BenefitBuilder benefits={benefits} loading={benefitsLoading} onBenefitChange={fetchBenefits} eventId={selectedEventId} />
           <PackageBuilder benefits={benefits} thresholds={thresholds} eventId={selectedEventId} />
           <ThresholdSettings onThresholdChange={fetchThresholds} eventId={selectedEventId} />

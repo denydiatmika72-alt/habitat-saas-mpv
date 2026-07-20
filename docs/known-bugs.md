@@ -2818,3 +2818,57 @@ tidak akan terhitung** → catatan jadi bohong dan promotor salah membaca sisa k
 - Tag: #regresi #rab #chart #refactor-hazard #dashboard-perencanaan
 
 ---
+
+## [2026-07-21] Overflow kolom kanan Manajemen Sponsor (Batas Harga Tier / Generate Invoice terpotong)
+
+- Gejala: Di lebar desktop normal (~1280–1440px) isi halaman `/dashboard/sponsor` menyembul keluar batas
+  kartunya. Teks terpotong, mis. judul "Batas Harga T…", nama benefit "…Logo on Main Stag…", dan tombol
+  "Generate Invoice" di kartu deal terpangkas. Ini kejadian KEDUA di halaman yang sama (yang pertama:
+  baris ThresholdSettings, commit `9f622cf`) — tapi komponen yang bocor kali ini BERBEDA.
+- Root cause: **track `lg:grid-cols-2` di halaman ini sebenarnya `minmax(auto, 1fr)`, bukan `1fr` kaku.**
+  Kolom yang isinya punya min-content lebar akan MELEBAR melewati 1fr dan tumpah keluar container.
+  Tiga penyumbang min-content besar:
+  1. `BenefitBuilder` memakai `lg:grid-cols-3` → 3 kartu di dalam kolom setengah lebar (~490px) hanya
+     kebagian ~150px/kartu, lebih sempit dari harga `font-mono text-xl`.
+  2. Action bar `DealCard` memakai `shrink-0` → basis-nya max-content (Disetujui + Lihat Dashboard +
+     Kirim Ulang Credential + Generate Invoice ≈ 500px) sehingga tidak pernah mau menyusut/wrap.
+  3. Header seksi (`flex sm:flex-row justify-between`) tanpa `min-w-0` di blok judul & tanpa `shrink-0`
+     di tombol → judul & tombol saling dorong.
+- File terkait: `client/src/app/dashboard/sponsor/page.tsx`
+- Fix:
+  - `min-w-0` pada KEDUA wrapper kolom grid halaman → mengunci track ke 1fr, isi dipaksa wrap ke bawah
+    alih-alih menyembul keluar. **Ini fix struktural utamanya.**
+  - `lg:grid-cols-3` di grid kartu benefit (list + skeleton) DICABUT → maksimal `sm:grid-cols-2`.
+  - `shrink-0` dilepas dari action bar `DealCard` (tetap `flex-wrap`, jadi tombol turun baris).
+  - `min-w-0` di blok judul + `shrink-0` di tombol pada 4 header seksi (DealTracker, BenefitBuilder,
+    PackageBuilder, ThresholdSettings).
+  - Pembersihan sekalian (audit seluruh halaman): `break-words` di daftar benefit deal, judul benefit,
+    dan judul deliverable; `gap-3` + `min-w-0`/`shrink-0` di baris `justify-between` isi paket, baris
+    "Harga Paket", dan baris Email di modal kredensial (`break-all` — email panjang dulu terpotong).
+  - TIDAK menyentuh lebar `Input` (`min-w-[160px]` baris tier tetap) → bug "input menyusut saat mengetik"
+    yang dulu diseimbangkan di `9f622cf` tidak kembali.
+- Catatan pola: kalau menaruh komponen di dalam kolom grid, `min-w-0` pada kolomnya WAJIB — tanpa itu
+  `grid-cols-N` yang ditulis untuk lebar penuh (`lg:grid-cols-3` dst) diam-diam merobek layout.
+- Tag: #ui #layout #overflow #sponsor #tailwind #grid-min-content
+
+---
+
+## [2026-07-21] Klarifikasi: penghapusan event MEMANG tersedia untuk promotor (investigasi, bukan bug)
+
+- Konteks: dugaan bahwa promotor tidak bisa menghapus event (sengaja, agar tidak kabur dari hutang fee).
+- Temuan: **dugaan itu KELIRU.** `DELETE /api/events/:id` ada dan dijaga `verifyToken` SAJA (tanpa
+  `requireAdmin`, tanpa `requireActivePro`); ownership dicek lewat `findFirst({ id, promotor_id })` →
+  404 kalau bukan milik pemanggil. UI-nya ada: tombol ikon "Hapus Event" di `document-table.tsx`
+  (`/dashboard/perencanaan`), pakai `confirm()` lalu `axios.delete`.
+- Konsekuensi 1: skenario "ghost `selectedEventId` setelah event aktif dihapus" **NYATA & bisa dipicu**,
+  jadi bukan prioritas rendah. Sudah ditangani: handler menjalankan `setSelectedEventId("")` lalu
+  `router.push("/dashboard")` sebelum context sempat memegang id event hantu.
+- Konsekuensi 2 (BELUM ditangani, catatan risiko): `deleteEvent` **tidak memeriksa hutang fee cash,
+  payout pending, atau order tiket berbayar** sebelum menghapus; relasi `onDelete: Cascade` membuat data
+  turunannya ikut hilang. Jadi jalur penghindaran hutang yang dikhawatirkan itu memang terbuka.
+- File terkait: `server/controllers/event.controller.js` (`deleteEvent`), `server/routes/event.routes.js:31`,
+  `client/src/components/dashboard/document-table.tsx`
+- Fix: TIDAK ADA perubahan kode (investigasi read-only).
+- Tag: #event #delete #investigasi #fee-debt #catatan-risiko
+
+---
