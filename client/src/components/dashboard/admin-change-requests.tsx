@@ -83,6 +83,10 @@ export function AdminChangeRequests() {
   const [rejectFor, setRejectFor] = useState<string | null>(null)
   const [rejectNote, setRejectNote] = useState("")
   const [error, setError] = useState<string | null>(null)
+  // Penolakan karena hutang fee — ditampilkan sebagai modal terpisah, bukan error generik.
+  const [debtBlock, setDebtBlock] = useState<
+    { totalDebt: number; orderCount: number } | null
+  >(null)
 
   const fetchRequests = useCallback(async () => {
     setLoading(true)
@@ -116,6 +120,19 @@ export function AdminChangeRequests() {
         body: JSON.stringify({ adminNote: note || undefined }),
       })
       const json = await res.json()
+
+      // Hard block hutang fee (2026-07-22): backend menolak penghapusan selama hutang > 0.
+      // Ditangani TERPISAH dari error biasa — ini bukan kegagalan teknis melainkan keputusan
+      // pembukuan yang harus dibaca admin, jadi ditampilkan sebagai modal, bukan baris error kecil.
+      if (!res.ok && json?.code === "FEE_DEBT_OUTSTANDING") {
+        setDebtBlock({
+          totalDebt: json.feeDebt?.totalDebt ?? 0,
+          orderCount: json.feeDebt?.orderCount ?? 0,
+        })
+        await fetchRequests() // segarkan angka dampak supaya kartu ikut menampilkan hutang terkini
+        return
+      }
+
       if (!res.ok) throw new Error(json?.message || "Gagal memproses permintaan.")
       setRejectFor(null)
       setRejectNote("")
@@ -129,6 +146,15 @@ export function AdminChangeRequests() {
 
   function confirmApprove(row: ChangeRequestRow) {
     if (row.requestType === "delete") {
+      // Cegat lebih awal kalau angka yang sudah dimuat menunjukkan hutang — hemat satu round-trip.
+      // Backend tetap punya kata akhir (angkanya bisa berubah sejak daftar dimuat).
+      if (row.deleteImpact && row.deleteImpact.feeDebt.totalDebt > 0) {
+        setDebtBlock({
+          totalDebt: row.deleteImpact.feeDebt.totalDebt,
+          orderCount: row.deleteImpact.feeDebt.orderCount,
+        })
+        return
+      }
       const impact = row.deleteImpact
       const warn = impact
         ? `\n\nHutang fee cash: ${formatIDR(impact.feeDebt.totalDebt)} (${impact.feeDebt.orderCount} order)` +
@@ -147,6 +173,59 @@ export function AdminChangeRequests() {
 
   return (
     <>
+      {/* ── Modal: penghapusan diblokir karena hutang fee ────────────────────
+          Sengaja modal (bukan toast/baris error): admin harus benar-benar membaca
+          nominalnya dan tahu langkah berikutnya sebelum mencoba lagi. */}
+      {debtBlock && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 p-4"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="debt-block-title"
+        >
+          <div className="w-full max-w-md rounded-xl border border-red-200 bg-white p-6 shadow-xl">
+            <div className="flex items-start gap-3">
+              <div className="flex size-10 shrink-0 items-center justify-center rounded-lg bg-red-50 text-red-600">
+                <AlertTriangle className="size-5" />
+              </div>
+              <div className="min-w-0">
+                <h3 id="debt-block-title" className="text-base font-semibold text-slate-900">
+                  Penghapusan Event Diblokir
+                </h3>
+                <p className="mt-1 text-sm text-slate-600">
+                  Event ini tidak bisa dihapus selama hutang fee-nya belum lunas.
+                </p>
+              </div>
+            </div>
+
+            <div className="mt-4 rounded-lg border border-red-200 bg-red-50 px-4 py-3">
+              <p className="text-xs font-medium uppercase tracking-[0.12em] text-red-700">
+                Hutang fee belum lunas
+              </p>
+              <p className="mt-1 text-2xl font-semibold text-red-700">
+                {formatIDR(debtBlock.totalDebt)}
+              </p>
+              <p className="text-xs text-red-600">
+                dari {debtBlock.orderCount} transaksi Ticket Box tunai
+              </p>
+            </div>
+
+            <p className="mt-4 text-sm text-slate-600">
+              Tandai hutang lunas dulu di seksi{" "}
+              <strong>&ldquo;Rekonsiliasi Fee (Hutang Ticket Box)&rdquo;</strong> di halaman ini
+              (setelah pembayaran promotor diterima), lalu ulangi persetujuan penghapusan.
+            </p>
+
+            <button
+              onClick={() => setDebtBlock(null)}
+              className="mt-5 w-full rounded-md bg-slate-900 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-slate-800"
+            >
+              Mengerti
+            </button>
+          </div>
+        </div>
+      )}
+
       <div className="flex flex-wrap items-end justify-between gap-3">
         <div>
           <h2 className="text-xl font-semibold text-slate-900">Permintaan Perubahan Event</h2>
@@ -276,8 +355,15 @@ export function AdminChangeRequests() {
                       />
                     </dl>
                     <p className="mt-3 text-xs text-amber-800">
-                      Menyetujui akan menghapus data ini secara permanen. Hutang fee yang belum lunas
-                      akan ikut hilang bersama order-nya.
+                      Menyetujui akan menghapus data ini secara permanen.{" "}
+                      {row.deleteImpact.feeDebt.totalDebt > 0 ? (
+                        <strong className="text-red-700">
+                          Penghapusan DIBLOKIR selama hutang fee belum lunas — tandai lunas dulu di
+                          seksi &ldquo;Rekonsiliasi Fee (Hutang Ticket Box)&rdquo;.
+                        </strong>
+                      ) : (
+                        "Tidak ada hutang fee yang menghalangi."
+                      )}
                     </p>
                   </div>
                 )}

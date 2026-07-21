@@ -243,6 +243,29 @@ juga dirender di `/dashboard/perencanaan`, ter-scope event aktif. Chart ini semp
 `0842e0d`, dipulihkan 2026-07-21 — lihat known-bugs). **Beda dari donut di `/dashboard/pl-report`**: yang itu
 "Komposisi Pengeluaran" (realisasi, recharts); yang ini alokasi RAB (rencana, SVG manual). Bukan duplikat.
 
+## Pelunasan Hutang Fee — mekanismenya SUDAH ADA (diinvestigasi 2026-07-22)
+
+Dicatat karena sempat tidak jelas apakah hutang fee bisa ditandai lunas sama sekali. **Bisa — ada DUA jalur,
+keduanya sudah live.** Jangan bangun mekanisme settle baru; pakai yang ada.
+
+**Apa itu hutang fee**: fee dari order Ticket Box **CASH** (`channel:"ticket_box"`, `paymentMethod:"cash"`,
+`status:"paid"`, `feeSettled:false` — lihat `DEBT_ORDER_WHERE` di `services/fee-debt.service.js`). Cash-only
+karena transfer Ticket Box wajib lewat Midtrans → fee-nya sudah terpotong otomatis. Penanda lunasnya adalah
+kolom **`TicketOrder.feeSettled`** (boolean), bukan tabel hutang tersendiri.
+
+**Jalur 1 — manual oleh admin** (uang diterima via transfer bank DI LUAR app, lalu dikonfirmasi di app):
+`PATCH /api/admin/fee-debt/:promotorId/settle` (`controllers/fee-debt.controller.js` → `settleFeeDebt`).
+Body opsional `{ orderIds }`; tanpa itu = settle SELURUH hutang cash promotor tsb saat itu. UI-nya: seksi
+**"Rekonsiliasi Fee (Hutang Ticket Box)"** di `/dashboard/admin` (tombol "Tandai Lunas" + konfirmasi).
+Scope-nya **per-PROMOTOR**, bukan per-event.
+
+**Jalur 2 — otomatis saat pencairan**: `requestPayout` (`controllers/payout.controller.js`) men-settle hutang
+(`feeSettled: true`) secara **atomik** di `$transaction` yang sama dengan pembuatan `PayoutRequest`; nominalnya
+dicatat di `PayoutRequest.debtDeducted` untuk audit. Syarat terima pencairan: `nominal + hutang ≤ saldo available`
+(hutang = TAMBAHAN di atas nominal, bukan potongan dari dalamnya — lihat Payout item #2).
+
+**Tidak ada** pelunasan lewat Midtrans untuk hutang ini, dan **tidak ada** aksi settle di sisi promotor.
+
 ## Permintaan Perubahan Event (approval admin) — berlaku sejak 2026-07-21
 
 **5 field event + penghapusan event TIDAK bisa lagi dieksekusi langsung promotor.** Semuanya lewat ajuan
@@ -275,6 +298,13 @@ status in-app di "Riwayat Permintaan" (keputusan founder, jangan tambahkan email
 2. **Satu permintaan pending per (event, jenis)** → 409. Cegah dua usulan bertabrakan saat di-approve.
 3. **`prisma.event.delete` HANYA boleh ada di jalur approve admin.** `DELETE /api/events/:id` selalu 403;
    route-nya sengaja dipertahankan agar klien lama dapat pesan jelas, bukan 404 misterius.
+3b. **HARD BLOCK hutang fee (2026-07-22)**: approve tipe `delete` membaca ulang `getEventFeeDebt(eventId)`
+   saat eksekusi; `totalDebt > 0` → **400 + `code: "FEE_DEBT_OUTSTANDING"`** (payload `feeDebt` dipakai
+   frontend untuk modal "Penghapusan Event Diblokir"). Dibaca ULANG di jalur approve, JANGAN mengandalkan
+   `deleteImpact` dari GET — daftar bisa dimuat jauh sebelum admin mengklik. Blokir terbuka sendiri begitu
+   hutang lunas lewat salah satu jalur di section "Pelunasan Hutang Fee" di atas.
+   **Cek payout-pending & order berbayar SENGAJA tetap informasional** — jangan ikut dijadikan hard block
+   tanpa keputusan founder.
 4. **`EventChangeRequest.eventId` NULLABLE + `onDelete: SetNull`** (+ snapshot `eventTitle`) — DISENGAJA.
    Kalau dijadikan `Cascade` seperti relasi Event lain, approve permintaan hapus akan menghapus baris
    auditnya sendiri. **Jangan "rapikan" jadi NOT NULL/Cascade.**

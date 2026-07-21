@@ -11,6 +11,13 @@
 // hutangnya. Dengan admin sebagai gerbang + ringkasan hutang/payout/order yang
 // ditampilkan di panel admin, jalur penghindaran itu tertutup tanpa perlu menaruh
 // logika cek hutang di jalur promotor.
+//
+// PENGERASAN 2026-07-22: ringkasan itu ternyata hanya INFORMASI — admin tetap bisa
+// menyetujui penghapusan meski hutang fee masih ada. Sekarang approve tipe "delete"
+// DITOLAK KERAS (400 + code FEE_DEBT_OUTSTANDING) selama hutang fee event > 0.
+// Cek payout-pending & order berbayar SENGAJA tetap informasional saja — pencairan
+// pending bukan kewajiban promotor ke nexEvent, dan order berbayar memang wajar ada
+// pada event yang sudah berjalan. JANGAN ikut dijadikan hard block tanpa keputusan founder.
 // ============================================================================
 
 const prisma = require('../src/lib/prisma');
@@ -24,6 +31,9 @@ const {
   validateNewValue,
   buildUpdateData,
 } = require('../services/event-change-request.service');
+
+// Format rupiah untuk pesan error yang dibaca admin (pola sama IDR() di email.service.js).
+const formatIDR = (n) => `Rp ${Number(n || 0).toLocaleString('id-ID')}`;
 
 // ── Promotor ────────────────────────────────────────────────────────────────
 
@@ -222,6 +232,29 @@ const approveChangeRequest = async (req, res) => {
     };
 
     if (request.requestType === DELETE_TYPE) {
+      // ⛔ HARD BLOCK (2026-07-22): hutang fee cash yang belum lunas MELARANG penghapusan.
+      // Sebelumnya angka hutang cuma ditampilkan sebagai informasi di panel admin — admin masih
+      // bisa menyetujui dan hutangnya ikut terhapus bersama order-nya. Sekarang ditolak keras.
+      //
+      // Dicek ULANG di sini (bukan mengandalkan deleteImpact dari GET) karena daftar bisa dimuat
+      // beberapa menit sebelum admin mengklik — ini pemeriksaan pada saat eksekusi.
+      // Sumbernya sama persis dgn deleteImpact: getEventFeeDebt → DEBT_ORDER_WHERE (feeSettled:false).
+      // Otomatis unblock begitu hutang lunas lewat salah satu dari dua jalur settle yang sudah ada:
+      //   1) admin klik "Tandai Lunas"  → PATCH /api/admin/fee-debt/:promotorId/settle
+      //   2) promotor mengajukan pencairan → requestPayout men-settle atomik di transaksi yang sama
+      const { totalDebt, orderCount } = await getEventFeeDebt(request.eventId);
+      if (totalDebt > 0) {
+        return res.status(400).json({
+          success: false,
+          code: 'FEE_DEBT_OUTSTANDING', // dipakai frontend untuk memunculkan peringatan khusus, bukan toast generik
+          message:
+            `Tidak dapat menghapus event ini — masih ada hutang fee sebesar ${formatIDR(totalDebt)} ` +
+            `dari ${orderCount} transaksi Ticket Box tunai yang belum dilunasi. ` +
+            `Tandai hutang lunas dulu di seksi "Rekonsiliasi Fee (Hutang Ticket Box)".`,
+          feeDebt: { totalDebt, orderCount },
+        });
+      }
+
       // Tandai approved DULU, lalu hapus event. FK eventId onDelete: SetNull → baris audit
       // ini SELAMAT dari cascade dan tetap tercatat (eventTitle sudah di-snapshot).
       // Urutan ini penting: kalau dibalik, update setelah delete akan gagal cari record-nya.

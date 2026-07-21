@@ -2949,3 +2949,37 @@ tidak akan terhitung** → catatan jadi bohong dan promotor salah membaca sisa k
   promotor** dan bagian CLAUDE.md "Document Table" yang menyatakan hapus event tersedia untuk promotor biasa.
   Keduanya sudah dikoreksi. Perilaku yang berlaku sekarang adalah yang di entry ini.
 - Tag: #event #perubahan-perilaku #approval-flow #dokumentasi
+
+---
+
+## [2026-07-22] Hard block: hapus event ditolak selama hutang fee belum lunas
+
+- Gejala: `PATCH /api/admin/change-requests/:id/approve` untuk `requestType: "delete"` **tetap menghapus
+  event walau hutang fee cash-nya masih ada**. Ringkasan `deleteImpact` yang ditambahkan 2026-07-21 hanya
+  INFORMASI di panel admin — tidak ada satu pun guard yang mencegah persetujuan. Jadi celah penghindaran
+  hutang belum benar-benar tertutup: ia hanya berpindah dari "promotor bisa hapus sendiri" ke "admin bisa
+  salah klik", dan order Ticket Box cash yang jadi dasar hutang tetap ikut terhapus lewat cascade.
+- Root cause: `deleteImpact` dihitung di endpoint GET (untuk ditampilkan), bukan di jalur eksekusi approve.
+  Tidak ada pembacaan ulang hutang saat aksi benar-benar dijalankan.
+- File terkait:
+  - `server/controllers/event-change-request.controller.js` (`approveChangeRequest`)
+  - `client/src/components/dashboard/admin-change-requests.tsx`
+- Fix:
+  1. Di `approveChangeRequest`, untuk `requestType === "delete"`: panggil ulang `getEventFeeDebt(eventId)`
+     **sebelum** menghapus. Kalau `totalDebt > 0` → **400** dengan `code: "FEE_DEBT_OUTSTANDING"`, pesan
+     menyebut nominal + jumlah transaksi, dan payload `feeDebt` untuk dirender frontend.
+  2. Sengaja **dicek ulang saat eksekusi**, bukan mengandalkan `deleteImpact` dari GET — daftar bisa dimuat
+     beberapa menit sebelum admin mengklik, dan hutang bisa berubah di antaranya (lunas ATAU bertambah).
+  3. Frontend menangkap `code === "FEE_DEBT_OUTSTANDING"` **secara terpisah dari error biasa** → modal
+     "Penghapusan Event Diblokir" berisi nominal hutang + arahan ke seksi Rekonsiliasi Fee. Bukan toast generik.
+  4. Frontend juga mencegat lebih awal dari angka `deleteImpact` yang sudah dimuat (hemat round-trip),
+     tapi **backend tetap punya kata akhir**.
+  5. Caption kartu dampak dikoreksi: dulu berbunyi "hutang fee yang belum lunas akan ikut hilang bersama
+     order-nya" — sekarang sudah TIDAK benar, diganti peringatan bahwa penghapusan diblokir.
+- Cek payout-pending & order berbayar **SENGAJA dibiarkan informasional saja** (bukan hard block): pencairan
+  pending bukan kewajiban promotor ke nexEvent, dan order berbayar wajar ada di event yang sudah berjalan.
+  Jangan ikut dijadikan blocker tanpa keputusan founder.
+- Blokir ini **bisa dibuka** — bukan jalan buntu. Hutang mencapai 0 lewat dua jalur settle yang SUDAH ADA
+  (lihat CLAUDE.md "Pelunasan Hutang Fee"): admin klik "Tandai Lunas", atau otomatis saat promotor
+  mengajukan pencairan. Karena guard membaca ulang `getEventFeeDebt` saat approve, unblock terjadi sendirinya.
+- Tag: #event #delete #fee-debt #admin #hard-block #keamanan
