@@ -20,6 +20,11 @@ const {
   rejectBundle,
 } = require('../../controllers/bundle.controller');
 const {
+  getAllChangeRequests,
+  approveChangeRequest,
+  rejectChangeRequest,
+} = require('../../controllers/event-change-request.controller');
+const {
   setCategoryFee,
   getEventCategories,
   deactivateCategory,
@@ -27,6 +32,13 @@ const {
 } = require('../../controllers/category-fee.controller');
 
 router.get('/users', protect, requireAdmin, getPendingUsers);
+
+// ── Permintaan Perubahan Event (2026-07-21) ──
+// Gerbang admin untuk 5 field terkunci + HAPUS EVENT. Approve pada tipe "delete" adalah
+// SATU-SATUNYA tempat prisma.event.delete masih dieksekusi (jalur promotor sudah 403).
+router.get('/change-requests', protect, requireAdmin, getAllChangeRequests);
+router.patch('/change-requests/:id/approve', protect, requireAdmin, approveChangeRequest);
+router.patch('/change-requests/:id/reject', protect, requireAdmin, rejectChangeRequest);
 router.patch('/users/:id/approve', protect, requireAdmin, approveUser);
 
 // ── Fee PER-KATEGORI (arsitektur 2026-07-15) — jalur fee yang BENAR ──

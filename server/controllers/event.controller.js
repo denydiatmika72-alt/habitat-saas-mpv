@@ -1,5 +1,6 @@
 const prisma = require('../src/lib/prisma'); // Singleton dengan PrismaPg adapter (wajib Prisma v7)
 const slugify = require('slugify');
+const { DELETE_LOCKED_MESSAGE } = require('../services/event-change-request.service');
 
 function generateSlug(title) {
   return slugify(title, { lower: true, strict: true, locale: 'id' });
@@ -77,24 +78,19 @@ const getEventById = async (req, res) => {
   }
 };
 
-// DELETE /api/events/:id — Hapus event (UUID string, bukan Number)
+// DELETE /api/events/:id — DIKUNCI untuk promotor sejak 2026-07-21.
+//
+// Dulu: verifyToken + cek pemilik saja → promotor bisa menghapus event sendiri, dan relasi
+// cascade ikut menghapus order Ticket Box cash yang jadi dasar HUTANG FEE ke nexEvent.
+// Itu jalur penghindaran hutang yang terbuka lebar (lihat known-bugs [2026-07-21]).
+//
+// Sekarang: penghapusan HANYA lewat persetujuan admin —
+//   promotor  → POST /api/events/:id/change-requests { requestType: "delete" }
+//   admin     → PATCH /api/admin/change-requests/:id/approve  (di sanalah event.delete dieksekusi)
+// JANGAN hidupkan kembali penghapusan langsung di sini. Kalau perlu jalur admin tambahan,
+// tempatnya di event-change-request.controller.js, bukan endpoint promotor.
 const deleteEvent = async (req, res) => {
-  try {
-    const { id } = req.params; // UUID string — jangan Number()
-    const event = await prisma.event.findFirst({
-      where: { id, promotor_id: req.user.id },
-    });
-
-    if (!event) {
-      return res.status(404).json({ success: false, message: 'Event tidak ditemukan.' });
-    }
-
-    await prisma.event.delete({ where: { id } });
-    return res.status(200).json({ success: true, message: 'Event berhasil dihapus.' });
-  } catch (err) {
-    console.error('[DELETE EVENT ERROR]', err);
-    return res.status(500).json({ success: false, message: err.message });
-  }
+  return res.status(403).json({ success: false, message: DELETE_LOCKED_MESSAGE });
 };
 
 // PATCH /api/events/:id/publish — Toggle is_published

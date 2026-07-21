@@ -39,6 +39,8 @@ model User {
   payoutRequests    PayoutRequest[] @relation("PromotorPayouts")
   processedPayouts  PayoutRequest[] @relation("AdminProcessedPayouts")
   sponsorInvoices   SponsorInvoice[]
+  changeRequests    EventChangeRequest[] @relation("PromotorChangeRequests")
+  reviewedChangeRequests EventChangeRequest[] @relation("AdminReviewedChangeRequests")
 
   @@map("users")
 }
@@ -125,8 +127,44 @@ model Event {
   sponsorBenefits    SponsorBenefit[]
   sponsorPackages    SponsorPackage[]
   sponsorThresholds  SponsorThreshold[]
+  changeRequests     EventChangeRequest[]
 
   @@map("events")
+}
+
+// Permintaan perubahan/penghapusan event yang WAJIB disetujui admin (2026-07-21).
+// 5 field terkunci (title/location/venue_capacity/target_profit/target_sponsorship) + hapus event
+// tidak lagi bisa dieksekusi langsung promotor — semuanya lewat tabel ini.
+// Alasan utama: deleteEvent langsung + relasi cascade membuka jalur penghindaran hutang fee cash
+// (promotor hapus event → hutang ikut terhapus). Lihat CLAUDE.md "Permintaan Perubahan Event".
+model EventChangeRequest {
+  id          String    @id @default(uuid())
+  // NULLABLE + onDelete: SetNull — DISENGAJA, jangan "perbaiki" jadi NOT NULL/Cascade.
+  // Permintaan "delete" yang DISETUJUI menghapus event-nya; kalau FK ini cascade, baris audit
+  // ikut lenyap justru pada aksi yang paling perlu jejak. eventTitle menyimpan snapshot nama
+  // supaya riwayat tetap terbaca setelah event hilang.
+  eventId     String?   @map("event_id")
+  eventTitle  String    @map("event_title")
+  promotorId  String    @map("promotor_id")
+  // "delete" | "rename" | "venue_location" | "venue_capacity" | "target_profit" | "target_sponsor"
+  requestType String    @map("request_type")
+  // Snapshot nilai saat permintaan dibuat — DIISI SERVER dari record event (jangan percaya client).
+  // null untuk requestType "delete".
+  oldValue    String?   @map("old_value")
+  newValue    String?   @map("new_value")
+  status      String    @default("pending") // "pending" | "approved" | "rejected"
+  adminNote   String?   @map("admin_note")
+  reviewedBy  String?   @map("reviewed_by")
+  reviewedAt  DateTime? @map("reviewed_at")
+  createdAt   DateTime  @default(now()) @map("created_at")
+
+  event       Event?    @relation(fields: [eventId], references: [id], onDelete: SetNull)
+  promotor    User      @relation("PromotorChangeRequests", fields: [promotorId], references: [id], onDelete: Cascade)
+  reviewer    User?     @relation("AdminReviewedChangeRequests", fields: [reviewedBy], references: [id])
+
+  @@index([status])
+  @@index([eventId])
+  @@map("event_change_requests")
 }
 
 model TicketType {

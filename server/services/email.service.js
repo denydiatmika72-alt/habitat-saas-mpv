@@ -2,6 +2,7 @@ const { Resend } = require('resend');
 const QRCode = require('qrcode');
 const prisma = require('../src/lib/prisma');
 const resend = new Resend(process.env.RESEND_API_KEY);
+const { REQUEST_TYPE_LABELS } = require('./event-change-request.service');
 
 const IDR = (n) => `Rp ${Number(n || 0).toLocaleString('id-ID')}`;
 
@@ -102,6 +103,54 @@ const sendProExpiryReminder = async (user, daysLeft) => {
     console.log(`[EMAIL] Reminder expiry Pro terkirim ke ${user.email}`);
   } catch (error) {
     console.error('[EMAIL] Gagal kirim reminder expiry Pro:', error.message);
+  }
+};
+
+// Notifikasi ADMIN saat promotor mengajukan perubahan/penghapusan event (2026-07-21).
+// Sender + alamat admin mengikuti pola sendNewUserNotification (ADMIN_EMAIL env, fallback owner).
+// Fire-and-forget: kegagalan kirim TIDAK boleh membatalkan pembuatan permintaan.
+const sendEventChangeRequestNotification = async ({ request, event, promotor }) => {
+  const isDelete = request.requestType === 'delete';
+  const label = REQUEST_TYPE_LABELS[request.requestType] || request.requestType;
+
+  const perubahanRow = isDelete
+    ? `<tr><td style="border:1px solid #e2e8f0;font-weight:600;padding:10px 14px">Perubahan</td>
+         <td style="border:1px solid #e2e8f0;padding:10px 14px;color:#b91c1c;font-weight:700">HAPUS PERMANEN event ini beserta seluruh data turunannya</td></tr>`
+    : `<tr><td style="border:1px solid #e2e8f0;font-weight:600;padding:10px 14px">Perubahan</td>
+         <td style="border:1px solid #e2e8f0;padding:10px 14px">
+           <span style="color:#64748b;text-decoration:line-through">${request.oldValue ?? '-'}</span>
+           &nbsp;→&nbsp;<strong style="color:#065f46">${request.newValue ?? '-'}</strong>
+         </td></tr>`;
+
+  try {
+    await resend.emails.send({
+      from: 'nexEvent <noreply@nexeventapp.tech>',
+      to: process.env.ADMIN_EMAIL || 'denydiatmika72@gmail.com',
+      subject: isDelete
+        ? `[HAPUS EVENT] Permintaan dari ${promotor?.name || 'promotor'} — ${event.title}`
+        : `Permintaan perubahan event: ${label} — ${event.title}`,
+      html: `
+        <div style="font-family:sans-serif;max-width:560px;margin:0 auto;color:#0f172a">
+          <h2 style="color:${isDelete ? '#b91c1c' : '#065f46'};margin-bottom:4px">
+            ${isDelete ? 'Permintaan HAPUS EVENT' : 'Permintaan Perubahan Event'}
+          </h2>
+          <p style="color:#64748b;margin-top:0">Menunggu persetujuan admin di panel nexEvent.</p>
+          <table cellpadding="0" cellspacing="0" style="width:100%;border-collapse:collapse;border:1px solid #e2e8f0;margin:16px 0">
+            <tr style="background:#f8fafc"><td style="border:1px solid #e2e8f0;font-weight:600;padding:10px 14px;width:150px">Event</td><td style="border:1px solid #e2e8f0;padding:10px 14px">${event.title}</td></tr>
+            <tr><td style="border:1px solid #e2e8f0;font-weight:600;padding:10px 14px">Promotor</td><td style="border:1px solid #e2e8f0;padding:10px 14px">${promotor?.name || '-'} (${promotor?.email || '-'})</td></tr>
+            <tr style="background:#f8fafc"><td style="border:1px solid #e2e8f0;font-weight:600;padding:10px 14px">Jenis Permintaan</td><td style="border:1px solid #e2e8f0;padding:10px 14px">${label}</td></tr>
+            ${perubahanRow}
+            <tr style="background:#f8fafc"><td style="border:1px solid #e2e8f0;font-weight:600;padding:10px 14px">Waktu Diajukan</td><td style="border:1px solid #e2e8f0;padding:10px 14px">${new Date(request.createdAt).toLocaleString('id-ID')}</td></tr>
+          </table>
+          ${isDelete ? '<p style="color:#b91c1c;font-size:13px"><strong>Perhatikan hutang fee, pencairan pending, dan order tiket berbayar</strong> pada ringkasan di panel admin sebelum menyetujui.</p>' : ''}
+          <a href="https://nexeventapp.tech/dashboard/admin" style="display:inline-block;background:#065f46;color:#fff;padding:10px 20px;border-radius:8px;text-decoration:none;font-weight:600;margin-top:12px">Buka Panel Admin</a>
+          <p style="color:#64748b;font-size:12px;margin-top:24px">Email otomatis dari nexEvent — nexeventapp.tech</p>
+        </div>
+      `,
+    });
+    console.log(`[EMAIL] Notifikasi permintaan perubahan event (${request.requestType}) terkirim ke admin`);
+  } catch (error) {
+    console.error('[EMAIL] Gagal kirim notifikasi permintaan perubahan event:', error.message);
   }
 };
 
@@ -289,4 +338,4 @@ const sendEventSummaryEmail = async ({ to, promotorName, eventTitle, filename, p
   }
 };
 
-module.exports = { sendNewUserNotification, sendSponsorCredential, sendProExpiryReminder, sendOrderEmail, sendEventSummaryEmail };
+module.exports = { sendNewUserNotification, sendSponsorCredential, sendProExpiryReminder, sendOrderEmail, sendEventSummaryEmail, sendEventChangeRequestNotification };
