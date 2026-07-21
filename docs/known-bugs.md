@@ -2983,3 +2983,65 @@ tidak akan terhitung** → catatan jadi bohong dan promotor salah membaca sisa k
   (lihat CLAUDE.md "Pelunasan Hutang Fee"): admin klik "Tandai Lunas", atau otomatis saat promotor
   mengajukan pencairan. Karena guard membaca ulang `getEventFeeDebt` saat approve, unblock terjadi sendirinya.
 - Tag: #event #delete #fee-debt #admin #hard-block #keamanan
+
+---
+
+## [2026-07-21] 🔴 CRITICAL — Hapus event yang sedang dipilih → loop tak berujung GET /api/events (browser hang)
+
+- **Severity: CRITICAL** — membanjiri jaringan sampai browser kehabisan resource koneksi
+  (`net::ERR_INSUFFICIENT_RESOURCES`) dan tab membeku. Bisa menimpa user mana pun, bukan cuma admin.
+- Trigger persis (mudah dikenali kalau terulang):
+  1. Promotor memilih sebuah event di Dashboard KPI → URL jadi `/dashboard?eventId=<X>`.
+  2. Event `<X>` DIHAPUS (lewat Permintaan Perubahan Event yang disetujui admin).
+  3. Buka/muat ulang `/dashboard` selagi `?eventId=<X>` masih menempel di URL.
+  4. → ratusan `GET /api/events` per detik, tanpa henti.
+- Gejala: console dibanjiri `GET https://www.nexeventapp.tech/api/events net::ERR_INSUFFICIENT_RESOURCES`
+  berulang ratusan kali; halaman tidak pernah selesai memuat.
+- Root cause (dua cacat yang saling mengunci — LOOP + AMPLIFIER):
+  1. **LOOP — pilihan event MUSTAHIL dibersihkan.** `EventProvider` Aturan 1 memperlakukan `?eventId=`
+     yang tidak kosong sebagai otoritatif TANPA SYARAT. Saat `/dashboard` mendeteksi event terpilih tidak
+     ada lagi di daftar dan memanggil `setSelectedEventId("")`, `router.replace` baru landing beberapa tick
+     kemudian — jadi di render berikutnya URL MASIH memuat id lama, Aturan 1 menghidupkannya kembali,
+     efek pembersih membuangnya lagi, dan seterusnya. Aturan 2 memperparah: ia membaca `selectedEventId`
+     dari state yang bisa BASI (ada render di mana URL sudah bersih tapi state masih memuat id lama) lalu
+     MENULIS BALIK id yang baru saja dibuang. Tidak ada titik henti — state ↔ URL saling meniadakan.
+  2. **AMPLIFIER — tiap putaran loop menembakkan request.** `StatCards` memakai `eventId` sebagai dependency
+     `useEffect` yang melakukan `GET /api/events`, padahal penyempitan ke satu event murni filter di memori.
+     Nilai `eventId` berosilasi `<X>` ↔ `""` tiap putaran → satu request per putaran. Respons request itu
+     men-set state lagi → memberi makan putaran berikutnya (umpan balik async yang membuatnya tak terbatas).
+- File terkait:
+  - `client/src/contexts/event-context.tsx` (biang utama)
+  - `client/src/app/dashboard/page.tsx` (call site yang memicu)
+  - `client/src/components/dashboard/stat-cards.tsx` (amplifier)
+- Fix:
+  1. `EventProvider` dapat **`intendedIdRef`** — pilihan yang "kita anggap benar", di-update SINKRON di
+     `commitSelection`. Aturan 1 & 2 kini mengambil keputusan dari ref ini, **BUKAN dari `selectedEventId`**,
+     sehingga render di mana state & URL belum sinkron tidak lagi menghasilkan kesimpulan salah.
+  2. `EventProvider` dapat **`pendingUrlIdRef`** — selama `router.replace` yang kita kirim belum landing,
+     `urlEventId` masih nilai LAMA dan TIDAK boleh dianggap otoritatif. Kedua aturan berhenti total selama
+     status pending, dan pending dilepas begitu URL cocok.
+  3. `EventProvider` dapat **`deadEventIdsRef`** + API publik baru **`invalidateEvent(id)`** — operasi
+     TERMINAL & IDEMPOTEN: id yang sudah ditandai mati tidak akan pernah dihidupkan lagi dari URL, dan
+     sisa `?eventId=` mati dibuang dari URL sekali saja. Pemanggilan kedua = no-op.
+  4. `/dashboard` memakai `invalidateEvent(selectedEventId)` menggantikan `setSelectedEventId("")`.
+  5. `StatCards` mengambil daftar event **sekali per mount** (`useEffect` deps `[]`); penyempitan ke satu
+     event pindah ke `useMemo`. `eventId` TIDAK lagi jadi dependency request.
+- **Verifikasi di browser sungguhan (Playwright + Chromium, bukan cuma typecheck).** Probe sementara
+  mereplikasi topologi `/dashboard` (daftar event async + refetch ala StatCards + efek pembersih) dengan
+  `/api/events` di-mock mengembalikan daftar yang TIDAK memuat event terpilih. Hasil dalam jendela 6 detik:
+  - **SEBELUM fix: 4.911 request `GET /api/events`, 9.822 render** (dihentikan sabuk pengaman) — loop
+    terbukti nyata, URL tetap memegang `?eventId=` mati.
+  - **SESUDAH fix: 3 request, 10 render**, `selectedEventId` = `""`, `?eventId=` bersih dari URL. Terminal.
+  - Regresi perilaku normal ikut diuji & LOLOS: deep-link event valid, ganti event, tombol Back, tombol
+    Forward, dan pewarisan `?eventId=` ke halaman turunan lewat navigasi client-side (Aturan 2).
+- **Audit kelas bug ini di konsumen lain: BERSIH.** `setSelectedEventId` hanya dipanggil dari efek di SATU
+  tempat (`/dashboard`, yang sudah diperbaiki); semua call site lain adalah `onChange` dropdown yang
+  digerakkan user. Halaman lain yang mem-fetch pakai `selectedEventId` (`tickets`, `expenses`, `kerjasama`,
+  `petty-cash`, `crew`, `event-summary`, `pl-report`) hanya bergantung pada string `selectedEventId` dan
+  menerima error/empty saat event sudah dihapus — tidak ada yang mengubah state di dalam efeknya sendiri,
+  jadi tidak bisa memicu loop. Guard `if (!selectedEventId) router.replace(<hub>)` juga aman (redirect sekali,
+  meninggalkan halaman).
+- **Aturan untuk ke depan:** kalau sebuah konsumen perlu MEMBERSIHKAN pilihan event, pakai `invalidateEvent`,
+  JANGAN `setSelectedEventId("")`. Dan jangan pernah menjadikan `selectedEventId` sebagai dependency request
+  yang datanya bisa difilter di memori.
+- Tag: #critical #infinite-loop #event-context #react-hooks #performance #browser-hang #event-delete

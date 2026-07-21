@@ -77,7 +77,7 @@ const QUICK_LINKS = [
 
 export default function DashboardKpiPage() {
   const router = useRouter()
-  const { selectedEventId, setSelectedEventId } = useSelectedEvent()
+  const { selectedEventId, setSelectedEventId, invalidateEvent } = useSelectedEvent()
   const [events, setEvents] = useState<EventItem[]>([])
   const [loadingEvents, setLoadingEvents] = useState(true)
 
@@ -95,13 +95,19 @@ export default function DashboardKpiPage() {
   const selectedEvent = events.find((e) => String(e.id) === selectedEventId) ?? null
   const hasEvents = events.length > 0
 
-  // Event terpilih sudah tidak ada (mis. baru dihapus) → bersihkan supaya halaman
-  // turunan tidak memuat konteks hantu.
+  // Event terpilih sudah tidak ada (mis. dihapus lewat persetujuan admin) →
+  // bersihkan supaya halaman turunan tidak memuat konteks hantu.
+  //
+  // WAJIB pakai invalidateEvent, BUKAN setSelectedEventId(""). Yang terakhir itu
+  // penyebab loop tak berujung 2026-07-21: `?eventId=` yang mati masih tertinggal
+  // di URL selama router.replace belum landing, provider menghidupkannya kembali,
+  // efek ini membersihkannya lagi, dan seterusnya — membanjiri GET /api/events
+  // sampai browser kehabisan koneksi. invalidateEvent bersifat terminal.
   useEffect(() => {
     if (!loadingEvents && selectedEventId && hasEvents && !selectedEvent) {
-      setSelectedEventId("")
+      invalidateEvent(selectedEventId)
     }
-  }, [loadingEvents, selectedEventId, hasEvents, selectedEvent, setSelectedEventId])
+  }, [loadingEvents, selectedEventId, hasEvents, selectedEvent, invalidateEvent])
 
   return (
     <div className="mx-auto flex w-full max-w-7xl flex-col gap-6">

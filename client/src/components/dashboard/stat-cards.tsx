@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useState } from "react"
+import { useEffect, useMemo, useState } from "react"
 import axios from "axios"
 import { CalendarRange, Users, TrendingUp, Sparkles } from "lucide-react"
 
@@ -61,107 +61,125 @@ function SkeletonCard() {
 // Kalau kosong (belum ada event terpilih / user baru tanpa event) kartu jatuh ke
 // akumulasi seluruh event — tetap informatif, tidak pernah kosong/blank.
 export function StatCards({ eventId }: { eventId?: string } = {}) {
-  const [kpis, setKpis] = useState<KPI[] | null>(null)
+  const [allEvents, setAllEvents] = useState<EventData[] | null>(null)
+  const [loadFailed, setLoadFailed] = useState(false)
   const [isLoading, setIsLoading] = useState(true)
 
+  // Daftar event diambil SEKALI per mount. `eventId` SENGAJA tidak jadi dependency:
+  // penyempitan ke satu event murni operasi filter di memori, tidak butuh request
+  // baru. Ikut memasukkannya dulu membuat tiap perubahan pilihan event memicu satu
+  // GET /api/events — itulah yang mengubah loop state 2026-07-21 menjadi banjir
+  // request sampai browser kehabisan koneksi (ERR_INSUFFICIENT_RESOURCES).
   useEffect(() => {
     const token = localStorage.getItem("token")
-    setIsLoading(true)
+    let cancelled = false
     axios
-      .get('/api/events', {
-        headers: { Authorization: `Bearer ${token}` },
-      })
+      .get("/api/events", { headers: { Authorization: `Bearer ${token}` } })
       .then((res) => {
+        if (cancelled) return
         const raw = Array.isArray(res.data) ? res.data : (res.data.data ?? [])
-        const allEvents: EventData[] = raw
-
-        const scoped = eventId
-          ? allEvents.filter((e) => String(e.id) === eventId)
-          : allEvents
-        const isScoped = Boolean(eventId) && scoped.length > 0
-
-        const totalEvents   = allEvents.length
-        const totalCapacity = scoped.reduce((acc, e) => acc + Number(e.venue_capacity   ?? 0), 0)
-        const totalProfit   = scoped.reduce((acc, e) => acc + Number(e.target_profit    ?? 0), 0)
-        const totalSponsor  = scoped.reduce((acc, e) => acc + Number(e.target_sponsorship ?? 0), 0)
-
-        const scopeSub = isScoped ? "Event terpilih" : "Seluruh event"
-
-        setKpis([
-          {
-            label:     "Total Event",
-            value:     `${totalEvents} Event`,
-            sub:       totalEvents === 0 ? "Belum ada event" : `${totalEvents} event terdaftar`,
-            icon:      CalendarRange,
-            iconBg:    "bg-emerald-50",
-            iconColor: "text-emerald-600",
-          },
-          {
-            label:     "Kapasitas Venue",
-            value:     formatNumber(totalCapacity),
-            sub:       scopeSub,
-            icon:      Users,
-            iconBg:    "bg-sky-50",
-            iconColor: "text-sky-600",
-          },
-          {
-            label:     "Target Profit",
-            value:     formatCompact(totalProfit),
-            sub:       scopeSub,
-            icon:      TrendingUp,
-            iconBg:    "bg-indigo-50",
-            iconColor: "text-indigo-600",
-          },
-          {
-            label:     "Target Sponsorship",
-            value:     formatCompact(totalSponsor),
-            sub:       scopeSub,
-            icon:      Sparkles,
-            iconBg:    "bg-amber-50",
-            iconColor: "text-amber-600",
-          },
-        ])
+        setAllEvents(raw as EventData[])
+        setLoadFailed(false)
       })
       .catch((err) => {
+        if (cancelled) return
         console.error("Gagal mengambil data events:", err)
-        // Tampilkan KPI kosong saat error agar UI tetap valid
-        setKpis([
-          {
-            label:     "Total Event",
-            value:     "—",
-            sub:       "Gagal memuat data",
-            icon:      CalendarRange,
-            iconBg:    "bg-emerald-50",
-            iconColor: "text-emerald-600",
-          },
-          {
-            label:     "Total Kapasitas",
-            value:     "—",
-            sub:       "Gagal memuat data",
-            icon:      Users,
-            iconBg:    "bg-sky-50",
-            iconColor: "text-sky-600",
-          },
-          {
-            label:     "Target Profit",
-            value:     "—",
-            sub:       "Gagal memuat data",
-            icon:      TrendingUp,
-            iconBg:    "bg-indigo-50",
-            iconColor: "text-indigo-600",
-          },
-          {
-            label:     "Target Sponsorship",
-            value:     "—",
-            sub:       "Gagal memuat data",
-            icon:      Sparkles,
-            iconBg:    "bg-amber-50",
-            iconColor: "text-amber-600",
-          },
-        ])
+        setLoadFailed(true)
       })
-      .finally(() => setIsLoading(false))
-  }, [eventId])
+      .finally(() => {
+        if (!cancelled) setIsLoading(false)
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [])
+
+  const kpis: KPI[] | null = useMemo(() => {
+    if (loadFailed) {
+      return [
+        {
+          label:     "Total Event",
+          value:     "—",
+          sub:       "Gagal memuat data",
+          icon:      CalendarRange,
+          iconBg:    "bg-emerald-50",
+          iconColor: "text-emerald-600",
+        },
+        {
+          label:     "Total Kapasitas",
+          value:     "—",
+          sub:       "Gagal memuat data",
+          icon:      Users,
+          iconBg:    "bg-sky-50",
+          iconColor: "text-sky-600",
+        },
+        {
+          label:     "Target Profit",
+          value:     "—",
+          sub:       "Gagal memuat data",
+          icon:      TrendingUp,
+          iconBg:    "bg-indigo-50",
+          iconColor: "text-indigo-600",
+        },
+        {
+          label:     "Target Sponsorship",
+          value:     "—",
+          sub:       "Gagal memuat data",
+          icon:      Sparkles,
+          iconBg:    "bg-amber-50",
+          iconColor: "text-amber-600",
+        },
+      ]
+    }
+    if (!allEvents) return null
+
+    const scoped = eventId
+      ? allEvents.filter((e) => String(e.id) === eventId)
+      : allEvents
+    const isScoped = Boolean(eventId) && scoped.length > 0
+
+    const totalEvents   = allEvents.length
+    const totalCapacity = scoped.reduce((acc, e) => acc + Number(e.venue_capacity     ?? 0), 0)
+    const totalProfit   = scoped.reduce((acc, e) => acc + Number(e.target_profit      ?? 0), 0)
+    const totalSponsor  = scoped.reduce((acc, e) => acc + Number(e.target_sponsorship ?? 0), 0)
+
+    const scopeSub = isScoped ? "Event terpilih" : "Seluruh event"
+
+    return [
+      {
+        label:     "Total Event",
+        value:     `${totalEvents} Event`,
+        sub:       totalEvents === 0 ? "Belum ada event" : `${totalEvents} event terdaftar`,
+        icon:      CalendarRange,
+        iconBg:    "bg-emerald-50",
+        iconColor: "text-emerald-600",
+      },
+      {
+        label:     "Kapasitas Venue",
+        value:     formatNumber(totalCapacity),
+        sub:       scopeSub,
+        icon:      Users,
+        iconBg:    "bg-sky-50",
+        iconColor: "text-sky-600",
+      },
+      {
+        label:     "Target Profit",
+        value:     formatCompact(totalProfit),
+        sub:       scopeSub,
+        icon:      TrendingUp,
+        iconBg:    "bg-indigo-50",
+        iconColor: "text-indigo-600",
+      },
+      {
+        label:     "Target Sponsorship",
+        value:     formatCompact(totalSponsor),
+        sub:       scopeSub,
+        icon:      Sparkles,
+        iconBg:    "bg-amber-50",
+        iconColor: "text-amber-600",
+      },
+    ]
+  }, [allEvents, eventId, loadFailed])
 
   return (
     <section
