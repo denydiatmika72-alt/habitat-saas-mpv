@@ -218,13 +218,15 @@ Sejak 2026-07-20 komponen ini di-render di **`/dashboard/perencanaan`** (bukan `
 - Memuat `GET /api/events/:id` (sudah ter-scope `promotor_id` di backend) + `GET /api/budgets/:eventId`.
 - Aksi: "Kelola RAB" (→ `/dashboard/rab/[id]`) & hapus event. Hapus event membersihkan konteks
   (`setSelectedEventId("")`) lalu kembali ke `/dashboard` — kalau tidak, context memegang id event hantu.
-- **Hapus event TERSEDIA untuk promotor biasa** (diverifikasi 2026-07-21 — jangan diasumsikan
-  admin-only lagi): `DELETE /api/events/:id` dijaga `verifyToken` SAJA + cek kepemilikan
-  `promotor_id` (404 kalau bukan miliknya). Tombolnya ada di komponen ini. **Catatan risiko yang
-  BELUM ditangani:** `deleteEvent` tidak mengecek hutang fee cash / payout pending / order tiket
-  berbayar, dan relasi cascade menghapus data turunannya — jalur penghindaran hutang lewat hapus
-  event masih terbuka. Kalau suatu saat mau ditutup, tempatnya di `deleteEvent`
-  (`server/controllers/event.controller.js`), bukan di frontend. Lihat known-bugs [2026-07-21].
+- **⚠️ KOREKSI 2026-07-21 (sore) — hapus event SUDAH TIDAK tersedia untuk promotor.** Catatan lama di
+  baris ini menyatakan "hapus event TERSEDIA untuk promotor biasa" lewat `DELETE /api/events/:id`
+  (`verifyToken` + cek `promotor_id`); itu benar sampai siang hari yang sama, lalu **sengaja dibalik**
+  oleh founder. Sekarang endpoint itu **selalu 403** dan tombol di komponen ini hanya **MENGAJUKAN**
+  permintaan hapus ke admin. Alasannya persis "catatan risiko" yang dulu ditulis di sini: `deleteEvent`
+  tidak mengecek hutang fee cash / payout pending / order tiket berbayar, dan cascade menghapus data
+  turunannya → jalur penghindaran hutang. Risiko itu kini **DITUTUP** lewat gerbang admin (angka hutang
+  disodorkan ke admin sebelum ia memutuskan), bukan lewat cek hutang di `deleteEvent`. Lihat section
+  **"Permintaan Perubahan Event"** di bawah + known-bugs [2026-07-21].
 - Tanpa event terpilih → ajakan "Pilih event di Dashboard". Ganti event lewat pemilih tunggal di Dashboard
   KPI (ada tautan "Ganti event" di header kartu).
 - **⛔ JANGAN kembalikan daftar lintas-event di sini.** Dulu (sebelum 2026-07-21) komponen ini melisting
@@ -240,6 +242,54 @@ Sejak 2026-07-20 komponen ini di-render di **`/dashboard/perencanaan`** (bukan `
 juga dirender di `/dashboard/perencanaan`, ter-scope event aktif. Chart ini sempat HILANG (regresi commit
 `0842e0d`, dipulihkan 2026-07-21 — lihat known-bugs). **Beda dari donut di `/dashboard/pl-report`**: yang itu
 "Komposisi Pengeluaran" (realisasi, recharts); yang ini alokasi RAB (rencana, SVG manual). Bukan duplikat.
+
+## Permintaan Perubahan Event (approval admin) — berlaku sejak 2026-07-21
+
+**5 field event + penghapusan event TIDAK bisa lagi dieksekusi langsung promotor.** Semuanya lewat ajuan
+yang harus disetujui admin, terlacak penuh di tabel `EventChangeRequest`.
+
+**Yang terkunci** (`requestType` → kolom Event):
+`rename`→`title`, `venue_location`→`location`, `venue_capacity`→`venue_capacity`,
+`target_profit`→`target_profit`, `target_sponsor`→`target_sponsorship`, plus `delete` (hapus event).
+
+**Kenapa** (jangan longgarkan tanpa memahami ini): `deleteEvent` lama + relasi `onDelete: Cascade` menghapus
+`TicketOrder` Ticket Box CASH, yaitu satu-satunya dasar perhitungan **hutang fee** promotor ke nexEvent.
+Promotor berhutang cukup menghapus event → hutangnya lenyap, dan pelunasan-otomatis-saat-pencairan
+(Payout item #2) tak punya apa-apa untuk ditagih. Gerbang admin menutup itu **tanpa** menaruh logika cek
+hutang di jalur promotor — admin melihat ringkasan hutang/payout/order lalu memutuskan.
+
+**Alur:** promotor ajukan (event TETAP berjalan normal — jualan tiket dll tidak terpengaruh, hanya kelima
+field itu yang read-only) → email otomatis ke `ADMIN_EMAIL` → admin approve/reject di `/dashboard/admin` →
+approve MENERAPKAN perubahan (atau mengeksekusi penghapusan). **Promotor TIDAK dikirimi email** — pantau
+status in-app di "Riwayat Permintaan" (keputusan founder, jangan tambahkan email ke promotor).
+
+**Endpoint:**
+- Promotor: `POST /api/events/:id/change-requests` (`{ requestType, newValue }`; `newValue` tidak perlu untuk
+  `delete`) & `GET /api/events/:id/change-requests`. Keduanya `verifyToken` + cek kepemilikan, **TIDAK di-gate Pro**
+  (administrasi dasar event, pola sama `createEvent`).
+- Admin (`protect + requireAdmin`): `GET /api/admin/change-requests?status=pending|all`,
+  `PATCH /api/admin/change-requests/:id/approve`, `PATCH /api/admin/change-requests/:id/reject` (`{ adminNote }`).
+
+**Aturan implementasi yang WAJIB dipatuhi:**
+1. **`oldValue` SELALU dibaca server** dari record event saat ajuan dibuat — jangan pernah terima dari client.
+2. **Satu permintaan pending per (event, jenis)** → 409. Cegah dua usulan bertabrakan saat di-approve.
+3. **`prisma.event.delete` HANYA boleh ada di jalur approve admin.** `DELETE /api/events/:id` selalu 403;
+   route-nya sengaja dipertahankan agar klien lama dapat pesan jelas, bukan 404 misterius.
+4. **`EventChangeRequest.eventId` NULLABLE + `onDelete: SetNull`** (+ snapshot `eventTitle`) — DISENGAJA.
+   Kalau dijadikan `Cascade` seperti relasi Event lain, approve permintaan hapus akan menghapus baris
+   auditnya sendiri. **Jangan "rapikan" jadi NOT NULL/Cascade.**
+5. **Menambah field terkunci baru cukup di SATU tempat**: `LOCKED_FIELDS` di
+   `server/services/event-change-request.service.js` (label, tipe, validasi, peta kolom semua turun dari sana).
+   Cerminan front-end-nya ada di `event-change-request-panel.tsx` — ikut ditambah.
+6. **Belum ada `PATCH /api/events/:id` umum** (diverifikasi 2026-07-21 — tidak pernah ada). Endpoint lain yang
+   menyentuh Event (`updateStorefrontSettings`, `updateEventStorefrontInfo`, `togglePublish`, `approveStorefront`,
+   upload banner/logo) pakai allowlist kolom eksplisit & tidak menyentuh field terkunci. **Kalau nanti membuat
+   PATCH umum, WAJIB tolak kolom di `LOCKED_EVENT_COLUMNS`.**
+
+**File:** `services/event-change-request.service.js` (sumber tunggal), `controllers/event-change-request.controller.js`,
+`services/email.service.js` (`sendEventChangeRequestNotification`),
+`client/src/components/dashboard/event-change-request-panel.tsx` (promotor, dirender di `/dashboard/perencanaan`),
+`client/src/components/dashboard/admin-change-requests.tsx` (admin, dirender di `/dashboard/admin`).
 
 ## Invoice Model
 

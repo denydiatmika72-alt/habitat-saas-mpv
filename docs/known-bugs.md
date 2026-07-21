@@ -2855,6 +2855,13 @@ tidak akan terhitung** → catatan jadi bohong dan promotor salah membaca sisa k
 
 ## [2026-07-21] Klarifikasi: penghapusan event MEMANG tersedia untuk promotor (investigasi, bukan bug)
 
+> ⚠️ **SUDAH TIDAK BERLAKU per 2026-07-21 (hari yang sama, keputusan founder).** Entry ini benar saat
+> ditulis, tapi perilakunya sengaja **DIUBAH** beberapa jam kemudian: promotor **tidak bisa lagi**
+> menghapus event maupun mengubah 5 field terkunci secara langsung — semuanya lewat persetujuan admin.
+> "Konsekuensi 2" di bawah (jalur penghindaran hutang) itulah yang jadi alasan perubahannya, dan
+> sekarang **sudah ditutup**. Lihat entry **[2026-07-21] Permintaan Perubahan Event** di bawah.
+> Dipertahankan sebagai jejak: jangan pakai entry ini sebagai rujukan perilaku saat ini.
+
 - Konteks: dugaan bahwa promotor tidak bisa menghapus event (sengaja, agar tidak kabur dari hutang fee).
 - Temuan: **dugaan itu KELIRU.** `DELETE /api/events/:id` ada dan dijaga `verifyToken` SAJA (tanpa
   `requireAdmin`, tanpa `requireActivePro`); ownership dicek lewat `findFirst({ id, promotor_id })` →
@@ -2872,3 +2879,73 @@ tidak akan terhitung** → catatan jadi bohong dan promotor salah membaca sisa k
 - Tag: #event #delete #investigasi #fee-debt #catatan-risiko
 
 ---
+## [2026-07-21] Permintaan Perubahan Event (approval admin) — menutup penghindaran hutang lewat hapus event
+
+- Gejala/risiko: `deleteEvent` lama (`verifyToken` + cek `promotor_id` saja) menghapus event beserta
+  SELURUH data turunannya lewat relasi `onDelete: Cascade` — termasuk `TicketOrder` Ticket Box CASH
+  yang jadi satu-satunya dasar perhitungan **hutang fee** promotor ke nexEvent
+  (`DEBT_ORDER_WHERE` di `services/fee-debt.service.js` menyaring dari tabel order itu).
+  Promotor yang punya hutang fee cash cukup menghapus event-nya → hutang ikut lenyap dari sistem,
+  dan pelunasan-otomatis-saat-pencairan (Payout item #2) tidak lagi punya apa-apa untuk ditagih.
+  Ini adalah "Konsekuensi 2" yang dicatat sebagai risiko terbuka di entry investigasi sebelumnya.
+- Root cause: tidak ada gerbang apa pun antara niat promotor dan eksekusi penghapusan. Selain itu 5 field
+  identitas/target event (`title`, `location`, `venue_capacity`, `target_profit`, `target_sponsorship`)
+  bersifat sekali-set saat pembuatan — tidak ada jalur ubah resmi sama sekali, sehingga promotor yang
+  perlu koreksi data cenderung memilih "hapus lalu buat ulang", persis aksi yang berisiko itu.
+- Keputusan founder: kelima field + penghapusan event dipindah ke alur **ajuan promotor → persetujuan admin**,
+  terlacak penuh di sistem. Sengaja BUKAN dengan menanam cek hutang di jalur promotor: admin sebagai
+  gerbang + angka hutang yang disodorkan ke admin sudah cukup, dan tidak menambah logika uang baru.
+- File terkait:
+  - `server/prisma/schema.prisma` (model baru `EventChangeRequest`)
+  - `server/services/event-change-request.service.js` (BARU — sumber tunggal peta field/label/validasi)
+  - `server/controllers/event-change-request.controller.js` (BARU — handler promotor + admin)
+  - `server/controllers/event.controller.js` (`deleteEvent` → selalu 403)
+  - `server/routes/event.routes.js`, `server/src/routes/admin.routes.js`
+  - `server/services/email.service.js` (`sendEventChangeRequestNotification`)
+  - `client/src/components/dashboard/event-change-request-panel.tsx` (BARU — ajuan + riwayat promotor)
+  - `client/src/components/dashboard/admin-change-requests.tsx` (BARU — panel persetujuan admin)
+  - `client/src/components/dashboard/document-table.tsx`, `client/src/app/dashboard/perencanaan/page.tsx`,
+    `client/src/app/dashboard/admin/page.tsx`
+- Fix:
+  1. Model `EventChangeRequest` (eventId, eventTitle, promotorId, requestType, oldValue, newValue,
+     status, adminNote, reviewedBy, reviewedAt, createdAt).
+  2. `DELETE /api/events/:id` sekarang **selalu 403** (route sengaja dipertahankan agar klien lama dapat
+     pesan jelas, bukan 404 misterius). `prisma.event.delete` **hanya** dieksekusi di jalur approve admin.
+  3. Endpoint promotor `POST/GET /api/events/:id/change-requests` (cek kepemilikan; `oldValue` SELALU dibaca
+     server dari record event — nilai dari client tidak dipercaya; satu pending per (event, jenis) → 409).
+  4. Endpoint admin `GET /api/admin/change-requests` + `PATCH .../approve|reject`. GET menyertakan
+     `deleteImpact` untuk permintaan hapus yang pending: hutang fee cash event (reuse `getEventFeeDebt`,
+     bukan filter baru), pencairan pending promotor, dan order tiket berbayar.
+  5. Email notifikasi ke `ADMIN_EMAIL` mengikuti pola `sendNewUserNotification` (fire-and-forget).
+  6. UI promotor: panel field terkunci + "Riwayat Permintaan" di `/dashboard/perencanaan`; tombol hapus di
+     `document-table.tsx` jadi "Ajukan Hapus". UI admin: seksi baru di `/dashboard/admin`.
+- Jebakan yang sudah digigit sekali saat implementasi (JANGAN diulang):
+  - **`EventChangeRequest.eventId` sengaja NULLABLE + `onDelete: SetNull`** (plus snapshot `eventTitle`).
+    Kalau FK-nya `Cascade` seperti relasi Event lain, approve permintaan hapus akan **menghapus baris
+    auditnya sendiri** — jejak hilang justru pada aksi yang paling butuh jejak. Jangan "rapikan" jadi NOT NULL.
+  - **Urutan di approve tipe delete**: update status → BARU `event.delete`. Kalau dibalik, `SetNull` sudah
+    jalan tapi update setelahnya masih menemukan baris (eventId null) — statusnya benar, tapi mengandalkan
+    urutan yang rapuh; urutan sekarang eksplisit dan aman.
+- Catatan: TIDAK ada endpoint edit langsung yang perlu "dikunci" — audit menemukan **`PATCH /api/events/:id`
+  umum tidak pernah ada**. Endpoint lain yang menyentuh Event (`updateStorefrontSettings`,
+  `updateEventStorefrontInfo`, `togglePublish`, `approveStorefront`, upload banner/logo) semuanya memakai
+  allowlist kolom eksplisit dan tidak satu pun menyentuh 5 field terkunci. Kalau nanti ada yang membuat
+  PATCH umum, WAJIB menolak kolom di `LOCKED_EVENT_COLUMNS`.
+- Tag: #event #delete #fee-debt #approval-flow #admin #keamanan #audit-trail
+
+---
+
+## [2026-07-21] Promotor tidak lagi bisa mengubah 5 field event & menghapus event secara langsung
+
+- Perubahan perilaku (BUKAN bug — dicatat supaya tidak "diperbaiki" balik oleh sesi berikutnya):
+  - **Nama event, lokasi venue, kapasitas venue, target profit, target sponsor** hanya berubah setelah
+    admin menyetujui permintaan. Field-nya tampil read-only di `/dashboard/perencanaan`.
+  - **Hapus event** tidak lagi dieksekusi promotor. `DELETE /api/events/:id` → 403 untuk siapa pun.
+  - Selama permintaan pending, **event tetap berjalan 100% normal** — penjualan tiket, sponsor, keuangan,
+    semuanya tidak tersentuh. Yang terkunci hanya kelima field itu.
+  - Promotor memantau status (Menunggu/Disetujui/Ditolak + catatan admin) di seksi "Riwayat Permintaan".
+    **Tidak ada email ke promotor** — status in-app sudah cukup (keputusan founder). Email HANYA ke admin.
+- Yang membalikkan catatan lama: entry **[2026-07-21] Klarifikasi: penghapusan event MEMANG tersedia untuk
+  promotor** dan bagian CLAUDE.md "Document Table" yang menyatakan hapus event tersedia untuk promotor biasa.
+  Keduanya sudah dikoreksi. Perilaku yang berlaku sekarang adalah yang di entry ini.
+- Tag: #event #perubahan-perilaku #approval-flow #dokumentasi
