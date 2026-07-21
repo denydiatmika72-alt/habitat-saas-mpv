@@ -11,13 +11,17 @@
 // Sekarang: hanya baris event aktif. Ganti event dilakukan di pemilih tunggal
 // Dashboard KPI (/dashboard) — ada tautan "Ganti event" di bawah. JANGAN bangun
 // ulang daftar lintas-event di sini dalam bentuk apa pun.
+//
+// PERUBAHAN 2026-07-21 (kedua): tombol hapus event TIDAK lagi menghapus langsung.
+// Ia mengajukan permintaan hapus yang harus disetujui admin (lihat
+// EventChangeRequestPanel + CLAUDE.md "Permintaan Perubahan Event"). JANGAN
+// kembalikan axios.delete ke sini.
 // ============================================================================
 
 import { useEffect, useState } from "react"
 import axios from "axios"
 import Link from "next/link"
 import { CalendarRange, RotateCw, Trash2 } from "lucide-react"
-import { useRouter } from "next/navigation"
 import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from "@/components/ui/table"
@@ -46,10 +50,10 @@ interface EventDetail {
 }
 
 export function DocumentTable() {
-  const { selectedEventId, setSelectedEventId } = useSelectedEvent()
-  const router = useRouter()
+  const { selectedEventId } = useSelectedEvent()
   const [event, setEvent] = useState<EventDetail | null>(null)
   const [isLoading, setIsLoading] = useState(false)
+  const [isRequestingDelete, setIsRequestingDelete] = useState(false)
 
   useEffect(() => {
     if (!selectedEventId) {
@@ -68,19 +72,39 @@ export function DocumentTable() {
       .finally(() => setIsLoading(false))
   }, [selectedEventId])
 
-  const handleDeleteEvent = async () => {
+  // PERUBAHAN 2026-07-21: dulu ini axios.delete langsung ke /api/events/:id.
+  // Hapus event sekarang WAJIB lewat persetujuan admin (endpoint promotor-nya sudah 403),
+  // karena hapus langsung + relasi cascade menghapus order Ticket Box cash yang jadi dasar
+  // hutang fee ke nexEvent. Tombol ini kini hanya MENGAJUKAN permintaan.
+  // Konteks event sengaja TIDAK dibersihkan: event masih ada & tetap dipakai normal
+  // selama permintaan menunggu keputusan admin.
+  const handleRequestDelete = async () => {
     if (!event) return
-    if (!confirm(`Hapus event "${event.title}" beserta seluruh datanya secara permanen?`)) return
+    if (
+      !confirm(
+        `Ajukan penghapusan event "${event.title}"?\n\n` +
+          "Event TIDAK langsung terhapus. Permintaan dikirim ke admin untuk ditinjau, " +
+          "dan event tetap berjalan normal selama menunggu keputusan."
+      )
+    )
+      return
+    setIsRequestingDelete(true)
     try {
       const token = localStorage.getItem("token")
-      await axios.delete(`/api/events/${event.id}`, {
-        headers: { Authorization: `Bearer ${token}` },
-      })
-      // Event aktif sudah tidak ada → bersihkan konteks & kembali ke pemilih event.
-      setSelectedEventId("")
-      router.push("/dashboard")
-    } catch {
-      alert("❌ Gagal menghapus event.")
+      await axios.post(
+        `/api/events/${event.id}/change-requests`,
+        { requestType: "delete" },
+        { headers: { Authorization: `Bearer ${token}` } }
+      )
+      alert("✅ Permintaan hapus event terkirim. Statusnya bisa dipantau di Riwayat Permintaan.")
+    } catch (err) {
+      const message =
+        axios.isAxiosError(err) && err.response?.data?.message
+          ? err.response.data.message
+          : "Gagal mengirim permintaan hapus event."
+      alert(`❌ ${message}`)
+    } finally {
+      setIsRequestingDelete(false)
     }
   }
 
@@ -150,7 +174,11 @@ export function DocumentTable() {
                   </TableCell>
                 </TableRow>
               ) : (
-                <EventTableRow event={event} onDelete={handleDeleteEvent} />
+                <EventTableRow
+                  event={event}
+                  onRequestDelete={handleRequestDelete}
+                  isRequestingDelete={isRequestingDelete}
+                />
               )}
             </TableBody>
           </Table>
@@ -162,7 +190,15 @@ export function DocumentTable() {
 
 // ── EventTableRow: baris RAB event aktif ────────────────────────────────────────
 
-function EventTableRow({ event, onDelete }: { event: EventDetail; onDelete: () => void }) {
+function EventTableRow({
+  event,
+  onRequestDelete,
+  isRequestingDelete,
+}: {
+  event: EventDetail
+  onRequestDelete: () => void
+  isRequestingDelete: boolean
+}) {
   const [budgetTotal, setBudgetTotal] = useState<number | null>(null)
   const [isLoadingBudget, setIsLoadingBudget] = useState(true)
 
@@ -242,13 +278,15 @@ function EventTableRow({ event, onDelete }: { event: EventDetail; onDelete: () =
             </Button>
           </Link>
           <Button
-            size="icon"
+            size="sm"
             variant="outline"
-            onClick={onDelete}
-            className="h-8 w-8 text-red-500 border-red-200 hover:bg-red-50 hover:text-red-600"
-            title="Hapus Event"
+            onClick={onRequestDelete}
+            disabled={isRequestingDelete}
+            className="h-8 gap-1.5 border-red-200 text-red-500 hover:bg-red-50 hover:text-red-600"
+            title="Ajukan penghapusan event ke admin"
           >
             <Trash2 className="h-4 w-4" />
+            {isRequestingDelete ? "Mengirim..." : "Ajukan Hapus"}
           </Button>
         </div>
       </TableCell>

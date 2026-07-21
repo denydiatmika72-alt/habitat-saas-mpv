@@ -17,6 +17,7 @@ import Link from "next/link"
 import { ArrowLeft, Calculator, ClipboardList, PackageOpen, ArrowRight } from "lucide-react"
 import { DocumentTable } from "@/components/dashboard/document-table"
 import { BudgetAllocationCard } from "@/components/dashboard/budget-donut-chart"
+import { EventChangeRequestPanel } from "@/components/dashboard/event-change-request-panel"
 import PurchaseOrderTab from "@/components/dashboard/PurchaseOrderTab"
 import { Button } from "@/components/ui/button"
 import { useSelectedEvent } from "@/contexts/event-context"
@@ -59,6 +60,11 @@ export default function PerencanaanPage() {
 
       {/* ── RAB event aktif ──────────────────────────────────────────────── */}
       <DocumentTable />
+
+      {/* ── Data event terkunci + Riwayat Permintaan ─────────────────────────
+          Ditempatkan di sini (bukan halaman sendiri) karena berdampingan dengan
+          baris event di DocumentTable — tempat tombol "Ajukan Hapus" berada. */}
+      {selectedEventId && <EventChangeRequestPanel eventId={selectedEventId} />}
 
       {/* ── Distribusi Biaya Event (donut alokasi RAB) ───────────────────────
           Dipulihkan 2026-07-21: chart ini hilang tanpa sengaja saat /dashboard
