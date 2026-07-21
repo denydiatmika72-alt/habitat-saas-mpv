@@ -3112,3 +3112,40 @@ tidak akan terhitung** → catatan jadi bohong dan promotor salah membaca sisa k
   (mis. Kerjasama membaca `data.byStatus` → crash → error boundary → guard tak pernah jalan, dan sempat
   terbaca sebagai "fix gagal"). Backend asli membalas 404 saat event hilang, jadi mock harus 404 juga.
 - Tag: #ux #event-delete #event-context #redirect #toast #react-hooks #loop-safety
+
+---
+
+## [2026-07-21] Fitur: konsolidasi administrasi event ke halaman "Setup Event"
+
+- **Konteks (bukan bug — keputusan navigasi founder):** administrasi event tercecer di tiga tempat berbeda —
+  panel "Data Event Terkunci" (ajuan ubah 5 field + Riwayat Permintaan) menumpang di `/dashboard/perencanaan`,
+  tombol "Ajukan Hapus" menempel di baris `document-table.tsx`, dan "Buat Event Baru" hanya ada di top-bar
+  + Dashboard KPI. Akibatnya tidak ada satu tempat pun yang menjawab "saya mau mengurus event-nya sendiri".
+- **Perubahan:** halaman baru **`/dashboard/setup-event`** mengumpulkan SELURUH administrasi event:
+  Buat Event Baru → Ajukan Perubahan (5 field terkunci) → Ajukan Hapus → Riwayat Permintaan.
+  `/dashboard/perencanaan` kembali murni RAB/anggaran (RAB + donut alokasi + PO + pintu Simulasi).
+- **Anti-duplikasi logic:** ajuan hapus TIDAK ditulis ulang di halaman baru. Ia dipindahkan MASUK ke
+  `event-change-request-panel.tsx` — jadi satu fungsi `submitRequest(type, newValue?)` melayani kelima field
+  terkunci DAN `requestType: "delete"`. `document-table.tsx` kehilangan tombol + handler-nya sepenuhnya
+  (diganti tautan teks "Setup Event"), sehingga tidak ada dua implementasi yang bisa menyimpang.
+- **Akses:** item sidebar "Setup Event" (ungrouped, tier atas tepat di bawah "Dashboard" — ia bukan bagian dari
+  5 dashboard kategori) + ikon gerigi di top-bar. Tombol "Buat Event Baru" di top-bar DIPERTAHANKAN: aksi
+  tersering, dan keduanya bermuara ke flow yang sama (`/dashboard/create-event`).
+- **`useEventGuard` SENGAJA TIDAK dipakai di halaman ini** (dan itu bukan kelalaian):
+  1. Halaman ini tetap berguna TANPA event terpilih — "Buat Event Baru" justru jalan keluar dari kondisi itu.
+     Memantulkan user ke `/dashboard` malah menjebak orang yang belum punya event sama sekali.
+  2. Halaman ini tidak memuat daftar event, jadi tidak punya bahan untuk `events`/`ready` yang dibutuhkan hook.
+  Deteksi event mati tetap ada, lewat **jalur 404** yang sama seperti `document-table.tsx`:
+  `GET /api/events/:id` gagal 404/403 → `invalidateEvent` → pilihan dibersihkan global + toast, dan halaman
+  jatuh ke empty state **tanpa redirect**. Error jaringan tidak dihitung mati.
+- **Keselamatan loop:** efek pemuat event di halaman baru hanya bergantung pada `selectedEventId` (primitif);
+  `invalidateEvent` sengaja di luar deps karena identitasnya berubah tiap `searchParams` berubah, dan
+  `invalidateEvent` sendiri sudah idempoten/terminal. Pola persis `document-table.tsx`.
+- **File:** `client/src/app/dashboard/setup-event/page.tsx` (baru),
+  `client/src/components/dashboard/event-change-request-panel.tsx`,
+  `client/src/components/dashboard/document-table.tsx`,
+  `client/src/app/dashboard/perencanaan/page.tsx`,
+  `client/src/components/dashboard/sidebar.tsx`, `client/src/components/dashboard/top-bar.tsx`.
+- **Frontend-only** — tidak ada perubahan backend/schema. Endpoint tetap
+  `POST/GET /api/events/:id/change-requests`. `npx tsc --noEmit` lolos.
+- Tag: #navigasi #event-change-request #konsolidasi #frontend-only

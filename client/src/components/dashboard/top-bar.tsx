@@ -2,7 +2,7 @@
 
 import Link from "next/link"
 import { useRouter } from "next/navigation"
-import { Bell, Search, Plus, LogOut } from "lucide-react"
+import { Bell, Search, Plus, LogOut, Settings2 } from "lucide-react"
 import { Input } from "@/components/ui/input"
 import { Button } from "@/components/ui/button"
 import { useUser } from "@/hooks/useUser"
@@ -58,6 +58,22 @@ export function TopBar() {
           <Bell className="size-4" />
           <span className="absolute right-2.5 top-2.5 size-2 rounded-full bg-emerald-800 ring-2 ring-white" />
         </Button>
+
+        {/* Pintu cepat ke pusat administrasi event (buat / ubah data terkunci /
+            ajukan hapus / riwayat permintaan). Tombol "Buat Event Baru" di
+            sebelahnya SENGAJA dipertahankan: aksi paling sering dipakai, dan
+            keduanya bermuara ke flow yang sama (/dashboard/create-event). */}
+        <Link href="/dashboard/setup-event">
+          <Button
+            variant="outline"
+            size="icon"
+            className="size-10 border-slate-200 bg-white text-slate-900 hover:bg-slate-100"
+            title="Setup Event — ubah data event, ajukan hapus, riwayat permintaan"
+          >
+            <Settings2 className="size-4" />
+            <span className="sr-only">Setup Event</span>
+          </Button>
+        </Link>
 
         <Link href="/dashboard/create-event">
           <Button className="hidden h-10 gap-2 bg-emerald-800 font-medium text-white hover:bg-emerald-900 sm:inline-flex">

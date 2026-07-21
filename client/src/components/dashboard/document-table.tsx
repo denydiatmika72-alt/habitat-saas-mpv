@@ -16,12 +16,17 @@
 // Ia mengajukan permintaan hapus yang harus disetujui admin (lihat
 // EventChangeRequestPanel + CLAUDE.md "Permintaan Perubahan Event"). JANGAN
 // kembalikan axios.delete ke sini.
+//
+// PERUBAHAN 2026-07-21 (ketiga): tombol "Ajukan Hapus" ikut DICABUT dari sini.
+// Seluruh administrasi event (buat / ubah field terkunci / ajukan hapus /
+// riwayat) pindah ke /dashboard/setup-event — satu pintu, satu implementasi.
+// Komponen ini murni soal RAB lagi. JANGAN tambahkan kembali aksi hapus di sini.
 // ============================================================================
 
 import { useEffect, useState } from "react"
 import axios from "axios"
 import Link from "next/link"
-import { CalendarRange, RotateCw, Trash2 } from "lucide-react"
+import { CalendarRange, RotateCw, Settings2 } from "lucide-react"
 import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from "@/components/ui/table"
@@ -53,7 +58,6 @@ export function DocumentTable() {
   const { selectedEventId, invalidateEvent } = useSelectedEvent()
   const [event, setEvent] = useState<EventDetail | null>(null)
   const [isLoading, setIsLoading] = useState(false)
-  const [isRequestingDelete, setIsRequestingDelete] = useState(false)
 
   // Halaman Perencanaan TIDAK memuat daftar event, jadi ia tidak bisa memakai
   // useEventGuard (yang mendeteksi lewat daftar). Di sini deteksinya lewat 404
@@ -90,42 +94,6 @@ export function DocumentTable() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedEventId])
 
-  // PERUBAHAN 2026-07-21: dulu ini axios.delete langsung ke /api/events/:id.
-  // Hapus event sekarang WAJIB lewat persetujuan admin (endpoint promotor-nya sudah 403),
-  // karena hapus langsung + relasi cascade menghapus order Ticket Box cash yang jadi dasar
-  // hutang fee ke nexEvent. Tombol ini kini hanya MENGAJUKAN permintaan.
-  // Konteks event sengaja TIDAK dibersihkan: event masih ada & tetap dipakai normal
-  // selama permintaan menunggu keputusan admin.
-  const handleRequestDelete = async () => {
-    if (!event) return
-    if (
-      !confirm(
-        `Ajukan penghapusan event "${event.title}"?\n\n` +
-          "Event TIDAK langsung terhapus. Permintaan dikirim ke admin untuk ditinjau, " +
-          "dan event tetap berjalan normal selama menunggu keputusan."
-      )
-    )
-      return
-    setIsRequestingDelete(true)
-    try {
-      const token = localStorage.getItem("token")
-      await axios.post(
-        `/api/events/${event.id}/change-requests`,
-        { requestType: "delete" },
-        { headers: { Authorization: `Bearer ${token}` } }
-      )
-      alert("✅ Permintaan hapus event terkirim. Statusnya bisa dipantau di Riwayat Permintaan.")
-    } catch (err) {
-      const message =
-        axios.isAxiosError(err) && err.response?.data?.message
-          ? err.response.data.message
-          : "Gagal mengirim permintaan hapus event."
-      alert(`❌ ${message}`)
-    } finally {
-      setIsRequestingDelete(false)
-    }
-  }
-
   return (
     <section className="rounded-xl border border-slate-200 bg-white">
       <div className="flex flex-col gap-4 border-b border-slate-200 p-5 md:flex-row md:items-center md:justify-between">
@@ -136,12 +104,22 @@ export function DocumentTable() {
           </p>
         </div>
         {selectedEventId && (
-          <Link
-            href="/dashboard"
-            className="shrink-0 text-sm font-medium text-emerald-700 underline underline-offset-2 hover:text-emerald-800"
-          >
-            Ganti event
-          </Link>
+          <div className="flex shrink-0 items-center gap-4">
+            <Link
+              href="/dashboard/setup-event"
+              className="inline-flex items-center gap-1.5 text-sm font-medium text-slate-500 transition-colors hover:text-slate-900"
+              title="Ubah data event / ajukan hapus event"
+            >
+              <Settings2 className="size-4" />
+              Setup Event
+            </Link>
+            <Link
+              href="/dashboard"
+              className="text-sm font-medium text-emerald-700 underline underline-offset-2 hover:text-emerald-800"
+            >
+              Ganti event
+            </Link>
+          </div>
         )}
       </div>
 
@@ -192,11 +170,7 @@ export function DocumentTable() {
                   </TableCell>
                 </TableRow>
               ) : (
-                <EventTableRow
-                  event={event}
-                  onRequestDelete={handleRequestDelete}
-                  isRequestingDelete={isRequestingDelete}
-                />
+                <EventTableRow event={event} />
               )}
             </TableBody>
           </Table>
@@ -208,15 +182,7 @@ export function DocumentTable() {
 
 // ── EventTableRow: baris RAB event aktif ────────────────────────────────────────
 
-function EventTableRow({
-  event,
-  onRequestDelete,
-  isRequestingDelete,
-}: {
-  event: EventDetail
-  onRequestDelete: () => void
-  isRequestingDelete: boolean
-}) {
+function EventTableRow({ event }: { event: EventDetail }) {
   const [budgetTotal, setBudgetTotal] = useState<number | null>(null)
   const [isLoadingBudget, setIsLoadingBudget] = useState(true)
 
@@ -295,17 +261,6 @@ function EventTableRow({
               Kelola RAB
             </Button>
           </Link>
-          <Button
-            size="sm"
-            variant="outline"
-            onClick={onRequestDelete}
-            disabled={isRequestingDelete}
-            className="h-8 gap-1.5 border-red-200 text-red-500 hover:bg-red-50 hover:text-red-600"
-            title="Ajukan penghapusan event ke admin"
-          >
-            <Trash2 className="h-4 w-4" />
-            {isRequestingDelete ? "Mengirim..." : "Ajukan Hapus"}
-          </Button>
         </div>
       </TableCell>
     </TableRow>

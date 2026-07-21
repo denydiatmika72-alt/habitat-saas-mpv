@@ -1,20 +1,25 @@
 "use client"
 
 // ============================================================================
-// EventChangeRequestPanel — ajukan perubahan 5 field terkunci + riwayat status.
+// EventChangeRequestPanel — ajukan perubahan 5 field terkunci + HAPUS EVENT,
+// lengkap dengan riwayat statusnya.
 // ----------------------------------------------------------------------------
 // Sejak 2026-07-21 nama event, lokasi venue, kapasitas venue, target profit, dan
 // target sponsor TIDAK bisa diubah langsung promotor — harus lewat persetujuan
 // admin. Panel ini adalah satu-satunya pintu ajuan di sisi promotor.
 //
-// Ajuan HAPUS EVENT tidak ada di sini: tombolnya menempel pada baris event di
-// DocumentTable (tempat tombol hapus lama berada) supaya tidak ada dua pintu ke
-// aksi yang sama. Riwayatnya tetap muncul di daftar bawah panel ini.
+// PERUBAHAN 2026-07-21 (konsolidasi navigasi): ajuan HAPUS EVENT sekarang ADA di
+// sini juga. Dulu tombolnya menempel pada baris event di DocumentTable; itu
+// DICABUT supaya seluruh administrasi event (buat / ubah / hapus / riwayat)
+// berkumpul di satu halaman: /dashboard/setup-event. JANGAN kembalikan tombol
+// ajuan hapus ke DocumentTable — nanti ada dua implementasi yang bisa menyimpang.
+//
+// Panel ini dirender HANYA di /dashboard/setup-event.
 // ============================================================================
 
 import { useCallback, useEffect, useState } from "react"
 import axios from "axios"
-import { ClipboardCheck, Clock, Lock, RotateCw, ShieldCheck, XCircle } from "lucide-react"
+import { ClipboardCheck, Clock, Lock, RotateCw, ShieldCheck, Trash2, XCircle } from "lucide-react"
 import { Button } from "@/components/ui/button"
 
 // requestType → label + cara render nilainya. Cerminan LOCKED_FIELDS di
@@ -118,13 +123,15 @@ export function EventChangeRequestPanel({ eventId }: { eventId: string }) {
     setFeedback(null)
   }
 
-  async function submitRequest(type: string) {
+  // SATU-SATUNYA jalur pengiriman ajuan di sisi promotor — dipakai kelima field
+  // terkunci MAUPUN ajuan hapus event (`type === "delete"`, tanpa newValue).
+  async function submitRequest(type: string, newValue?: string) {
     setSubmitting(true)
     setFeedback(null)
     try {
       await axios.post(
         `/api/events/${eventId}/change-requests`,
-        { requestType: type, newValue: draft },
+        type === "delete" ? { requestType: type } : { requestType: type, newValue: newValue ?? draft },
         { headers: authHeaders() }
       )
       setOpenType(null)
@@ -140,6 +147,19 @@ export function EventChangeRequestPanel({ eventId }: { eventId: string }) {
     } finally {
       setSubmitting(false)
     }
+  }
+
+  async function requestDelete() {
+    if (!event) return
+    if (
+      !confirm(
+        `Ajukan penghapusan event "${event.title}"?\n\n` +
+          "Event TIDAK langsung terhapus. Permintaan dikirim ke admin untuk ditinjau, " +
+          "dan event tetap berjalan normal selama menunggu keputusan."
+      )
+    )
+      return
+    await submitRequest("delete")
   }
 
   if (loading) {
@@ -262,6 +282,43 @@ export function EventChangeRequestPanel({ eventId }: { eventId: string }) {
             </div>
           )
         })}
+      </div>
+
+      {/* ── Ajukan Hapus Event ─────────────────────────────────────────────
+          Pindahan dari DocumentTable (2026-07-21). Event TIDAK langsung terhapus:
+          endpoint DELETE /api/events/:id untuk promotor selalu 403, penghapusan
+          hanya dieksekusi admin saat menyetujui ajuan ini. */}
+      <div className="border-t border-slate-200 p-5">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <div className="min-w-0">
+            <p className="text-xs font-medium uppercase tracking-[0.12em] text-red-600">
+              Hapus Event
+            </p>
+            <p className="mt-1 text-sm text-slate-600">
+              Event tetap berjalan normal selama permintaan menunggu keputusan admin.
+              Penghapusan diblokir kalau masih ada hutang fee.
+            </p>
+          </div>
+
+          {pendingTypes.has("delete") ? (
+            <span className="inline-flex shrink-0 items-center gap-1.5 rounded-full border border-amber-200 bg-amber-50 px-3 py-1 text-xs font-medium text-amber-700">
+              <Clock className="size-3.5" />
+              Menunggu persetujuan admin
+            </span>
+          ) : (
+            <Button
+              size="sm"
+              variant="outline"
+              disabled={submitting}
+              onClick={() => void requestDelete()}
+              className="h-8 shrink-0 gap-1.5 border-red-200 text-red-500 hover:bg-red-50 hover:text-red-600"
+              title="Ajukan penghapusan event ke admin"
+            >
+              <Trash2 className="size-4" />
+              {submitting ? "Mengirim..." : "Ajukan Hapus"}
+            </Button>
+          )}
+        </div>
       </div>
 
       {/* ── Riwayat Permintaan ────────────────────────────────────────────── */}

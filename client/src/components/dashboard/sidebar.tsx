@@ -14,6 +14,7 @@ import {
   ShieldCheck,
   TrendingUp,
   ChevronDown,
+  Settings2,
 } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { useUser } from "@/hooks/useUser"
@@ -47,6 +48,12 @@ type NavItem =
 
 const nav: NavItem[] = [
   { label: "Dashboard", icon: LayoutDashboard, href: "/dashboard" },
+  // Setup Event sengaja UNGROUPED di tier atas, tepat di bawah "Dashboard": ia bukan
+  // bagian dari salah satu dari 5 dashboard kategori — isinya administrasi event
+  // itu sendiri (buat / ubah field terkunci / ajukan hapus / riwayat permintaan),
+  // dan jadi jalan keluar saat user belum punya event sama sekali. `activePrefix`
+  // menyalakan item ini juga saat user berada di form /dashboard/create-event.
+  { label: "Setup Event", icon: Settings2, href: "/dashboard/setup-event", activePrefix: "/dashboard/create-event" },
   // Pola hub PENUH (sejak 2026-07-18): "Dashboard Kerjasama" = SATU-SATUNYA pintu masuk sidebar untuk
   // kategori Kerjasama — sama seperti Dashboard Keuangan & Ticketing. "Sponsor & Partner" (/dashboard/sponsor)
   // & "Invoice & Purchase Order" (/dashboard/invoice) SUDAH DIHAPUS dari sidebar; halamannya tetap ada,

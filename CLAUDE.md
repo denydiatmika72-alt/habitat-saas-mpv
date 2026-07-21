@@ -216,8 +216,10 @@ Alur: **homepage discovery → storefront event → checkout.** `is_published` d
 Sejak 2026-07-20 komponen ini di-render di **`/dashboard/perencanaan`** (bukan `/dashboard`), dan sejak
 2026-07-21 isinya **RAB SATU event saja** — yaitu event aktif di `EventProvider`:
 - Memuat `GET /api/events/:id` (sudah ter-scope `promotor_id` di backend) + `GET /api/budgets/:eventId`.
-- Aksi: "Kelola RAB" (→ `/dashboard/rab/[id]`) & hapus event. Hapus event membersihkan konteks
-  (`setSelectedEventId("")`) lalu kembali ke `/dashboard` — kalau tidak, context memegang id event hantu.
+- Aksi: **"Kelola RAB" saja** (→ `/dashboard/rab/[id]`). **⚠️ KOREKSI 2026-07-21 (malam): tombol
+  "Ajukan Hapus" SUDAH TIDAK ADA di sini** — pindah ke `/dashboard/setup-event` (lihat section
+  "Setup Event"). Yang tersisa hanya tautan teks "Setup Event" di header kartu. JANGAN kembalikan
+  aksi hapus/ajuan-hapus ke komponen ini.
 - **⚠️ KOREKSI 2026-07-21 (sore) — hapus event SUDAH TIDAK tersedia untuk promotor.** Catatan lama di
   baris ini menyatakan "hapus event TERSEDIA untuk promotor biasa" lewat `DELETE /api/events/:id`
   (`verifyToken` + cek `promotor_id`); itu benar sampai siang hari yang sama, lalu **sengaja dibalik**
@@ -318,8 +320,32 @@ status in-app di "Riwayat Permintaan" (keputusan founder, jangan tambahkan email
 
 **File:** `services/event-change-request.service.js` (sumber tunggal), `controllers/event-change-request.controller.js`,
 `services/email.service.js` (`sendEventChangeRequestNotification`),
-`client/src/components/dashboard/event-change-request-panel.tsx` (promotor, dirender di `/dashboard/perencanaan`),
+`client/src/components/dashboard/event-change-request-panel.tsx` (promotor — dirender **HANYA di
+`/dashboard/setup-event`** sejak 2026-07-21 malam; sebelumnya di `/dashboard/perencanaan`),
 `client/src/components/dashboard/admin-change-requests.tsx` (admin, dirender di `/dashboard/admin`).
+
+## Setup Event (`/dashboard/setup-event`) — pusat administrasi event, sejak 2026-07-21 (malam)
+
+**Satu halaman untuk semua urusan event SEBAGAI OBJEK.** Menggantikan penempatan lama yang tercecer
+(panel ajuan di `/dashboard/perencanaan` + tombol "Ajukan Hapus" di `document-table.tsx`).
+
+Isi (urut dari atas): **Buat Event Baru** (tautan ke flow lama `/dashboard/create-event`, tidak diubah) →
+kartu konteks event aktif ("Ganti event" → `/dashboard`) → **`EventChangeRequestPanel`** yang memuat
+**Ajukan Perubahan** (5 field terkunci), **Ajukan Hapus**, dan **Riwayat Permintaan**.
+
+- **Anti-duplikasi:** ajuan hapus TIDAK punya implementasi sendiri. Ia jadi cabang `requestType: "delete"`
+  di fungsi `submitRequest(type, newValue?)` milik panel — sumber tunggal untuk SELURUH jenis ajuan.
+  **JANGAN bangun handler ajuan hapus kedua di komponen lain.**
+- **Event dari `EventProvider`** (`useSelectedEvent`), bukan state lokal / dropdown sendiri.
+- **`useEventGuard` SENGAJA TIDAK dipakai** — halaman ini tetap berguna tanpa event terpilih ("Buat Event
+  Baru" justru jalan keluarnya), dan ia tidak memuat daftar event yang dibutuhkan hook itu. Tanpa event
+  terpilih → empty state, **bukan redirect**. Deteksi event mati lewat jalur 404 `GET /api/events/:id` →
+  `invalidateEvent` (pola sama `document-table.tsx`).
+- **Akses:** item sidebar "Setup Event" (ungrouped, tier atas tepat di bawah "Dashboard"; `activePrefix:
+  "/dashboard/create-event"`) + ikon gerigi di top-bar. Tombol "Buat Event Baru" di top-bar tetap ada
+  (aksi tersering; keduanya bermuara ke `/dashboard/create-event`).
+- **Konsekuensi untuk `/dashboard/perencanaan`:** halaman itu kembali **murni RAB/anggaran** (DocumentTable +
+  donut alokasi + Purchase Order + pintu Simulasi). JANGAN taruh panel ajuan di sana lagi.
 
 ## Invoice Model
 
@@ -1030,5 +1056,5 @@ dengan Dashboard Kerjasama); aksi "Generate Invoice" per-deal di DealCard tetap 
 - Setiap selesai fix bug nontrivial, WAJIB update `docs/known-bugs.md` (lihat section "Known Bugs & Fixes" di atas)
 - Semua fitur Pro wajib cek `isPro` dari hook `useUser.ts` sebelum render konten — tampilkan lock UI untuk Starter, bukan redirect atau hide menu.
 - **JANGAN definisikan komponen React DI DALAM komponen lain** (mis. `const Shell = ({children}) => (...)` atau `const PageHeader = () => (...)` di dalam body fungsi halaman). Tiap re-render (mis. tiap keystroke pada input yang meng-update state) membuat referensi fungsi BARU → React meng-unmount & remount seluruh subtree komponen tersebut, sehingga input yang sedang difokus KEHILANGAN FOKUS tiap ketik (dan state DOM lain ikut hilang). Selalu definisikan komponen di TOP-LEVEL modul. Sama juga hindari `key` yang berubah tiap render (`key={Math.random()}`/`key={Date.now()}`). Lihat known-bugs [2026-07-17] (P&L Report input Deskripsi). Instansi serupa yang masih perlu dibersihkan: `client/src/app/dashboard/ticketing/page.tsx` (`const Shell` di dalam komponen).
-- **Sidebar nav grouping** (`client/src/components/dashboard/sidebar.tsx`): tiap item `nav` boleh punya field opsional `group` (`"Perencanaan" | "Kerjasama" | "Operasional" | "Keuangan" | "Tiket & Pencairan"`) → dirender sebagai section collapsible (state `useState`, default terbuka, tidak dipersist) sesuai urutan `GROUP_ORDER`. Item TANPA `group` render ungrouped seperti biasa: "Dashboard" di atas (tier atas, sebelum grup pertama), item ungrouped SESUDAH grup pertama (mis. **"Settingan Kelola Crew"** + item `adminOnly`) render di tier bawah SESUDAH semua grup, item `hidden` (mis. "Vendor & Talent") tetap terfilter. **"Settingan Kelola Crew"** (href `/dashboard/crew`, Pro) sengaja ungrouped — halaman setting akses crew yang berdiri sendiri, BUKAN bagian salah satu dari 5 dashboard kategori; ditempatkan sebagai bottom-item pertama sehingga muncul tepat di bawah "Dashboard Tiket & Pencairan" (grup "Tiket & Pencairan" = grup terakhir di GROUP_ORDER). **"Petty Cash" sudah TIDAK ada di sidebar** (kini per-event, dicapai lewat tombol di Dashboard Keuangan) → group "Operasional" jadi kosong & otomatis tidak dirender. Grouping murni rendering — filter `!item.hidden && (!item.adminOnly || isAdmin)` jalan DULU sebelum grouping; href/badge/Pro-gating tidak disentuh. **Grouping murni tematik, BUKAN proxy tier harga**: dalam satu group, item boleh beda status Pro-gating — mis. di "Perencanaan", "Dashboard Perencanaan" gratis/Starter (tanpa badge) berdampingan dengan "Simulasi Harga Tiket" yang Pro (ada `badge: "Pro"`).
+- **Sidebar nav grouping** (`client/src/components/dashboard/sidebar.tsx`): tiap item `nav` boleh punya field opsional `group` (`"Perencanaan" | "Kerjasama" | "Operasional" | "Keuangan" | "Tiket & Pencairan"`) → dirender sebagai section collapsible (state `useState`, default terbuka, tidak dipersist) sesuai urutan `GROUP_ORDER`. Item TANPA `group` render ungrouped seperti biasa: "Dashboard" + **"Setup Event"** di atas (tier atas, sebelum grup pertama), item ungrouped SESUDAH grup pertama (mis. **"Settingan Kelola Crew"** + item `adminOnly`) render di tier bawah SESUDAH semua grup, item `hidden` (mis. "Vendor & Talent") tetap terfilter. **"Settingan Kelola Crew"** (href `/dashboard/crew`, Pro) sengaja ungrouped — halaman setting akses crew yang berdiri sendiri, BUKAN bagian salah satu dari 5 dashboard kategori; ditempatkan sebagai bottom-item pertama sehingga muncul tepat di bawah "Dashboard Tiket & Pencairan" (grup "Tiket & Pencairan" = grup terakhir di GROUP_ORDER). **"Petty Cash" sudah TIDAK ada di sidebar** (kini per-event, dicapai lewat tombol di Dashboard Keuangan) → group "Operasional" jadi kosong & otomatis tidak dirender. Grouping murni rendering — filter `!item.hidden && (!item.adminOnly || isAdmin)` jalan DULU sebelum grouping; href/badge/Pro-gating tidak disentuh. **Grouping murni tematik, BUKAN proxy tier harga**: dalam satu group, item boleh beda status Pro-gating — mis. di "Perencanaan", "Dashboard Perencanaan" gratis/Starter (tanpa badge) berdampingan dengan "Simulasi Harga Tiket" yang Pro (ada `badge: "Pro"`).
 - **`activePrefix` — semantik ADITIF (sejak 2026-07-21)**: item aktif bila `pathname === href` **ATAU** pathname berada di subtree `activePrefix`. Dipakai supaya halaman hub tetap menyala saat user di sub-route yang path-nya beda (satu-satunya pemakai sekarang: "Dashboard Perencanaan" + `activePrefix: "/dashboard/rab"` → tetap menyala di editor `/dashboard/rab/[id]`). **Dulu semantiknya MENGGANTI exact-match** — itu diperlukan saat dua item berbagi href yang sama ("Dashboard" vs "RAB Builder", dua-duanya `/dashboard`). Kasus itu sudah tidak ada: **item "RAB Builder" DIHAPUS 2026-07-21** karena href-nya identik dgn "Dashboard Perencanaan" dan hub itu sudah mencakup isinya. Kalau menambah `activePrefix` baru, pastikan subtree-nya tidak tumpang tindih dgn href item lain (mis. JANGAN tambahkan `/dashboard/simulasi` ke Perencanaan — "Simulasi Harga Tiket" punya item sendiri, nanti dua item menyala bersamaan).
