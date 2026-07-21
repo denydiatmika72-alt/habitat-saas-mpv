@@ -4,6 +4,7 @@ import { useState, useEffect } from "react"
 import { useRouter } from "next/navigation"
 import { CheckCircle, Clock, Phone, Mail, User, Ticket, XCircle, Wallet, Package, Receipt, ChevronDown, ChevronUp, Lock, EyeOff, Eye } from "lucide-react"
 import { useUser } from "@/hooks/useUser"
+import { AdminChangeRequests } from "@/components/dashboard/admin-change-requests"
 
 const API_BASE = "/api"
 const getToken = () =>
@@ -731,6 +732,11 @@ export default function AdminUsersPage() {
           </div>
         </div>
       )}
+
+      {/* Permintaan Perubahan Event (2026-07-21) — ditaruh tinggi karena permintaan
+          hapus event menahan promotor yang punya hutang fee belum lunas.
+          Komponen terpisah: halaman ini sudah panjang & panel itu punya state sendiri. */}
+      <AdminChangeRequests />
 
       {/* Persetujuan Storefront */}
       <div>
