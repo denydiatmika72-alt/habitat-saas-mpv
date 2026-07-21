@@ -53,6 +53,13 @@ import { usePathname, useRouter, useSearchParams } from "next/navigation"
 /** Route yang TIDAK boleh diberi ?eventId= oleh provider (bebas-event by design). */
 const EVENT_FREE_PATHS = ["/dashboard/payout"]
 
+/** Ke mana user dikembalikan saat event yang sedang dibuka ternyata sudah dihapus. */
+export const DEAD_EVENT_FALLBACK_HREF = "/dashboard"
+
+/** Pesan tunggal yang dipakai seluruh dashboard — jangan tulis varian sendiri per halaman. */
+export const DEAD_EVENT_MESSAGE =
+  "Event ini sudah tidak tersedia (mungkin telah dihapus). Silakan pilih event lain."
+
 interface EventContextValue {
   /** Event yang sedang aktif. String kosong = belum ada yang dipilih. */
   selectedEventId: string
@@ -67,6 +74,17 @@ interface EventContextValue {
    * di URL (penyebab loop tak berujung di bug 2026-07-21).
    */
   invalidateEvent: (id: string) => void
+  /**
+   * Apakah `id` sudah ditandai mati lewat `invalidateEvent`? Versi REAKTIF dari
+   * `deadEventIdsRef` — didukung state, jadi komponen yang memanggilnya ikut
+   * re-render saat sebuah event ditandai mati. (Ref-nya sendiri tetap ada karena
+   * Aturan 1 butuh pembacaan SINKRON sebelum render di-commit.)
+   */
+  isEventDead: (id: string) => boolean
+  /** Pesan "event sudah dihapus" yang perlu ditampilkan, atau null. */
+  deadEventNotice: string | null
+  /** Tutup pesan di atas. */
+  dismissDeadEventNotice: () => void
 }
 
 const EventContext = createContext<EventContextValue | null>(null)
@@ -95,9 +113,21 @@ function EventProviderInner({ children }: { children: React.ReactNode }) {
   // dan TIDAK boleh dianggap otoritatif oleh Aturan 1. `null` = URL sinkron.
   const pendingUrlIdRef = useRef<string | null>(null)
 
-  // Id event yang terbukti sudah tidak ada lagi. Ref (bukan state) karena
-  // fungsinya hanya MEMBLOKIR hidrasi-ulang dari URL — tidak boleh memicu render.
+  // Id event yang terbukti sudah tidak ada lagi.
+  // DUA salinan yang disengaja, jangan disatukan:
+  //  - ref  → dibaca SINKRON oleh Aturan 1 (harus valid sebelum render di-commit)
+  //  - state→ supaya `isEventDead` reaktif bagi konsumen (ref tidak memicu render)
+  // Keduanya HANYA ditulis di `invalidateEvent`/`setSelectedEventId`, jadi tidak
+  // bisa menyimpang satu sama lain.
   const deadEventIdsRef = useRef<Set<string>>(new Set())
+  const [deadEventIds, setDeadEventIds] = useState<ReadonlySet<string>>(() => new Set())
+
+  // Pesan yang ditampilkan setelah user dilempar balik dari event yang sudah
+  // dihapus. Disimpan di provider (BUKAN di halaman asal) karena halaman asal
+  // langsung di-unmount saat redirect — pesannya harus ikut selamat ke tujuan.
+  // Ini bekerja karena EventProvider dipasang di layout /dashboard, yang TIDAK
+  // re-mount saat navigasi client-side.
+  const [deadEventNotice, setDeadEventNotice] = useState<string | null>(null)
 
   const isEventFreePath = EVENT_FREE_PATHS.some(
     (p) => pathname === p || pathname.startsWith(`${p}/`),
@@ -144,7 +174,11 @@ function EventProviderInner({ children }: { children: React.ReactNode }) {
     (id: string) => {
       // Pemilihan eksplisit oleh user membatalkan status "dead" (mis. event dibuat
       // ulang dengan id yang sama, atau daftar sempat gagal dimuat).
-      if (id) deadEventIdsRef.current.delete(id)
+      if (id && deadEventIdsRef.current.delete(id)) {
+        setDeadEventIds(new Set(deadEventIdsRef.current))
+      }
+      // User sudah memilih event lain → penjelasan soal event lama tidak relevan lagi.
+      setDeadEventNotice(null)
       commitSelection(id)
     },
     [commitSelection],
@@ -155,13 +189,23 @@ function EventProviderInner({ children }: { children: React.ReactNode }) {
       // TERMINAL: sekali ditandai mati, pemanggilan berikutnya no-op. Inilah yang
       // memutus loop — konsumen boleh memanggil ini berkali-kali (identitas
       // callback berubah tiap searchParams berubah) tanpa efek berulang.
+      // Konsekuensinya `deadEventNotice` juga hanya diset SEKALI per event.
       if (!id || deadEventIdsRef.current.has(id)) return
       deadEventIdsRef.current.add(id)
+      setDeadEventIds(new Set(deadEventIdsRef.current))
+      setDeadEventNotice(DEAD_EVENT_MESSAGE)
       // Hanya bersihkan kalau yang mati memang yang sedang aktif.
       if (id === intendedIdRef.current || id === urlEventId) commitSelection("")
     },
     [commitSelection, urlEventId],
   )
+
+  const isEventDead = useCallback(
+    (id: string) => Boolean(id) && deadEventIds.has(id),
+    [deadEventIds],
+  )
+
+  const dismissDeadEventNotice = useCallback(() => setDeadEventNotice(null), [])
 
   // Aturan 1 — URL menang saat paramnya ada (deep-link, Back/Forward).
   // Perhatikan: efek ini membandingkan URL dengan intendedIdRef, BUKAN dengan
@@ -204,8 +248,22 @@ function EventProviderInner({ children }: { children: React.ReactNode }) {
   }, [urlEventId, selectedEventId, isEventFreePath, pushToUrl])
 
   const value = useMemo(
-    () => ({ selectedEventId, setSelectedEventId, invalidateEvent }),
-    [selectedEventId, setSelectedEventId, invalidateEvent],
+    () => ({
+      selectedEventId,
+      setSelectedEventId,
+      invalidateEvent,
+      isEventDead,
+      deadEventNotice,
+      dismissDeadEventNotice,
+    }),
+    [
+      selectedEventId,
+      setSelectedEventId,
+      invalidateEvent,
+      isEventDead,
+      deadEventNotice,
+      dismissDeadEventNotice,
+    ],
   )
 
   return <EventContext.Provider value={value}>{children}</EventContext.Provider>
@@ -229,4 +287,76 @@ export function useSelectedEvent(): EventContextValue {
     throw new Error("useSelectedEvent harus dipakai di dalam <EventProvider> (app/dashboard/layout.tsx).")
   }
   return ctx
+}
+
+// ============================================================================
+// useEventGuard — penjaga tunggal untuk halaman yang butuh event aktif
+// ----------------------------------------------------------------------------
+// Menangani DUA kondisi yang dulu ditulis ulang-ulang (atau tidak ditangani
+// sama sekali) di tiap halaman:
+//
+//   1. BELUM ADA event terpilih  → balik ke hub kategori (`emptyHref`), kalau
+//      halaman ini memang tidak berguna tanpa event. Halaman hub sendiri
+//      (Kerjasama/Ticketing/Keuangan) TIDAK mengoper `emptyHref` — mereka
+//      menampilkan empty state, bukan memantulkan user.
+//   2. Event terpilih SUDAH DIHAPUS → tandai mati, kembalikan ke Dashboard KPI,
+//      dan munculkan penjelasan lewat `deadEventNotice`. Ini yang menutup celah
+//      UX dari fix loop 2026-07-21 (halaman turunan dulu cuma diam & kosong).
+//
+// ⚠️ KESELAMATAN LOOP (kelas bug yang sama dengan insiden 2026-07-21 — baca
+// docs/known-bugs.md sebelum mengubah efek di bawah):
+//   - `isDead`/`isMissing` sengaja dihitung jadi BOOLEAN primitif. Jangan ganti
+//     jadi objek/array — dependency yang identitasnya berubah tiap render akan
+//     menjalankan ulang efek ini tanpa henti.
+//   - `firedRef` membuat redirect terjadi TEPAT SEKALI per mount. Ini penjaga
+//     terminal-nya: walaupun efek dijalankan ulang (identitas `invalidateEvent`
+//     memang berubah tiap `searchParams` berubah), aksinya tidak pernah berulang.
+//   - Deteksi HARUS menunggu `ready` (daftar event selesai dimuat DENGAN SUKSES).
+//     Daftar kosong karena request gagal BUKAN bukti event terhapus.
+// ============================================================================
+export function useEventGuard(options: {
+  /** Daftar event milik user yang sudah dimuat halaman ini. */
+  events: ReadonlyArray<{ id: string | number }>
+  /** true HANYA kalau pengambilan daftar event SUKSES (bukan sekadar "selesai"). */
+  ready: boolean
+  /** Kalau diisi: redirect ke sini saat belum ada event terpilih. */
+  emptyHref?: string
+}): { isDeadEvent: boolean } {
+  const { events, ready, emptyHref } = options
+  const { selectedEventId, invalidateEvent } = useSelectedEvent()
+  const router = useRouter()
+  const firedRef = useRef(false)
+
+  // Event terpilih tidak ada di daftar milik user → sudah dihapus.
+  // Catatan: daftar KOSONG pun dihitung mati selama `ready` true — user yang
+  // menghapus satu-satunya event-nya tetap harus dilempar balik, bukan dibiarkan
+  // menatap halaman kosong. Itulah kenapa `ready` wajib berarti "sukses".
+  const isDeadEvent =
+    ready &&
+    Boolean(selectedEventId) &&
+    !events.some((e) => String(e.id) === selectedEventId)
+
+  const isMissing = Boolean(emptyHref) && !selectedEventId
+
+  useEffect(() => {
+    if (firedRef.current) return
+
+    if (isMissing && emptyHref) {
+      firedRef.current = true
+      router.replace(emptyHref)
+      return
+    }
+
+    if (isDeadEvent) {
+      firedRef.current = true
+      // Idempoten & terminal: membersihkan pilihan + memasang pesan sekali saja.
+      invalidateEvent(selectedEventId)
+      router.replace(DEAD_EVENT_FALLBACK_HREF)
+    }
+    // `invalidateEvent` sengaja TIDAK masuk deps: identitasnya berubah tiap
+    // searchParams berubah, dan `firedRef` sudah menjamin sekali-jalan.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isDeadEvent, isMissing, emptyHref, selectedEventId, router])
+
+  return { isDeadEvent }
 }

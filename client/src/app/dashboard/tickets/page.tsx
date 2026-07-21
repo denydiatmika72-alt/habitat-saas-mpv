@@ -3,8 +3,7 @@
 import { Suspense, useEffect, useState, useCallback } from "react"
 import { Ticket as TicketIcon, Plus, Trash2, Pencil, Copy, Check, ExternalLink, Upload, Package, ArrowLeftRight, ArrowLeft } from "lucide-react"
 import Link from "next/link"
-import { useRouter } from "next/navigation"
-import { useSelectedEvent } from "@/contexts/event-context"
+import { useSelectedEvent, useEventGuard } from "@/contexts/event-context"
 import { useUser } from "@/hooks/useUser"
 import { formatIDRInput, parseIDRInput } from "@/lib/formatNumber"
 
@@ -206,7 +205,6 @@ export default function TicketsPage() {
 
 function TicketsPageInner() {
   const { loading: userLoading } = useUser()
-  const router = useRouter()
 
   const [events, setEvents] = useState<Event[]>([])
   // Event diwarisi dari EventProvider — halaman ini bukan pintu masuk sendiri.
@@ -284,18 +282,21 @@ function TicketsPageInner() {
   const [savingInfo, setSavingInfo] = useState(false)
   const [infoSaved, setInfoSaved] = useState(false)
 
-  // Tanpa konteks event (akses langsung via URL/bookmark), kembalikan ke pintu utama kategori
-  // Tiket & Pencairan. Sama persis dgn expenses/event-summary → /dashboard/pl-report.
-  useEffect(() => {
-    if (!selectedEventId) router.replace("/dashboard/ticketing")
-  }, [selectedEventId, router])
+  // `eventsReady` HANYA true kalau daftar event benar-benar berhasil dimuat —
+  // daftar kosong akibat request gagal tidak boleh dianggap "event sudah dihapus".
+  const [eventsReady, setEventsReady] = useState(false)
 
   useEffect(() => {
     fetch("/api/events", { headers: authHeaders() })
       .then((r) => (r.ok ? r.json() : null))
-      .then((data) => { if (data?.success) setEvents(data.data) })
+      .then((data) => { if (data?.success) { setEvents(data.data); setEventsReady(true) } })
       .catch(() => {})
   }, [])
+
+  // Tanpa konteks event (akses langsung via URL/bookmark) → balik ke pintu utama
+  // kategori Tiket & Pencairan. Event terpilih sudah dihapus → balik ke Dashboard
+  // KPI + pesan penjelas.
+  useEventGuard({ events, ready: eventsReady, emptyHref: "/dashboard/ticketing" })
 
   const fetchDetail = useCallback(async () => {
     if (!selectedEventId) return

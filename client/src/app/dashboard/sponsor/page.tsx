@@ -2,7 +2,7 @@
 
 import { Suspense, useEffect, useState } from "react"
 import Link from "next/link"
-import { useSelectedEvent } from "@/contexts/event-context"
+import { useSelectedEvent, useEventGuard } from "@/contexts/event-context"
 import {
   ArrowLeft,
   BadgeCheck,
@@ -2058,12 +2058,17 @@ function SponsorManagementInner() {
   // Gate `isPro` global di bawah tidak menangkap kasus "akun Pro, tapi untuk event lain".
   const [proLocked, setProLocked] = useState(false)
 
+  // `eventsReady` HANYA true kalau daftar event benar-benar berhasil dimuat —
+  // daftar kosong akibat request gagal tidak boleh dianggap "event sudah dihapus".
+  const [eventsReady, setEventsReady] = useState(false)
+
   useEffect(() => {
     fetch(`${API_BASE}/events`, { headers: authHeaders() })
       .then((r) => r.json())
       .then((data) => {
         const list = Array.isArray(data) ? data : (data.data ?? [])
         setEvents(list)
+        setEventsReady(true)
         // TIDAK auto-pilih events[0] lagi (2026-07-20): pilihan event kini GLOBAL lewat
         // EventProvider, jadi fallback di sini akan diam-diam mengubah event aktif untuk
         // SELURUH dashboard. Tanpa event terpilih, katalog tampil kosong + tombol generate
@@ -2071,6 +2076,10 @@ function SponsorManagementInner() {
       })
       .catch(() => {})
   }, [])
+
+  // Halaman ini punya empty state sendiri saat belum ada event terpilih (tanpa
+  // emptyHref), tapi event yang sudah DIHAPUS harus melempar user ke Dashboard KPI.
+  useEventGuard({ events, ready: eventsReady })
 
   function fetchBenefits() {
     if (!selectedEventId) { setBenefits([]); setBenefitsLoading(false); setProLocked(false); return }

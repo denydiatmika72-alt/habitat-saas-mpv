@@ -2,7 +2,7 @@
 
 import { Suspense, useCallback, useEffect, useState } from "react"
 import Link from "next/link"
-import { useSelectedEvent } from "@/contexts/event-context"
+import { useSelectedEvent, useEventGuard } from "@/contexts/event-context"
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, ResponsiveContainer, Tooltip, Cell } from "recharts"
 import {
   Ticket,
@@ -267,12 +267,20 @@ function TicketingDashboardInner() {
     }
   }
 
+  // `eventsReady` HANYA true kalau daftar event benar-benar berhasil dimuat —
+  // daftar kosong akibat request gagal tidak boleh dianggap "event sudah dihapus".
+  const [eventsReady, setEventsReady] = useState(false)
+
   useEffect(() => {
     fetch("/api/events", { headers: authHeaders() })
       .then((r) => (r.ok ? r.json() : null))
-      .then((data) => { if (data?.success) setEvents(data.data) })
+      .then((data) => { if (data?.success) { setEvents(data.data); setEventsReady(true) } })
       .catch(() => {})
   }, [])
+
+  // Halaman hub: TANPA emptyHref (empty state-nya sendiri sudah memadai), tapi
+  // event yang sudah DIHAPUS tetap harus melempar user balik ke Dashboard KPI.
+  useEventGuard({ events, ready: eventsReady })
 
   // Saldo payout = LINTAS EVENT (payout tidak per-event) → tidak ikut selectedEventId.
   useEffect(() => {

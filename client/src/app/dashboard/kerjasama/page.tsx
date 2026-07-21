@@ -2,7 +2,7 @@
 
 import { Suspense, useEffect, useState } from "react"
 import Link from "next/link"
-import { useSelectedEvent } from "@/contexts/event-context"
+import { useSelectedEvent, useEventGuard } from "@/contexts/event-context"
 import {
   Handshake,
   ReceiptText,
@@ -72,12 +72,20 @@ function KerjasamaDashboardInner() {
   // 402 jatuh ke empty-state generik ("Tidak ada data") → user mengira fitur kosong, bukan terkunci.
   const [proLocked, setProLocked] = useState(false)
 
+  // `eventsReady` HANYA true kalau daftar event benar-benar berhasil dimuat —
+  // daftar kosong akibat request gagal tidak boleh dianggap "event sudah dihapus".
+  const [eventsReady, setEventsReady] = useState(false)
+
   useEffect(() => {
     fetch("/api/events", { headers: authHeaders() })
       .then((r) => (r.ok ? r.json() : null))
-      .then((data) => { if (data?.success) setEvents(data.data) })
+      .then((data) => { if (data?.success) { setEvents(data.data); setEventsReady(true) } })
       .catch(() => {})
   }, [])
+
+  // Halaman hub: TANPA emptyHref (empty state-nya sendiri sudah memadai), tapi
+  // event yang sudah DIHAPUS tetap harus melempar user balik ke Dashboard KPI.
+  useEventGuard({ events, ready: eventsReady })
 
   useEffect(() => {
     if (!selectedEventId) { setSummary(null); setProLocked(false); return }

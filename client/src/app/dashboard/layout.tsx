@@ -2,6 +2,7 @@ import { Sidebar, MobileNav } from "@/components/dashboard/sidebar"
 import { TopBar } from "@/components/dashboard/top-bar"
 import { DashboardGuard } from "@/components/dashboard/dashboard-guard"
 import { ProExpiryBanner } from "@/components/dashboard/pro-expiry-banner"
+import { DeadEventNotice } from "@/components/dashboard/dead-event-notice"
 import { EventProvider } from "@/contexts/event-context"
 
 export default function DashboardLayout({
@@ -26,7 +27,12 @@ export default function DashboardLayout({
             {/* Pemilihan event dibagi ke SELURUH halaman /dashboard lewat context ini
                 (lihat contexts/event-context.tsx). Sidebar & TopBar sengaja di luar
                 provider — keduanya tidak bergantung event. */}
-            <EventProvider>{children}</EventProvider>
+            <EventProvider>
+              {/* DI DALAM provider: pesannya hidup di context, dan harus bertahan
+                  melintasi redirect dari halaman turunan yang event-nya dihapus. */}
+              <DeadEventNotice />
+              {children}
+            </EventProvider>
           </main>
         </div>
       </div>

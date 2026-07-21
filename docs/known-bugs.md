@@ -3045,3 +3045,70 @@ tidak akan terhitung** → catatan jadi bohong dan promotor salah membaca sisa k
   JANGAN `setSelectedEventId("")`. Dan jangan pernah menjadikan `selectedEventId` sebagai dependency request
   yang datanya bisa difilter di memori.
 - Tag: #critical #infinite-loop #event-context #react-hooks #performance #browser-hang #event-delete
+
+---
+
+## [2026-07-22] UX polish — halaman turunan tidak memantulkan user saat event-nya dihapus
+
+- **Menutup celah yang sengaja dicatat di entry [2026-07-21] "🔴 CRITICAL — Hapus event yang sedang dipilih →
+  loop tak berujung"**. Di entry itu tertulis: "halaman turunan tidak mendeteksi sendiri event yang sudah
+  dihapus — tampil kosong/error sampai user kembali ke /dashboard. Bukan bug, tapi bisa dirapikan terpisah."
+  Ini rapikannya. Bukan perbaikan loop baru — loop-nya sendiri sudah tertutup kemarin.
+- Gejala: user sedang membuka halaman turunan (Kerjasama, Ticketing, Keuangan/P&L, Sponsor, Crew, Manajemen
+  Tiket, Expense, Petty Cash, Laporan Akhir, Simulasi, Invoice) untuk sebuah event, lalu event itu DIHAPUS —
+  dari tab lain, atau oleh admin yang menyetujui permintaan hapus. Halaman diam saja: tabel kosong / empty
+  state generik / error, tanpa penjelasan bahwa event-nya memang sudah tidak ada.
+- Root cause: deteksi "event terpilih sudah tidak ada" HANYA dimiliki `/dashboard` (Dashboard KPI) — satu-satunya
+  halaman yang membandingkan `selectedEventId` dengan daftar `/api/events`. Halaman turunan hanya membaca
+  `selectedEventId` dari context dan mem-fetch datanya; saat backend membalas kosong/404 mereka tidak punya
+  kesimpulan "event ini sudah dihapus", jadi tidak melakukan apa-apa.
+- File terkait:
+  - `client/src/contexts/event-context.tsx` (API baru + hook bersama)
+  - `client/src/components/dashboard/dead-event-notice.tsx` (BARU)
+  - `client/src/app/dashboard/layout.tsx`
+  - 11 halaman turunan + `client/src/components/dashboard/document-table.tsx`
+- Fix:
+  1. **`deadEventIdsRef` dulu PRIVAT** (hanya bisa ditulis lewat `invalidateEvent`, tidak bisa dibaca konsumen).
+     Sekarang di-expose lewat `isEventDead(id)` yang **reaktif** — didukung state `deadEventIds`, karena ref
+     saja tidak memicu re-render pada konsumen. Ref-nya TETAP ada dan tetap jadi sumber sinkron untuk Aturan 1
+     (yang wajib membaca sebelum render di-commit). Dua salinan ini disengaja; keduanya hanya ditulis di
+     `invalidateEvent`/`setSelectedEventId` sehingga tidak bisa menyimpang.
+  2. **Hook bersama `useEventGuard({ events, ready, emptyHref? })`** menggantikan guard `if (!selectedEventId)
+     router.replace(...)` yang dulu disalin-tempel di 4 halaman, DAN menambahkan cabang "event sudah dihapus"
+     ke 11 halaman sekaligus. Deteksi memakai **daftar event yang memang SUDAH di-fetch tiap halaman** — bukan
+     endpoint baru, bukan tebak-tebakan kode status.
+  3. **`ready` HARUS berarti "fetch SUKSES", bukan "fetch selesai"** — ditandai eksplisit lewat state
+     `eventsReady` baru di tiap halaman, diset hanya di jalur `.then` sukses. Tanpa ini, daftar kosong akibat
+     request gagal akan disalahartikan sebagai "event sudah dihapus" dan melempar user keluar saat jaringan
+     bermasalah. Karena `ready` sudah dijamin sukses, daftar KOSONG pun dihitung mati — user yang menghapus
+     satu-satunya event-nya tetap dipantulkan, bukan dibiarkan menatap halaman kosong.
+  4. **`/dashboard/perencanaan` memakai jalur berbeda (404), bukan daftar** — halaman itu memang tidak memuat
+     daftar event. `document-table.tsx` yang sudah mem-fetch `GET /api/events/:id` kini melaporkan **404/403**
+     ke `invalidateEvent`. Error jaringan (tanpa `response.status`) SENGAJA tidak dihitung. Komponen bersama ini
+     sengaja TIDAK ikut me-redirect — cukup melapor; seluruh seksi halaman lalu jatuh ke empty state sendiri.
+  5. **Pesan**: proyek belum punya library toast (tidak ada sonner/react-hot-toast). Bentuk visualnya meniru
+     `ToastContainer` yang sudah ada di halaman Invoice (pill fixed kanan-bawah + tombol tutup, warna amber
+     untuk peringatan), TAPI state-nya hidup di **EventProvider**, bukan di halaman. Ini wajib: halaman asal
+     langsung di-unmount saat redirect, jadi pesan yang disimpan di sana hilang sebelum terbaca. Provider ada di
+     layout `/dashboard` yang tidak re-mount saat navigasi client-side, sehingga pesannya selamat sampai tujuan.
+     Auto-tutup 8 detik + bisa ditutup manual + hilang begitu user memilih event lain.
+- **KESELAMATAN LOOP (kelas bug yang sama dengan insiden 2026-07-21):**
+  - `isDeadEvent`/`isMissing` dihitung jadi **boolean primitif** → dependency effect tidak pernah berubah
+    identitas tiap render. JANGAN ganti jadi objek/array.
+  - **`firedRef`** membuat redirect terjadi **tepat sekali per mount**. Ini penjaga terminalnya: `invalidateEvent`
+    identitasnya memang berubah tiap `searchParams` berubah, jadi efeknya BISA jalan ulang — tapi aksinya tidak.
+  - `invalidateEvent` sendiri sudah idempoten sejak kemarin → `deadEventNotice` juga hanya diset sekali per event.
+- **Verifikasi di browser sungguhan (Playwright + Chromium), 34 assertion, SEMUA LOLOS** — bukan cuma `tsc`:
+  - **A. Event dihapus (11 halaman)**: semuanya mendarat di `/dashboard`, toast tampil, `GET /api/events` = 5
+    request (jauh dari ambang banjir 300).
+  - **B. Event valid (11 halaman)**: TIDAK ada yang dipantulkan — regresi nol.
+  - **C. Sekali-jalan**: jejak `framenavigated` membuktikan hanya SATU navigasi ke `/dashboard`.
+  - **D. Pulih**: setelah dipantulkan, memilih event valid lain lewat dropdown Dashboard KPI berjalan normal,
+    toast hilang, dan halaman turunan dgn event valid tidak dipantulkan.
+  - **E. Perencanaan (jalur 404)**: toast tampil + `?eventId=` mati dibersihkan, 0 request daftar event.
+  - **F. Guard lama "belum ada event"**: `expenses`/`petty-cash`/`event-summary` → `/dashboard/pl-report`,
+    `tickets` → `/dashboard/ticketing`. Semua masih persis seperti sebelumnya.
+- Catatan uji: mock generik `{success:true,data:[]}` untuk endpoint ber-scope event justru MERUSAK halaman
+  (mis. Kerjasama membaca `data.byStatus` → crash → error boundary → guard tak pernah jalan, dan sempat
+  terbaca sebagai "fix gagal"). Backend asli membalas 404 saat event hilang, jadi mock harus 404 juga.
+- Tag: #ux #event-delete #event-context #redirect #toast #react-hooks #loop-safety

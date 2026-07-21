@@ -50,11 +50,20 @@ interface EventDetail {
 }
 
 export function DocumentTable() {
-  const { selectedEventId } = useSelectedEvent()
+  const { selectedEventId, invalidateEvent } = useSelectedEvent()
   const [event, setEvent] = useState<EventDetail | null>(null)
   const [isLoading, setIsLoading] = useState(false)
   const [isRequestingDelete, setIsRequestingDelete] = useState(false)
 
+  // Halaman Perencanaan TIDAK memuat daftar event, jadi ia tidak bisa memakai
+  // useEventGuard (yang mendeteksi lewat daftar). Di sini deteksinya lewat 404
+  // dari GET /api/events/:id — satu-satunya tempat di dashboard yang memakai
+  // jalur 404, bukan jalur daftar.
+  //
+  // Sengaja TIDAK ikut me-redirect: komponen bersama tidak boleh memindahkan
+  // halaman di bawah kaki induknya. Cukup laporkan ke provider — pilihan event
+  // dibersihkan secara global + toast penjelas muncul, dan seluruh seksi
+  // /dashboard/perencanaan otomatis jatuh ke empty state "pilih event".
   useEffect(() => {
     if (!selectedEventId) {
       setEvent(null)
@@ -68,8 +77,17 @@ export function DocumentTable() {
         const data = res.data?.data ?? res.data
         setEvent(data && data.id ? data : null)
       })
-      .catch(() => setEvent(null))
+      .catch((err) => {
+        setEvent(null)
+        // 404/403 = event sudah tidak ada (atau bukan milik user lagi). Error
+        // jaringan TIDAK dihitung — jangan tandai mati hanya karena koneksi putus.
+        const status = axios.isAxiosError(err) ? err.response?.status : undefined
+        if (status === 404 || status === 403) invalidateEvent(selectedEventId)
+      })
       .finally(() => setIsLoading(false))
+    // `invalidateEvent` sengaja di luar deps: identitasnya berubah tiap searchParams
+    // berubah, dan efek ini hanya boleh jalan saat event berganti.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedEventId])
 
   // PERUBAHAN 2026-07-21: dulu ini axios.delete langsung ke /api/events/:id.

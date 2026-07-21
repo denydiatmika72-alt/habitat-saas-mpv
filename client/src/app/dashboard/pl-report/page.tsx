@@ -2,7 +2,7 @@
 
 import { Suspense, useEffect, useState } from "react"
 import Link from "next/link"
-import { useSelectedEvent } from "@/contexts/event-context"
+import { useSelectedEvent, useEventGuard } from "@/contexts/event-context"
 import { useUser } from "@/hooks/useUser"
 import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip } from "recharts"
 import {
@@ -232,12 +232,20 @@ function PLReportPageInner() {
   const [showPromoExpDetail, setShowPromoExpDetail] = useState(false)
   const [showCrewExpDetail, setShowCrewExpDetail] = useState(false)
 
+  // `eventsReady` HANYA true kalau daftar event benar-benar berhasil dimuat —
+  // daftar kosong akibat request gagal tidak boleh dianggap "event sudah dihapus".
+  const [eventsReady, setEventsReady] = useState(false)
+
   useEffect(() => {
     fetch("/api/events", { headers: authHeaders() })
       .then((r) => (r.ok ? r.json() : null))
-      .then((data) => { if (data?.success) setEvents(data.data) })
+      .then((data) => { if (data?.success) { setEvents(data.data); setEventsReady(true) } })
       .catch(() => {})
   }, [])
+
+  // Halaman hub: TANPA emptyHref (empty state-nya sendiri sudah memadai), tapi
+  // event yang sudah DIHAPUS tetap harus melempar user balik ke Dashboard KPI.
+  useEventGuard({ events, ready: eventsReady })
 
   const fetchPLData = async (eventId: string) => {
     if (!eventId || !isPro) return

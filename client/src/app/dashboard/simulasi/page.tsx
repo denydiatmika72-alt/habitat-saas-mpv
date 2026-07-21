@@ -9,7 +9,7 @@ import {
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { useUser } from "@/hooks/useUser"
-import { useSelectedEvent } from "@/contexts/event-context"
+import { useSelectedEvent, useEventGuard } from "@/contexts/event-context"
 import { ProLockPanel } from "@/components/dashboard/pro-lock"
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -116,16 +116,25 @@ export default function RevenueStrategyCenter() {
   const [presaleAlloc,        setPresaleAlloc]        = useState(50)
   const [normalAlloc,         setNormalAlloc]         = useState(30)
 
+  // `eventsReady` HANYA true kalau daftar event benar-benar berhasil dimuat —
+  // daftar kosong akibat request gagal tidak boleh dianggap "event sudah dihapus".
+  const [eventsReady, setEventsReady] = useState(false)
+
   useEffect(() => {
     axios.get(`${API}/events`, { headers: authHeaders() })
       .then((res) => {
         const data: EventFromAPI[] = Array.isArray(res.data) ? res.data : (res.data.data ?? [])
         setEvents(data)
+        setEventsReady(true)
         // TIDAK auto-pilih event pertama lagi — event ditentukan EventProvider.
       })
       .catch(() => setEvents([]))
       .finally(() => setLoadingEvents(false))
   }, [])
+
+  // Halaman ini punya empty state sendiri saat belum ada event terpilih (tanpa
+  // emptyHref), tapi event yang sudah DIHAPUS harus melempar user ke Dashboard KPI.
+  useEventGuard({ events, ready: eventsReady })
 
   useEffect(() => {
     if (!eventId) return

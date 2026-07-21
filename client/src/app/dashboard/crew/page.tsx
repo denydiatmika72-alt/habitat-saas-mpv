@@ -4,7 +4,7 @@ import { useEffect, useState } from "react"
 import { Lock, Users, Plus, Trash2, ScanLine, Wallet } from "lucide-react"
 import Link from "next/link"
 import { useUser } from "@/hooks/useUser"
-import { useSelectedEvent } from "@/contexts/event-context"
+import { useSelectedEvent, useEventGuard } from "@/contexts/event-context"
 import { ProLockPanel } from "@/components/dashboard/pro-lock"
 
 type Event = { id: string; title: string }
@@ -58,12 +58,20 @@ export default function CrewPage() {
   const [scannerError, setScannerError] = useState("")
   const [scannerSuccess, setScannerSuccess] = useState("")
 
+  // `eventsReady` HANYA true kalau daftar event benar-benar berhasil dimuat —
+  // daftar kosong akibat request gagal tidak boleh dianggap "event sudah dihapus".
+  const [eventsReady, setEventsReady] = useState(false)
+
   useEffect(() => {
     fetch("/api/events", { headers: authHeaders() })
       .then((r) => (r.ok ? r.json() : null))
-      .then((data) => { if (data?.success) setEvents(data.data) })
+      .then((data) => { if (data?.success) { setEvents(data.data); setEventsReady(true) } })
       .catch(() => {})
   }, [])
+
+  // Halaman hub: TANPA emptyHref (empty state-nya sendiri sudah memadai), tapi
+  // event yang sudah DIHAPUS tetap harus melempar user balik ke Dashboard KPI.
+  useEventGuard({ events, ready: eventsReady })
 
   useEffect(() => {
     if (!selectedEventId || !isPro) return

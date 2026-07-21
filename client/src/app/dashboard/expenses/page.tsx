@@ -3,8 +3,7 @@
 import { Suspense, useEffect, useState } from "react"
 import { ArrowLeft, Lock, Plus, Receipt, X } from "lucide-react"
 import Link from "next/link"
-import { useRouter } from "next/navigation"
-import { useSelectedEvent } from "@/contexts/event-context"
+import { useSelectedEvent, useEventGuard } from "@/contexts/event-context"
 import { useUser } from "@/hooks/useUser"
 import { ProLockPanel } from "@/components/dashboard/pro-lock"
 
@@ -42,7 +41,6 @@ export default function ExpensesPage() {
 
 function ExpensesPageInner() {
   const { isPro, loading: userLoading } = useUser()
-  const router = useRouter()
 
   // Event diwarisi dari EventProvider — halaman ini bukan pintu masuk sendiri.
   // Sengaja dari context, BUKAN searchParams: URL menyusul satu tick setelah navigasi,
@@ -63,18 +61,21 @@ function ExpensesPageInner() {
   const [category, setCategory] = useState(DEFAULT_CATEGORIES[0])
   const [submitting, setSubmitting] = useState(false)
 
-  // Tanpa konteks event, kembalikan ke pintu utama kategori Keuangan.
-  useEffect(() => {
-    if (!selectedEventId) router.replace("/dashboard/pl-report")
-  }, [selectedEventId, router])
+  // `eventsReady` HANYA true kalau daftar event benar-benar berhasil dimuat —
+  // daftar kosong akibat request gagal tidak boleh dianggap "event sudah dihapus".
+  const [eventsReady, setEventsReady] = useState(false)
 
   // Fetch events on mount
   useEffect(() => {
     fetch("/api/events", { headers: authHeaders() })
       .then((r) => (r.ok ? r.json() : null))
-      .then((data) => { if (data?.success) setEvents(data.data) })
+      .then((data) => { if (data?.success) { setEvents(data.data); setEventsReady(true) } })
       .catch(() => {})
   }, [])
+
+  // Tanpa konteks event → balik ke pintu utama kategori Keuangan.
+  // Event terpilih sudah dihapus → balik ke Dashboard KPI + pesan penjelas.
+  useEventGuard({ events, ready: eventsReady, emptyHref: "/dashboard/pl-report" })
 
   // Fetch RAB categories when event changes
   useEffect(() => {

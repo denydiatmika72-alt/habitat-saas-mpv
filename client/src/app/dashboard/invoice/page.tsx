@@ -3,7 +3,7 @@
 import { useEffect, useState, Suspense } from "react"
 import { useSearchParams, useRouter } from "next/navigation"
 import Link from "next/link"
-import { useSelectedEvent } from "@/contexts/event-context"
+import { useSelectedEvent, useEventGuard } from "@/contexts/event-context"
 import {
   ArrowLeft,
   BadgeCheck,
@@ -347,6 +347,7 @@ function InvoicePage() {
   // Event picker untuk invoice manual — invoice manual TIDAK lagi menempel ke deal sponsor mana pun,
   // jadi event dipilih eksplisit di sini (menggantikan hack lama deals[0].id).
   const [events, setEvents] = useState<EventOption[]>([])
+  const [eventsReady, setEventsReady] = useState(false)
 
   // Preview
   const [preview, setPreview] = useState<PreviewData | null>(null)
@@ -389,6 +390,10 @@ function InvoicePage() {
     loadEvents()
   }, [])
 
+  // Halaman ini punya empty state sendiri saat belum ada event terpilih (tanpa
+  // emptyHref), tapi event yang sudah DIHAPUS harus melempar user ke Dashboard KPI.
+  useEventGuard({ events, ready: eventsReady })
+
   // Invoice DAN deal sama-sama per-event → dimuat ulang tiap event berganti.
   // (deal ikut ke sini sejak 2026-07-21: /api/sponsor/deals kini wajib eventId)
   useEffect(() => {
@@ -402,6 +407,9 @@ function InvoicePage() {
     const json = await res.json()
     const list: EventOption[] = Array.isArray(json) ? json : json.data ?? []
     setEvents(list)
+    // Ditandai HANYA di jalur sukses — daftar kosong akibat request gagal tidak
+    // boleh dianggap "event sudah dihapus" oleh useEventGuard.
+    setEventsReady(true)
   }
 
   async function loadSettings() {
