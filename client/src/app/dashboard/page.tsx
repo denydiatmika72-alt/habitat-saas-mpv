@@ -25,8 +25,9 @@ import {
   Plus,
   CalendarRange,
   ArrowRight,
+  Lock,
 } from "lucide-react"
-import { StatCards } from "@/components/dashboard/stat-cards"
+import { StatCards, formatCompact } from "@/components/dashboard/stat-cards"
 import { Button } from "@/components/ui/button"
 import { useSelectedEvent } from "@/contexts/event-context"
 
@@ -40,8 +41,32 @@ interface EventItem {
   title: string
 }
 
-const QUICK_LINKS = [
+// Bentuk respons GET /api/dashboard/summary?eventId= (dashboard.controller.js).
+// Seksi sponsor & finance ber-proLocked per-seksi (fitur Pro); rab & ticketing selalu terisi.
+interface DashboardSummary {
+  rab: { exists: boolean; total: number }
+  sponsor:
+    | { proLocked: true }
+    | { proLocked: false; activeDeals: number; approvedValue: number }
+  ticketing: { ticketsSold: number; payoutAvailable: number }
+  finance:
+    | { proLocked: true }
+    | { proLocked: false; totalIncome: number; totalExpense: number }
+}
+
+type QuickLinkKey = "rab" | "sponsor" | "ticketing" | "finance"
+
+const QUICK_LINKS: {
+  key: QuickLinkKey
+  label: string
+  desc: string
+  href: string
+  icon: React.ElementType
+  iconBg: string
+  iconColor: string
+}[] = [
   {
+    key: "rab",
     label: "Dashboard Perencanaan",
     desc: "RAB, Purchase Order, dan simulasi harga tiket.",
     href: "/dashboard/perencanaan",
@@ -50,6 +75,7 @@ const QUICK_LINKS = [
     iconColor: "text-emerald-700",
   },
   {
+    key: "sponsor",
     label: "Kerjasama Sponsor",
     desc: "Deal sponsor, katalog benefit, dan invoice.",
     href: "/dashboard/kerjasama",
@@ -58,6 +84,7 @@ const QUICK_LINKS = [
     iconColor: "text-indigo-700",
   },
   {
+    key: "ticketing",
     label: "Tiket & Pencairan",
     desc: "Penjualan tiket, merchandise, dan pencairan dana.",
     href: "/dashboard/ticketing",
@@ -66,6 +93,7 @@ const QUICK_LINKS = [
     iconColor: "text-sky-700",
   },
   {
+    key: "finance",
     label: "Dashboard Keuangan",
     desc: "Laba/rugi, pengeluaran, dan petty cash.",
     href: "/dashboard/pl-report",
@@ -74,6 +102,111 @@ const QUICK_LINKS = [
     iconColor: "text-amber-700",
   },
 ]
+
+// ── Blok ringkasan per kartu Akses Cepat ─────────────────────────────────────
+// Top-level (BUKAN di dalam komponen halaman — lihat aturan CLAUDE.md soal
+// komponen inline yang bikin remount tiap render).
+// Gembok Pro versi RINGKAS (ikon + label + tooltip), sengaja bukan ProLockPanel
+// penuh — kartu kecil; klik kartu tetap membawa ke hub yang menampilkan lock UI
+// lengkapnya sendiri.
+function ProLockedMini() {
+  return (
+    <div
+      className="flex items-center gap-1.5 text-xs font-medium text-slate-400"
+      title="Khusus Pro — upgrade event ini untuk melihat ringkasannya"
+    >
+      <Lock className="size-3.5" />
+      Khusus Pro
+    </div>
+  )
+}
+
+function QuickLinkMetric({
+  linkKey,
+  summary,
+  loading,
+  hasEvent,
+}: {
+  linkKey: QuickLinkKey
+  summary: DashboardSummary | null
+  loading: boolean
+  hasEvent: boolean
+}) {
+  if (!hasEvent) {
+    return <p className="text-xs text-slate-400">Pilih event untuk melihat ringkasan.</p>
+  }
+  if (loading) {
+    return <div className="h-6 w-24 animate-pulse rounded-md bg-slate-100" />
+  }
+  if (!summary) {
+    return <p className="text-xs text-slate-400">Ringkasan tidak tersedia.</p>
+  }
+
+  switch (linkKey) {
+    case "rab":
+      return summary.rab.exists ? (
+        <div>
+          <p className="text-lg font-semibold tracking-tight text-slate-900">
+            {formatCompact(summary.rab.total)}
+          </p>
+          <p className="text-xs text-slate-500">Total Nilai RAB</p>
+        </div>
+      ) : (
+        <p className="text-sm font-medium text-amber-600">Belum Ada RAB</p>
+      )
+
+    case "sponsor":
+      if (summary.sponsor.proLocked) return <ProLockedMini />
+      return (
+        <div>
+          <p className="text-lg font-semibold tracking-tight text-slate-900">
+            {summary.sponsor.activeDeals}{" "}
+            <span className="text-sm font-normal text-slate-500">deal disetujui</span>
+          </p>
+          <p className="text-xs text-slate-500">
+            Nilai closing: {formatCompact(summary.sponsor.approvedValue)}
+          </p>
+        </div>
+      )
+
+    case "ticketing":
+      return (
+        <div>
+          <p className="text-lg font-semibold tracking-tight text-slate-900">
+            {summary.ticketing.ticketsSold.toLocaleString("id-ID")}{" "}
+            <span className="text-sm font-normal text-slate-500">tiket terjual</span>
+          </p>
+          {/* Payout memang lintas-event by design → dilabeli Saldo Akun, bukan per-event. */}
+          <p className="text-xs text-slate-500">
+            Saldo Akun (semua event): {formatCompact(summary.ticketing.payoutAvailable)}
+          </p>
+        </div>
+      )
+
+    case "finance":
+      if (summary.finance.proLocked) return <ProLockedMini />
+      return (
+        <div className="flex items-end gap-4">
+          <div>
+            <p className="text-sm font-semibold tracking-tight text-emerald-700">
+              {formatCompact(summary.finance.totalIncome)}
+            </p>
+            <p className="text-[10px] font-medium uppercase tracking-wider text-slate-400">
+              Pemasukan
+            </p>
+          </div>
+          <div>
+            <p className="text-sm font-semibold tracking-tight text-rose-600">
+              {formatCompact(summary.finance.totalExpense)}
+            </p>
+            <p className="text-[10px] font-medium uppercase tracking-wider text-slate-400">
+              Pengeluaran
+            </p>
+          </div>
+        </div>
+      )
+  }
+}
 
 export default function DashboardKpiPage() {
   const router = useRouter()
@@ -94,6 +227,37 @@ export default function DashboardKpiPage() {
 
   const selectedEvent = events.find((e) => String(e.id) === selectedEventId) ?? null
   const hasEvents = events.length > 0
+
+  // Ringkasan 4 kartu Akses Cepat — SATU call agregat, refetch saat event berganti.
+  // Deps HANYA `selectedEventId` (string primitif) dan efek tidak menulis state yang
+  // ia baca sendiri → aman dari kelas loop 2026-07-21.
+  const [summary, setSummary] = useState<DashboardSummary | null>(null)
+  const [loadingSummary, setLoadingSummary] = useState(false)
+  useEffect(() => {
+    if (!selectedEventId) {
+      setSummary(null)
+      return
+    }
+    let cancelled = false
+    setLoadingSummary(true)
+    axios
+      .get(`${API_BASE}/dashboard/summary?eventId=${selectedEventId}`, { headers: authHeaders() })
+      .then((res) => {
+        if (!cancelled) setSummary(res.data?.data ?? null)
+      })
+      .catch(() => {
+        // 404/403 (event mati/bukan milik) atau error jaringan → kartu jatuh ke
+        // "Ringkasan tidak tersedia". Deteksi event mati sudah ditangani efek
+        // invalidateEvent di bawah — jangan double-handle di sini.
+        if (!cancelled) setSummary(null)
+      })
+      .finally(() => {
+        if (!cancelled) setLoadingSummary(false)
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [selectedEventId])
 
   // Event terpilih sudah tidak ada (mis. dihapus lewat persetujuan admin) →
   // bersihkan supaya halaman turunan tidak memuat konteks hantu.
@@ -200,6 +364,17 @@ export default function DashboardKpiPage() {
               </div>
               <p className="mt-4 text-sm font-semibold text-slate-900">{link.label}</p>
               <p className="mt-1 flex-1 text-xs leading-relaxed text-slate-500">{link.desc}</p>
+
+              {/* Ringkasan event terpilih (GET /api/dashboard/summary) */}
+              <div className="mt-3 border-t border-slate-100 pt-3">
+                <QuickLinkMetric
+                  linkKey={link.key}
+                  summary={summary}
+                  loading={loadingSummary}
+                  hasEvent={!!selectedEventId}
+                />
+              </div>
+
               <span className="mt-3 inline-flex items-center gap-1 text-xs font-medium text-emerald-700">
                 Buka
                 <ArrowRight className="size-3.5 transition-transform group-hover:translate-x-0.5" />

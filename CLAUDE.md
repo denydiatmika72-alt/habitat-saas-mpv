@@ -973,7 +973,11 @@ Founder berencana suatu saat mengubah nexEvent dari web app menjadi aplikasi mob
   karena layout tidak re-mount.
 - **`/dashboard` = Dashboard KPI**: tempat event dipilih (satu-satunya dropdown yang "berwenang"), ringkasan
   StatCards mengikuti event terpilih (fallback akumulasi semua event kalau belum ada pilihan), tombol Buat
-  Event Baru, 4 kartu akses cepat (Perencanaan / Kerjasama / Ticketing / Keuangan).
+  Event Baru, 4 kartu akses cepat (Perencanaan / Kerjasama / Ticketing / Keuangan). Sejak 2026-07-22 kartu
+  akses cepat menampilkan **ringkasan angka event terpilih** via endpoint agregat
+  `GET /api/dashboard/summary?eventId=` (`dashboard.controller.js` — semua angka reuse sumber tunggal
+  existing; seksi sponsor & keuangan ber-`proLocked` per-seksi utk Starter; saldo payout = "Saldo Akun"
+  lintas-event by design). Lihat known-bugs [2026-07-22] kartu Akses Cepat.
 - **`/dashboard/perencanaan` = Dashboard Perencanaan**: indeks RAB + Purchase Order per-event + pintu ke
   Simulasi Harga Tiket. **PO pindah ke sini dari halaman Invoice** (keputusan founder: PO = alat perencanaan
   belanja, bukan dokumen kerjasama). Sejak 2026-07-22 header halaman punya **baris 3 aksi cepat**

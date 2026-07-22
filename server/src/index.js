@@ -36,6 +36,7 @@ const platformRevenueRoutes = require('../routes/platform-revenue.routes');
 const audienceReportRoutes = require('../routes/audience-report.routes');
 const uploadRoutes        = require('../routes/upload.routes');
 const ticketSimulationRoutes = require('../routes/ticket-simulation.routes');
+const dashboardRoutes     = require('../routes/dashboard.routes');
 require('./cron/pro-subscription.cron');
 require('./cron/ticket-booking.cron');
 
@@ -114,6 +115,7 @@ app.use('/api/admin/payout',  adminPayoutRoutes);
 app.use('/api/admin/platform-revenue', platformRevenueRoutes);
 app.use('/api/upload',        uploadRoutes);
 app.use('/api/ticket-simulation', ticketSimulationRoutes);
+app.use('/api/dashboard',     dashboardRoutes);
 
 app.use((req, res) => {
   console.warn('[404] Route tidak ditemukan:', req.method, req.originalUrl);

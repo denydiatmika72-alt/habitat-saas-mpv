@@ -144,6 +144,10 @@ function requireActivePro(resolveEventId = defaultResolveEventId) {
 module.exports = {
   requireActivePro,
   PRO_REQUIRED_MSG,
+  // Di-reuse dashboard.controller.js (ringkasan KPI) untuk menandai seksi Pro-locked per-event
+  // TANPA menolak seluruh request. JANGAN bikin salinan lokal fungsi ini (sudah ada 1 duplikat
+  // di payment.controller.js — jangan tambah yang ketiga).
+  isActivePro,
   // resolvers (dipakai route files untuk eventId turunan-resource)
   fromParam,
   fromBenefitParam,

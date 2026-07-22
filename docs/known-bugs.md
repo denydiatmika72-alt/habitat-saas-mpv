@@ -3242,3 +3242,46 @@ tidak akan terhitung** → catatan jadi bohong dan promotor salah membaca sisa k
   `client/src/components/dashboard/PurchaseOrderTab.tsx`,
   `client/src/components/dashboard/simulation-summary-card.tsx`
 - Tag: #perencanaan #navigasi #konsolidasi #ux #keputusan-founder
+
+---
+
+## [2026-07-22] Fitur: kartu Akses Cepat Dashboard KPI menampilkan ringkasan angka per-event
+
+- Konteks: 4 kartu Akses Cepat di `/dashboard` (Perencanaan / Kerjasama Sponsor / Tiket & Pencairan /
+  Keuangan) dulu murni link navigasi. Permintaan founder: tiap kartu menampilkan angka kunci event
+  terpilih supaya kondisi tiap kategori terlihat tanpa masuk ke dalamnya.
+- **Endpoint agregat BARU `GET /api/dashboard/summary?eventId=`** (`controllers/dashboard.controller.js`,
+  `routes/dashboard.routes.js`, mount `/api/dashboard` di `src/index.js`). SATU call, bukan 5 call kecil
+  dari frontend — alasan: tiap sumber asli punya cek ownership sendiri (5× round-trip + 5× query event),
+  dua di antaranya 402 untuk Starter (frontend harus menebak dari campuran status), dan payload aslinya
+  jauh lebih gemuk dari yang dibutuhkan kartu.
+- **SEMUA angka reuse sumber tunggal yang sudah ada — TIDAK ada rumus baru:**
+  - RAB: `Budget.totalEstimatedCost + contingencyFundAmount` (kolom tersimpan yang di-maintain
+    `recalcBudgetTotals` — angka sama dgn kolom "Nilai RAB" document-table).
+  - Sponsor: deal `status:"Disetujui"` + `dealValue()` **diekspor dari** `kerjasama-dashboard.controller.js`
+    (== `approvedDealValue`/`targetProgress.realized` di hub Kerjasama).
+  - Tiket terjual: `fetchPaidOrders` + `computeCategoryTotals` **diekspor dari**
+    `ticket-dashboard.controller.js` (== kartu "Total Tiket Terjual" hub Ticketing, paid-only, net).
+  - Saldo payout: `computeBalance` dari `payout.controller.js` — **lintas-event BY DESIGN** (payout memang
+    tidak per-event); di kartu DILABELI "Saldo Akun (semua event)", JANGAN diubah seolah per-event.
+  - Keuangan: `computeEventPL` dari `services/pl-report.service.js` (`totalIncome`/`totalExpense` == P&L).
+- **Pro gating PER-SEKSI, bukan per-endpoint**: route hanya `verifyToken` (RAB/tiket/payout =
+  Starter-accessible). Seksi sponsor & finance dicek `isActivePro` (**kini diekspor dari
+  `middleware/pro.middleware.js`** — jangan bikin salinan lokal ketiga; sudah ada 1 duplikat di
+  payment.controller) → belum Pro = `{ proLocked: true }` tanpa angka; frontend merender gembok mini
+  (ikon Lock + "Khusus Pro" + tooltip), SENGAJA bukan ProLockPanel penuh (kartu kecil; hub tujuannya
+  sudah punya lock UI lengkap).
+- **Frontend** `app/dashboard/page.tsx`: komponen top-level `QuickLinkMetric` (BUKAN inline — aturan
+  anti-remount) + satu `useEffect` ber-deps `[selectedEventId]` (string primitif, efek tidak menulis
+  state yang dibacanya → aman dari kelas loop 2026-07-21). Empty state per kartu: "Belum Ada RAB",
+  "0 deal disetujui", "Pilih event untuk melihat ringkasan" (tanpa event), "Ringkasan tidak tersedia"
+  (fetch gagal). `formatCompact` diekspor dari `stat-cards.tsx` (format konsisten dgn StatCards).
+- **Verifikasi (2026-07-22): handler DIJALANKAN LANGSUNG terhadap DB produksi (read-only, mock req/res)**
+  untuk 3 sampel nyata: event Starter dgn order berbayar (tiket=1, sponsor/finance proLocked), event Pro
+  aktif "Time To Shine" (1 deal Rp 15jt, P&L 150rb/60rb), + guard ownership (403) & tanpa eventId (400).
+  SEMUA silang-cek MATCH vs sumber asli (`computeCategoryTotals`, `computeBalance`, `computeEventPL`,
+  kolom Budget). Yang TIDAK diverifikasi live: rendering browser (tsc-only) & jalur HTTP via Express
+  (handler dipanggil langsung, bukan lewat server berjalan).
+- Deploy: BUTUH backend (`git pull` + `pm2 restart nexevent-api` — TIDAK ada perubahan schema, tak perlu
+  `db push`); frontend Vercel auto.
+- Tag: #fitur #dashboard-kpi #aggregate-endpoint #reuse #pro-gating-per-seksi #starter-tier

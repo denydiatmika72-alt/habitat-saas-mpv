@@ -5,7 +5,8 @@ import axios from "axios"
 import { CalendarRange, Users, TrendingUp, Sparkles } from "lucide-react"
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
-function formatCompact(value: number): string {
+// Diekspor: dipakai juga kartu Akses Cepat di app/dashboard/page.tsx (format sama = tampilan konsisten).
+export function formatCompact(value: number): string {
   if (value >= 1_000_000_000) {
     const v = value / 1_000_000_000
     return `Rp ${v % 1 === 0 ? v : v.toFixed(1)} M`

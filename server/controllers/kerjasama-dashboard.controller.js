@@ -123,4 +123,9 @@ const getKerjasamaDashboard = async (req, res) => {
   }
 };
 
-module.exports = { getKerjasamaDashboard };
+module.exports = {
+  getKerjasamaDashboard,
+  // Di-reuse dashboard.controller.js (ringkasan KPI) — aturan nilai deal HARUS satu sumber
+  // (totalValue > 0, else Σ dealBenefits.totalPrice). Jangan duplikasi rumus ini.
+  dealValue,
+};

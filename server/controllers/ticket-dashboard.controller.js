@@ -442,4 +442,12 @@ const getCategoryBreakdown = async (req, res) => {
   }
 };
 
-module.exports = { getDashboardSummary, getSalesTrend, getCategoryBreakdown };
+module.exports = {
+  getDashboardSummary,
+  getSalesTrend,
+  getCategoryBreakdown,
+  // Di-reuse dashboard.controller.js (ringkasan KPI) — supaya angka "tiket terjual" di kartu
+  // Akses Cepat MUSTAHIL beda dari kartu ringkasan hub Ticketing (sumber & rumus sama persis).
+  fetchPaidOrders,
+  computeCategoryTotals,
+};
