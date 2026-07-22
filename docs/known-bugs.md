@@ -3190,3 +3190,55 @@ tidak akan terhitung** → catatan jadi bohong dan promotor salah membaca sisa k
   `client/src/components/dashboard/simulation-summary-card.tsx` (baru),
   `client/src/app/dashboard/perencanaan/page.tsx` (render kartu).
 - Tag: #fitur #simulasi #persistence #pro-gated #prisma #db-push #frontend+backend
+
+---
+
+## [2026-07-22] Kartu ringkasan Simulasi: 402 (belum Pro) tercampur dengan "belum ada simulasi"
+
+- Gejala: `SimulationSummaryCard` di Dashboard Perencanaan menampilkan empty state yang SAMA
+  ("Belum ada simulasi harga tiket" + tombol ke `/dashboard/simulasi`) untuk DUA kondisi berbeda:
+  (a) backend menjawab **402** karena event belum Pro aktif (`requireActivePro` di route
+  `/api/ticket-simulation`), dan (b) backend menjawab **200 dengan `data:null`** karena event Pro
+  aktif tapi belum pernah menjalankan simulasi. User Starter tidak pernah melihat ajakan upgrade —
+  peluang monetisasi tersembunyi, dan tombol "Buat Simulasi" yang ditawarkan menuntun ke halaman
+  yang toh terkunci.
+- Root cause: `.catch(() => setData(null))` menyamaratakan SEMUA error (402/404/jaringan) jadi
+  `data:null` — kondisi yang sama dengan respons sukses tanpa data. Perilaku ini bahkan sempat
+  didokumentasikan sebagai disengaja di entry [2026-07-22] persistence di atas ("402/404/error
+  jaringan semua diperlakukan sebagai empty state") — **kalimat itu kini hanya berlaku untuk
+  404/error jaringan, TIDAK lagi untuk 402.** Inkonsisten juga dgn konvensi ProLockPanel yang
+  sudah dipakai kartu tetangganya (`PurchaseOrderTab` di halaman yang sama menangkap 402 →
+  `ProLockPanel`).
+- File terkait: `client/src/components/dashboard/simulation-summary-card.tsx`
+- Fix: state baru `proLocked`; di `.catch`, `axios.isAxiosError(err)` → `err.response?.status === 402`
+  → `setProLocked(true)`. Render: `proLocked` → `<ProLockPanel eventId featureName="Simulasi Harga
+  Tiket" />` menggantikan BODY kartu (header kartu tetap — pola sama PurchaseOrderTab). 200 dgn
+  `data:null` → empty state lama TIDAK berubah; 404/error jaringan → tetap empty state generik
+  (tidak ada hubungannya dgn status Pro). `proLocked` di-reset tiap fetch baru (ganti event).
+- Tag: #simulasi #pro-gating #402 #ux #pro-lock-panel #starter-tier
+
+---
+
+## [2026-07-22] Konsolidasi aksi Perencanaan: tombol per-baris/per-seksi → baris aksi cepat header
+
+- Perubahan perilaku (BUKAN bug — dicatat supaya tombol lama tidak "dipulihkan" sesi berikutnya).
+  Rangkaian 3 commit di `/dashboard/perencanaan`:
+  1. (`5f64d59`) Header halaman dapat baris 3 aksi cepat segrup: **Kelola RAB** (→
+     `/dashboard/rab/[eventId]`), **Simulasi Harga Tiket** (→ `/dashboard/simulasi`), **Buat PO**
+     (buka modal Buat PO milik `PurchaseOrderTab` via prop `createSignal` — counter; efek internal
+     menjalankan handler yang SAMA dgn tombol lama). Kelola RAB & Buat PO disabled tanpa event
+     terpilih. Tombol "Buka Simulasi" di header `SimulationSummaryCard` dihapus (redundan).
+  2. Tombol hijau **"Kelola RAB" per-baris di `document-table.tsx` DIHAPUS** — kolom "Aksi" ikut
+     dihapus seluruhnya karena tombol itu satu-satunya isinya (`colSpan` placeholder 5→4; badge
+     "Ada RAB"/"Belum Ada RAB" tetap di kolom Nilai RAB).
+  3. Tombol **"Buat PO Baru" internal di `PurchaseOrderTab` DIHAPUS** — pembuatan PO kini HANYA
+     lewat tombol header. Wiring `createSignal` TIDAK tergantung tombol yang dihapus (efek +
+     `{showForm && ...}` modal tetap utuh). `PurchaseOrderTab` hanya dipakai di halaman Perencanaan
+     (diverifikasi grep) — tidak ada halaman lain yang kehilangan pintu buat PO.
+- **JANGAN kembalikan** tombol per-baris "Kelola RAB" maupun "Buat PO Baru" internal — satu pintu
+  per aksi, di header. (Konsisten pola "1 pintu per halaman detail" di Dashboard Ticketing 2026-07-16.)
+- File terkait: `client/src/app/dashboard/perencanaan/page.tsx`,
+  `client/src/components/dashboard/document-table.tsx`,
+  `client/src/components/dashboard/PurchaseOrderTab.tsx`,
+  `client/src/components/dashboard/simulation-summary-card.tsx`
+- Tag: #perencanaan #navigasi #konsolidasi #ux #keputusan-founder

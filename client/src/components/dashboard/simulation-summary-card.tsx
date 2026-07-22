@@ -20,6 +20,7 @@ import axios from "axios"
 import Link from "next/link"
 import { Calculator, ArrowRight, Ticket, Loader2 } from "lucide-react"
 import { Button } from "@/components/ui/button"
+import { ProLockPanel } from "@/components/dashboard/pro-lock"
 
 interface SimulationData {
   bepTickets: number
@@ -59,15 +60,21 @@ const TIERS = [
 export function SimulationSummaryCard({ eventId }: { eventId: string }) {
   const [data, setData] = useState<SimulationData | null>(null)
   const [loading, setLoading] = useState(true)
+  // 402 dari requireActivePro = event belum Pro → gembok upgrade (ProLockPanel),
+  // BUKAN empty state "belum ada simulasi". Dua kondisi itu dulu tercampur —
+  // menyembunyikan peluang upgrade dari user Starter (lihat known-bugs 2026-07-22).
+  const [proLocked, setProLocked] = useState(false)
 
   useEffect(() => {
     if (!eventId) {
       setData(null)
+      setProLocked(false)
       setLoading(false)
       return
     }
     const token = localStorage.getItem("token")
     setLoading(true)
+    setProLocked(false)
     let cancelled = false
     axios
       .get(`/api/ticket-simulation?eventId=${eventId}`, {
@@ -75,12 +82,16 @@ export function SimulationSummaryCard({ eventId }: { eventId: string }) {
       })
       .then((res) => {
         if (cancelled) return
+        // 200 dgn data:null = event Pro aktif tapi belum pernah simulasi → empty state.
         setData(res.data?.data ?? null)
       })
-      .catch(() => {
-        // 402 (Pro lapse) / 404 / error jaringan → perlakukan sebagai "belum ada
-        // simulasi": kartu jatuh ke empty state, tidak menampilkan angka basi/error.
-        if (!cancelled) setData(null)
+      .catch((err) => {
+        if (cancelled) return
+        setData(null)
+        // HANYA 402 yang berarti "belum Pro". 404 / error jaringan tetap jatuh
+        // ke empty state generik — tidak ada hubungannya dengan status Pro.
+        const status = axios.isAxiosError(err) ? err.response?.status : undefined
+        if (status === 402) setProLocked(true)
       })
       .finally(() => {
         if (!cancelled) setLoading(false)
@@ -115,6 +126,12 @@ export function SimulationSummaryCard({ eventId }: { eventId: string }) {
             <Loader2 className="size-4 animate-spin text-slate-400" />
             Memuat ringkasan simulasi…
           </div>
+        ) : proLocked ? (
+          <ProLockPanel
+            eventId={eventId}
+            featureName="Simulasi Harga Tiket"
+            description="Event ini belum aktif Pro. Simulasi Harga Tiket & ringkasannya khusus Pro — upgrade untuk membuka fitur ini untuk event terpilih."
+          />
         ) : !data ? (
           <div className="flex flex-col items-center justify-center gap-3 py-10 text-center">
             <Ticket className="size-8 text-slate-300" />
