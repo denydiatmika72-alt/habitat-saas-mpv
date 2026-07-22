@@ -5,7 +5,6 @@ import Link from "next/link"
 import { usePathname } from "next/navigation"
 import {
   LayoutDashboard,
-  Calculator,
   ClipboardList,
   Handshake,
   Users,
@@ -63,10 +62,13 @@ const nav: NavItem[] = [
   // "Dashboard Perencanaan", dan hub itu sudah mencakup seluruh isi RAB. Yang tersisa dari
   // item lama hanya kebutuhan HIGHLIGHT: editor RAB (/dashboard/rab/[id]) adalah sub-route
   // yang dicapai DARI hub ini, jadi `activePrefix` dipindah ke sini supaya hub tetap menyala
-  // saat user berada di dalam editor. (Simulasi TIDAK ditambahkan di sini — ia punya item
-  // sidebar sendiri; kalau ikut jadi prefix, dua item menyala bersamaan.)
+  // saat user berada di dalam editor.
+  // Item "Simulasi Harga Tiket" DIHAPUS 2026-07-22 — redundan dgn tombol aksi cepat
+  // "Simulasi Harga Tiket" di header Dashboard Perencanaan (commit 5f64d59); halaman
+  // /dashboard/simulasi tetap ada & berfungsi. `activePrefix` di sini tetap SATU string
+  // ("/dashboard/rab") — /dashboard/simulasi SENGAJA tidak ikut menyalakan hub (butuh
+  // dukungan multi-prefix; tambahkan hanya kalau founder memintanya).
   { label: "Dashboard Perencanaan", icon: ClipboardList, href: "/dashboard/perencanaan", activePrefix: "/dashboard/rab", group: "Perencanaan" },
-  { label: "Simulasi Harga Tiket", icon: Calculator, href: "/dashboard/simulasi", badge: "Pro", group: "Perencanaan" },
   { label: "Vendor & Talent", icon: Users, onClick: () => alert("Fitur Vendor Segera Hadir"), hidden: true },
   // Pola hub (Layer 2): "Dashboard Tiket & Pencairan" adalah SATU-SATUNYA pintu masuk kategori ini.
   // "Manajemen Tiket" (/dashboard/tickets) & "Pencairan Dana" (/dashboard/payout) sengaja TIDAK ada
