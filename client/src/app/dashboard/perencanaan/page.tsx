@@ -17,6 +17,7 @@ import Link from "next/link"
 import { ArrowLeft, Calculator, ClipboardList, PackageOpen, ArrowRight } from "lucide-react"
 import { DocumentTable } from "@/components/dashboard/document-table"
 import { BudgetAllocationCard } from "@/components/dashboard/budget-donut-chart"
+import { SimulationSummaryCard } from "@/components/dashboard/simulation-summary-card"
 import PurchaseOrderTab from "@/components/dashboard/PurchaseOrderTab"
 import { Button } from "@/components/ui/button"
 import { useSelectedEvent } from "@/contexts/event-context"
@@ -62,6 +63,10 @@ export default function PerencanaanPage() {
           /dashboard/setup-event pada 2026-07-21 — halaman ini kembali fokus
           murni ke perencanaan anggaran. JANGAN dikembalikan ke sini. */}
       <DocumentTable />
+
+      {/* ── Ringkasan Simulasi Harga Tiket (hasil terakhir) ──────────────────
+          Cerminan hasil halaman /dashboard/simulasi tanpa harus membukanya. */}
+      {selectedEventId && <SimulationSummaryCard eventId={selectedEventId} />}
 
       {/* ── Distribusi Biaya Event (donut alokasi RAB) ───────────────────────
           Dipulihkan 2026-07-21: chart ini hilang tanpa sengaja saat /dashboard

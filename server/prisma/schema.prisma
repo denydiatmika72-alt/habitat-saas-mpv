@@ -41,6 +41,7 @@ model User {
   sponsorInvoices   SponsorInvoice[]
   changeRequests    EventChangeRequest[] @relation("PromotorChangeRequests")
   reviewedChangeRequests EventChangeRequest[] @relation("AdminReviewedChangeRequests")
+  ticketPriceSimulations TicketPriceSimulation[]
 
   @@map("users")
 }
@@ -128,6 +129,7 @@ model Event {
   sponsorPackages    SponsorPackage[]
   sponsorThresholds  SponsorThreshold[]
   changeRequests     EventChangeRequest[]
+  ticketPriceSimulation TicketPriceSimulation?
 
   @@map("events")
 }
@@ -368,6 +370,46 @@ model BundleOrderItem {
   tickets    Ticket[]
 
   @@map("bundle_order_items")
+}
+
+// Snapshot HASIL Simulasi Harga Tiket terakhir per-event (latest-wins, upsert).
+// TIDAK ada history — satu baris per event, selalu ditimpa oleh setelan slider terbaru.
+// Menyimpan input slider (agar bisa direkonstruksi) DAN output headline (BEP tiket, BEP
+// revenue, harga per tier) supaya ringkasan di Dashboard Perencanaan tidak perlu menghitung
+// ulang. Perhitungan tetap client-side di halaman Simulasi (sumber kebenaran rumus).
+model TicketPriceSimulation {
+  id                    String   @id @default(uuid())
+  eventId               String   @unique @map("event_id")
+  promotorId            String   @map("promotor_id")
+
+  // Input slider / form (lihat client/src/app/dashboard/simulasi/page.tsx)
+  targetProfit          Float    @map("target_profit")
+  sponsorInjection      Float    @map("sponsor_injection")
+  includeSponsorInPrice Boolean  @default(false) @map("include_sponsor_in_price")
+  attendance            Int      // % estimasi kehadiran
+  earlybirdAlloc        Int      @map("earlybird_alloc")
+  presaleAlloc          Int      @map("presale_alloc")
+  normalAlloc           Int      @map("normal_alloc")
+
+  // Konteks saat simulasi dijalankan (agar ringkasan konsisten walau RAB berubah kemudian)
+  capacity              Int      @default(0)
+  totalBudget           Float    @default(0) @map("total_budget")
+
+  // Output headline
+  bepTickets            Int      @map("bep_tickets")
+  bepRevenue            Float    @map("bep_revenue")
+  priceEarlybird        Float    @map("price_earlybird")
+  pricePresale          Float    @map("price_presale")
+  priceNormal           Float    @map("price_normal")
+  projectedRevenue      Float    @map("projected_revenue")
+
+  createdAt             DateTime @default(now()) @map("created_at")
+  updatedAt             DateTime @updatedAt      @map("updated_at")
+
+  event    Event @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  promotor User  @relation(fields: [promotorId], references: [id], onDelete: Cascade)
+
+  @@map("ticket_price_simulations")
 }
 
 model Expense {

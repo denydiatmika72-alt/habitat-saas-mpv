@@ -3149,3 +3149,44 @@ tidak akan terhitung** → catatan jadi bohong dan promotor salah membaca sisa k
 - **Frontend-only** — tidak ada perubahan backend/schema. Endpoint tetap
   `POST/GET /api/events/:id/change-requests`. `npx tsc --noEmit` lolos.
 - Tag: #navigasi #event-change-request #konsolidasi #frontend-only
+
+---
+
+## [2026-07-22] Fitur: ringkasan Simulasi Harga Tiket di Dashboard Perencanaan
+
+- **Konteks:** halaman Simulasi (`/dashboard/simulasi`) selama ini **murni client-side** — semua input
+  slider (target profit, sponsor, estimasi kehadiran, alokasi 3 gelombang) dan hasilnya (BEP tiket, harga
+  per tier) hidup di React state, hilang saat refresh, tidak pernah ke backend. Founder ingin ringkasan hasil
+  terakhir (terutama BEP) tampil di Dashboard Perencanaan tanpa harus membuka halaman Simulasi, dan ikut
+  berubah saat slider direvisi.
+- **Persistence BARU (sebelumnya tidak ada sama sekali):** model Prisma `TicketPriceSimulation`
+  (`ticket_price_simulations`) — **satu baris per event** (`eventId @unique`, latest-wins, TIDAK ada history),
+  `promotorId` untuk ownership, menyimpan input slider + output headline (`bepTickets`, `bepRevenue`,
+  `priceEarlybird/Presale/Normal`, `projectedRevenue`, `capacity`, `totalBudget`) + `updatedAt`. FK cascade ke
+  Event & User.
+- **Endpoint** (`controllers/ticket-simulation.controller.js`, `routes/ticket-simulation.routes.js`, mount
+  `/api/ticket-simulation`), keduanya `verifyToken + requireActivePro()` (Simulasi = fitur Pro per-event;
+  eventId di query/body ditemukan resolver default):
+  - `GET /api/ticket-simulation?eventId=` → baris terakhir atau `data:null` (200, bukan 404) kalau belum ada.
+  - `POST /api/ticket-simulation` → **upsert** by eventId (ownership diturunkan server-side dari event, tidak
+    dari body). Input dinormalisasi (angka non-negatif, persen 0..100).
+- **Auto-save di halaman Simulasi:** halaman live-calculating tanpa tombol "Simpan", jadi titik simpan
+  paling natural = **debounce 800ms** setelah slider berhenti. Gate ketat agar tidak menyimpan state
+  setengah jadi: butuh `eventId` + tool unlocked (Pro) + `!loadingEvents && !loadingBudget` (kalau budget
+  masih loading, `totalBudget` sementara 0). Kegagalan simpan **diam-diam** (tidak mengganggu simulasi).
+- **Kartu ringkasan** `components/dashboard/simulation-summary-card.tsx` di Dashboard Perencanaan
+  (`{selectedEventId && <SimulationSummaryCard />}`): BEP tiket + % kapasitas, total proyeksi, harga 3 tier,
+  timestamp. Empty state "Belum ada simulasi harga tiket" + tombol ke `/dashboard/simulasi`. **402/404/error
+  jaringan semua diperlakukan sebagai empty state** (event yang Pro-nya lapse tidak menampilkan angka basi).
+- **Refresh saat navigasi:** kartu fetch di `useEffect` ber-key `eventId` (string primitif → aman loop). Halaman
+  Perencanaan remount tiap dinavigasi (App Router), jadi kembali dari Simulasi → remount → refetch → angka
+  terbaru. Tidak ada cache manual, tidak ada focus listener.
+- **⚠️ DEPLOY:** butuh **`npx prisma db push` + `npx prisma generate` + `pm2 restart nexevent-api` di VPS**
+  (ada model schema baru) dan frontend (Vercel) HARUS naik bersamaan — koordinasi backend+frontend seperti
+  pola task-task terakhir. `db push` aman (tabel baru, additive).
+- **File:** `server/prisma/schema.prisma` (+`TicketPriceSimulation`, relasi di User & Event),
+  `server/controllers/ticket-simulation.controller.js` (baru), `server/routes/ticket-simulation.routes.js`
+  (baru), `server/src/index.js` (mount), `client/src/app/dashboard/simulasi/page.tsx` (auto-save),
+  `client/src/components/dashboard/simulation-summary-card.tsx` (baru),
+  `client/src/app/dashboard/perencanaan/page.tsx` (render kartu).
+- Tag: #fitur #simulasi #persistence #pro-gated #prisma #db-push #frontend+backend

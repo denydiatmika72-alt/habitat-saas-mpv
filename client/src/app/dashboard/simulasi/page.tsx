@@ -1,6 +1,6 @@
 "use client"
 
-import { useMemo, useState, useEffect } from "react"
+import { useMemo, useState, useEffect, useRef } from "react"
 import { useRouter } from "next/navigation"
 import Link from "next/link"
 import axios from "axios"
@@ -207,9 +207,62 @@ export default function RevenueStrategyCenter() {
   const allocTotal = earlybirdAlloc + presaleAlloc + normalAlloc
   const bepPct     = capacity > 0 ? Math.min(100, (result.bep / capacity) * 100) : 0
 
-  // Gating PER-EVENT (bukan global): tool terbuka hanya kalau event yang DIPILIH aktif Pro.
-  // Selector event tetap tampil supaya user bisa pindah ke event lain yang Pro-nya aktif.
+  // Gating PER-EVENT (dipindah ke atas efek simpan supaya bisa jadi guard-nya).
+  // Tool terbuka hanya kalau event yang DIPILIH aktif Pro.
   const unlocked = isProForEvent(eventId)
+
+  // ── Auto-save HASIL simulasi (debounced) ──────────────────────────────────
+  // Halaman ini live-calculating tiap slider bergeser (tidak ada tombol "Simpan"),
+  // jadi titik simpan paling natural = debounce setelah slider berhenti. Latest-wins
+  // upsert di backend → satu baris per event, selalu ditimpa. Ringkasan di Dashboard
+  // Perencanaan lalu mencerminkan setelan terbaru tanpa buka halaman ini.
+  //
+  // Gate ketat supaya tidak menyimpan state SETENGAH JADI:
+  //  - butuh eventId + tool unlocked (kalau lock, endpoint 402 saja)
+  //  - JANGAN simpan selama event/budget masih loading (totalBudget bisa 0 sementara)
+  const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+  useEffect(() => {
+    if (!eventId || !unlocked) return
+    if (loadingEvents || loadingBudget) return
+
+    if (saveTimer.current) clearTimeout(saveTimer.current)
+    saveTimer.current = setTimeout(() => {
+      axios
+        .post(
+          `${API}/ticket-simulation`,
+          {
+            eventId,
+            targetProfit,
+            sponsorInjection,
+            includeSponsorInPrice,
+            attendance,
+            earlybirdAlloc,
+            presaleAlloc,
+            normalAlloc,
+            capacity,
+            totalBudget,
+            bepTickets: result.bep,
+            bepRevenue: result.bepRevenue,
+            priceEarlybird: result.classes[0]?.price ?? 0,
+            pricePresale: result.classes[1]?.price ?? 0,
+            priceNormal: result.classes[2]?.price ?? 0,
+            projectedRevenue: result.projectedRevenue,
+          },
+          { headers: authHeaders() }
+        )
+        .catch(() => {
+          /* simpan diam-diam — kegagalan tidak boleh mengganggu simulasi live */
+        })
+    }, 800)
+
+    return () => {
+      if (saveTimer.current) clearTimeout(saveTimer.current)
+    }
+  }, [
+    eventId, unlocked, loadingEvents, loadingBudget,
+    targetProfit, sponsorInjection, includeSponsorInPrice, attendance,
+    earlybirdAlloc, presaleAlloc, normalAlloc, capacity, totalBudget, result,
+  ])
 
   if (userLoading) {
     return (

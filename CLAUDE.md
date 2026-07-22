@@ -240,6 +240,13 @@ Sejak 2026-07-20 komponen ini di-render di **`/dashboard/perencanaan`** (bukan `
   memanggil `/api/invoices`** — dulu memanggilnya TANPA `eventId` hanya untuk badge "Ada Invoice".
 - PDF download (di halaman Invoice): GET `/api/pdf?path=${pdfUrl}`
 
+**Ringkasan Simulasi Harga Tiket** (`components/dashboard/simulation-summary-card.tsx` → `SimulationSummaryCard`,
+sejak 2026-07-22) juga dirender di `/dashboard/perencanaan`, ter-scope event aktif. Menampilkan HASIL terakhir
+simulasi (BEP tiket + % kapasitas, total proyeksi, harga 3 tier) tanpa membuka halaman Simulasi. Sumber:
+`GET /api/ticket-simulation?eventId=` (baris `TicketPriceSimulation` latest-wins). Empty state kalau belum ada
+simulasi (juga saat Pro event lapse → GET 402 diperlakukan sebagai empty). Lihat section "Simulasi Harga Tiket
+— Persistence" di bawah + known-bugs [2026-07-22].
+
 **Donut "Distribusi Biaya Event"** (`components/dashboard/budget-donut-chart.tsx` → `BudgetAllocationCard`)
 juga dirender di `/dashboard/perencanaan`, ter-scope event aktif. Chart ini sempat HILANG (regresi commit
 `0842e0d`, dipulihkan 2026-07-21 — lihat known-bugs). **Beda dari donut di `/dashboard/pl-report`**: yang itu
@@ -346,6 +353,21 @@ kartu konteks event aktif ("Ganti event" → `/dashboard`) → **`EventChangeReq
   (aksi tersering; keduanya bermuara ke `/dashboard/create-event`).
 - **Konsekuensi untuk `/dashboard/perencanaan`:** halaman itu kembali **murni RAB/anggaran** (DocumentTable +
   donut alokasi + Purchase Order + pintu Simulasi). JANGAN taruh panel ajuan di sana lagi.
+
+## Simulasi Harga Tiket — Persistence (sejak 2026-07-22)
+
+Halaman `/dashboard/simulasi` **live-calculating client-side** (rumus BEP/tiering ada di komponen, itu tetap
+sumber kebenaran). Sejak 2026-07-22 **hasilnya di-snapshot ke DB** supaya bisa ditampilkan di Dashboard
+Perencanaan tanpa buka halaman Simulasi.
+- **Model `TicketPriceSimulation`** (`ticket_price_simulations`): **satu baris per event** (`eventId @unique`,
+  **latest-wins, TANPA history**), `promotorId` untuk ownership. Simpan input slider + output headline
+  (`bepTickets`, `bepRevenue`, `priceEarlybird/Presale/Normal`, `projectedRevenue`, `capacity`, `totalBudget`).
+- **Endpoint** `/api/ticket-simulation` (`ticket-simulation.controller.js`), `verifyToken + requireActivePro()`:
+  `GET ?eventId=` (baris terakhir / `data:null`), `POST` (**upsert** by eventId; ownership dari event server-side,
+  BUKAN body).
+- **Auto-save**: halaman Simulasi menyimpan lewat **debounce 800ms** saat slider berhenti (tidak ada tombol
+  Simpan). Digate `eventId + unlocked + !loadingEvents && !loadingBudget`; gagal simpan diam-diam.
+- **JANGAN** membangun mekanisme "history" atau baris kedua per event — ini SENGAJA latest-wins.
 
 ## Invoice Model
 
