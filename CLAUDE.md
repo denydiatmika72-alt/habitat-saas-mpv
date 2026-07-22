@@ -216,10 +216,13 @@ Alur: **homepage discovery → storefront event → checkout.** `is_published` d
 Sejak 2026-07-20 komponen ini di-render di **`/dashboard/perencanaan`** (bukan `/dashboard`), dan sejak
 2026-07-21 isinya **RAB SATU event saja** — yaitu event aktif di `EventProvider`:
 - Memuat `GET /api/events/:id` (sudah ter-scope `promotor_id` di backend) + `GET /api/budgets/:eventId`.
-- Aksi: **"Kelola RAB" saja** (→ `/dashboard/rab/[id]`). **⚠️ KOREKSI 2026-07-21 (malam): tombol
-  "Ajukan Hapus" SUDAH TIDAK ADA di sini** — pindah ke `/dashboard/setup-event` (lihat section
-  "Setup Event"). Yang tersisa hanya tautan teks "Setup Event" di header kartu. JANGAN kembalikan
-  aksi hapus/ajuan-hapus ke komponen ini.
+- **⚠️ KOREKSI 2026-07-22: kolom "Aksi" SUDAH TIDAK ADA** — tombol "Kelola RAB" per-baris dihapus
+  (kolomnya ikut, karena tombol itu satu-satunya isinya; `colSpan` placeholder 5→4). Akses Kelola RAB
+  kini lewat **baris aksi cepat di header halaman Perencanaan** (lihat bawah). Badge "Ada RAB"/
+  "Belum Ada RAB" + nilai RAB tetap tampil. JANGAN kembalikan tombol per-baris — satu pintu per aksi.
+- **⚠️ KOREKSI 2026-07-21 (malam): tombol "Ajukan Hapus" SUDAH TIDAK ADA di sini** — pindah ke
+  `/dashboard/setup-event` (lihat section "Setup Event"). Yang tersisa hanya tautan teks "Setup Event"
+  di header kartu. JANGAN kembalikan aksi hapus/ajuan-hapus ke komponen ini.
 - **⚠️ KOREKSI 2026-07-21 (sore) — hapus event SUDAH TIDAK tersedia untuk promotor.** Catatan lama di
   baris ini menyatakan "hapus event TERSEDIA untuk promotor biasa" lewat `DELETE /api/events/:id`
   (`verifyToken` + cek `promotor_id`); itu benar sampai siang hari yang sama, lalu **sengaja dibalik**
@@ -240,17 +243,39 @@ Sejak 2026-07-20 komponen ini di-render di **`/dashboard/perencanaan`** (bukan `
   memanggil `/api/invoices`** — dulu memanggilnya TANPA `eventId` hanya untuk badge "Ada Invoice".
 - PDF download (di halaman Invoice): GET `/api/pdf?path=${pdfUrl}`
 
+**Baris 3 aksi cepat di header halaman Perencanaan** (sejak 2026-07-22, konsolidasi — commit `5f64d59` +
+lanjutannya `942ad9c`; lihat known-bugs [2026-07-22] Konsolidasi aksi Perencanaan). Satu gaya seragam
+(outline, `QUICK_ACTION_CLASS`), menggantikan tombol tunggal "Simulasi Harga Tiket" yang lama:
+- **"Kelola RAB"** → `/dashboard/rab/[eventId]` (event aktif; halaman RAB sendiri yang menangani kasus
+  belum-ada-RAB). Disabled tanpa event terpilih.
+- **"Simulasi Harga Tiket"** → `/dashboard/simulasi`.
+- **"Buat PO"** → membuka modal "Buat PO" milik `PurchaseOrderTab` via prop **`createSignal`** (counter dari
+  page; efek internal tab menjalankan `resetForm(); setShowForm(true)` — handler yang sama, BUKAN flow
+  duplikat). Disabled tanpa event terpilih.
+**Ini SATU-SATUNYA pintu ketiga aksi tsb.** Tombol lama yang DIHAPUS dan JANGAN dikembalikan: "Kelola RAB"
+per-baris di `document-table.tsx`, "Buat PO Baru" internal di `PurchaseOrderTab`, dan "Buka Simulasi" di
+header `SimulationSummaryCard` (tombol empty-state "Buat Simulasi Harga Tiket" di dalam kartu TETAP ada).
+`PurchaseOrderTab` hanya dipakai di halaman Perencanaan (diverifikasi), jadi penghapusan tombol internalnya
+tidak menelantarkan halaman lain.
+
 **Ringkasan Simulasi Harga Tiket** (`components/dashboard/simulation-summary-card.tsx` → `SimulationSummaryCard`,
-sejak 2026-07-22) juga dirender di `/dashboard/perencanaan`, ter-scope event aktif. Menampilkan HASIL terakhir
+sejak 2026-07-22) juga dirender di `/dashboard/perencanaan`, ter-scope event aktif — **posisinya DI BAWAH donut
+"Distribusi Biaya Event"** (permintaan founder 2026-07-22, jangan ditukar). Menampilkan HASIL terakhir
 simulasi (BEP tiket + % kapasitas, total proyeksi, harga 3 tier) tanpa membuka halaman Simulasi. Sumber:
-`GET /api/ticket-simulation?eventId=` (baris `TicketPriceSimulation` latest-wins). Empty state kalau belum ada
-simulasi (juga saat Pro event lapse → GET 402 diperlakukan sebagai empty). Lihat section "Simulasi Harga Tiket
-— Persistence" di bawah + known-bugs [2026-07-22].
+`GET /api/ticket-simulation?eventId=` (baris `TicketPriceSimulation` latest-wins). **Penanganan respons
+(KOREKSI 2026-07-22 — dulu 402 ikut jadi empty state, itu SUDAH TIDAK berlaku):**
+- **402** (event belum Pro, `requireActivePro` menolak) → **`ProLockPanel`** menggantikan body kartu (header
+  kartu tetap; pola sama `PurchaseOrderTab`) — ajakan upgrade, BUKAN empty state.
+- **200 dgn `data:null`** (Pro aktif, belum pernah simulasi) → empty state "Belum ada simulasi" + tombol ke
+  `/dashboard/simulasi`.
+- **404/error jaringan** → empty state generik (tak ada hubungan dgn status Pro).
+Lihat section "Simulasi Harga Tiket — Persistence" di bawah + known-bugs [2026-07-22].
 
 **Donut "Distribusi Biaya Event"** (`components/dashboard/budget-donut-chart.tsx` → `BudgetAllocationCard`)
-juga dirender di `/dashboard/perencanaan`, ter-scope event aktif. Chart ini sempat HILANG (regresi commit
-`0842e0d`, dipulihkan 2026-07-21 — lihat known-bugs). **Beda dari donut di `/dashboard/pl-report`**: yang itu
-"Komposisi Pengeluaran" (realisasi, recharts); yang ini alokasi RAB (rencana, SVG manual). Bukan duplikat.
+juga dirender di `/dashboard/perencanaan`, ter-scope event aktif, **di ATAS kartu ringkasan simulasi**.
+Chart ini sempat HILANG (regresi commit `0842e0d`, dipulihkan 2026-07-21 — lihat known-bugs). **Beda dari
+donut di `/dashboard/pl-report`**: yang itu "Komposisi Pengeluaran" (realisasi, recharts); yang ini alokasi
+RAB (rencana, SVG manual). Bukan duplikat.
 
 ## Pelunasan Hutang Fee — mekanismenya SUDAH ADA (diinvestigasi 2026-07-22)
 
@@ -948,7 +973,9 @@ Founder berencana suatu saat mengubah nexEvent dari web app menjadi aplikasi mob
   Event Baru, 4 kartu akses cepat (Perencanaan / Kerjasama / Ticketing / Keuangan).
 - **`/dashboard/perencanaan` = Dashboard Perencanaan**: indeks RAB + Purchase Order per-event + pintu ke
   Simulasi Harga Tiket. **PO pindah ke sini dari halaman Invoice** (keputusan founder: PO = alat perencanaan
-  belanja, bukan dokumen kerjasama).
+  belanja, bukan dokumen kerjasama). Sejak 2026-07-22 header halaman punya **baris 3 aksi cepat**
+  (Kelola RAB / Simulasi Harga Tiket / Buat PO) sebagai satu-satunya pintu ketiga aksi itu — detail di
+  section "Document Table" di atas.
 - Halaman lain boleh tetap punya dropdown event demi kenyamanan, **tapi WAJIB menulis ke context yang SAMA**
   (`setSelectedEventId`), bukan state lokal.
 - **`/dashboard/payout` PENGECUALIAN — bebas event.** Provider bahkan sengaja tidak menulis `?eventId=` ke
