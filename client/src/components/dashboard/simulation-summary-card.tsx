@@ -104,16 +104,9 @@ export function SimulationSummaryCard({ eventId }: { eventId: string }) {
             Hasil terbaru dari Simulasi Harga Tiket untuk event ini.
           </p>
         </div>
-        <Link href="/dashboard/simulasi" className="shrink-0 print:hidden">
-          <Button
-            variant="outline"
-            size="sm"
-            className="gap-1.5 border-slate-200 bg-white text-slate-900 hover:bg-slate-100"
-          >
-            <Calculator className="size-4" />
-            Buka Simulasi
-          </Button>
-        </Link>
+        {/* Tombol "Buka Simulasi" DIHAPUS 2026-07-22 — redundan dgn tombol
+            "Simulasi Harga Tiket" di baris aksi header halaman Perencanaan.
+            Tombol empty-state "Buat Simulasi Harga Tiket" di bawah TETAP ada. */}
       </div>
 
       <div className="p-5">

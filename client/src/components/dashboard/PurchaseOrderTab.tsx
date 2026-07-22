@@ -287,7 +287,13 @@ function PODetailModal({ po, onClose }: { po: PO; onClose: () => void }) {
 
 // ─── Main Component ───────────────────────────────────────────────────────────
 
-export default function PurchaseOrderTab({ eventId: propEventId }: { eventId?: string | null }) {
+export default function PurchaseOrderTab({
+  eventId: propEventId,
+  // createSignal: counter dari luar (tombol "Buat PO" di header halaman
+  // Perencanaan). Tiap kenaikan → buka modal Buat PO, lewat handler yang SAMA
+  // dengan tombol "Buat PO Baru" internal — bukan jalur duplikat.
+  createSignal = 0,
+}: { eventId?: string | null; createSignal?: number }) {
   // Event selection (ketika tidak ada eventId dari props)
   const [events, setEvents] = useState<Event[]>([])
   const [selectedEventId, setSelectedEventId] = useState<string>(propEventId ?? "")
@@ -348,6 +354,18 @@ export default function PurchaseOrderTab({ eventId: propEventId }: { eventId?: s
   useEffect(() => {
     if (selectedEventId) loadPos(selectedEventId)
   }, [selectedEventId, loadPos])
+
+  // ── Buka form dari luar (createSignal) ────────────────────────────────────
+  // Guard sama seperti tombol internal: butuh event terpilih & tidak Pro-locked.
+  // Deps SENGAJA hanya createSignal — efek ini hanya bereaksi pada klik tombol
+  // luar, bukan pada perubahan state lain.
+  useEffect(() => {
+    if (!createSignal) return
+    if (!selectedEventId || proLocked) return
+    resetForm()
+    setShowForm(true)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [createSignal])
 
   // ── Form helpers ──────────────────────────────────────────────────────────
 

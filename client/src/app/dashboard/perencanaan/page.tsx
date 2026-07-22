@@ -13,8 +13,9 @@
 // yang butuh event aktif.
 // ============================================================================
 
+import { useState } from "react"
 import Link from "next/link"
-import { ArrowLeft, Calculator, ClipboardList, PackageOpen, ArrowRight } from "lucide-react"
+import { ArrowLeft, Calculator, ClipboardList, PackageOpen, ArrowRight, Plus } from "lucide-react"
 import { DocumentTable } from "@/components/dashboard/document-table"
 import { BudgetAllocationCard } from "@/components/dashboard/budget-donut-chart"
 import { SimulationSummaryCard } from "@/components/dashboard/simulation-summary-card"
@@ -22,8 +23,16 @@ import PurchaseOrderTab from "@/components/dashboard/PurchaseOrderTab"
 import { Button } from "@/components/ui/button"
 import { useSelectedEvent } from "@/contexts/event-context"
 
+// Kelas tombol aksi cepat di header — SATU gaya untuk ketiganya supaya tampil
+// sebagai grup kohesif (mengikuti gaya tombol "Simulasi Harga Tiket" lama).
+const QUICK_ACTION_CLASS =
+  "gap-2 border-slate-200 bg-white text-slate-900 hover:bg-slate-100"
+
 export default function PerencanaanPage() {
   const { selectedEventId } = useSelectedEvent()
+  // Counter sinyal untuk membuka modal "Buat PO" di PurchaseOrderTab (jauh di
+  // bawah halaman) dari tombol header — reuse handler internal tab, bukan duplikat.
+  const [poCreateSignal, setPoCreateSignal] = useState(0)
 
   return (
     <div className="mx-auto flex w-full max-w-7xl flex-col gap-6">
@@ -50,12 +59,53 @@ export default function PerencanaanPage() {
           </p>
         </div>
 
-        <Link href="/dashboard/simulasi" className="shrink-0 print:hidden">
-          <Button variant="outline" className="gap-2 border-slate-200 bg-white text-slate-900 hover:bg-slate-100">
-            <Calculator className="size-4" />
-            Simulasi Harga Tiket
+        {/* Baris 3 aksi cepat (konsolidasi 2026-07-22 — menggantikan tombol
+            tunggal "Simulasi Harga Tiket"; tombol "Buka Simulasi" di kartu
+            ringkasan simulasi ikut dihapus karena redundan):
+            - Kelola RAB  → /dashboard/rab/[eventId] (pola SAMA dgn tombol di
+              baris tabel DocumentTable — halaman RAB sendiri yang menangani
+              kasus "belum ada RAB"); disabled tanpa event terpilih.
+            - Simulasi    → /dashboard/simulasi (tujuan lama, tidak berubah).
+            - Buat PO     → buka modal "Buat PO Baru" milik PurchaseOrderTab
+              via createSignal (bukan flow duplikat); disabled tanpa event. */}
+        <div className="flex shrink-0 flex-wrap items-center gap-2 print:hidden">
+          {selectedEventId ? (
+            <Link href={`/dashboard/rab/${selectedEventId}`}>
+              <Button variant="outline" className={QUICK_ACTION_CLASS}>
+                <ClipboardList className="size-4" />
+                Kelola RAB
+              </Button>
+            </Link>
+          ) : (
+            <Button
+              variant="outline"
+              disabled
+              title="Pilih event terlebih dahulu di Dashboard"
+              className={QUICK_ACTION_CLASS}
+            >
+              <ClipboardList className="size-4" />
+              Kelola RAB
+            </Button>
+          )}
+
+          <Link href="/dashboard/simulasi">
+            <Button variant="outline" className={QUICK_ACTION_CLASS}>
+              <Calculator className="size-4" />
+              Simulasi Harga Tiket
+            </Button>
+          </Link>
+
+          <Button
+            variant="outline"
+            disabled={!selectedEventId}
+            title={selectedEventId ? undefined : "Pilih event terlebih dahulu di Dashboard"}
+            className={QUICK_ACTION_CLASS}
+            onClick={() => setPoCreateSignal((s) => s + 1)}
+          >
+            <Plus className="size-4" />
+            Buat PO
           </Button>
-        </Link>
+        </div>
       </div>
 
       {/* ── RAB event aktif ──────────────────────────────────────────────── */}
@@ -90,7 +140,7 @@ export default function PerencanaanPage() {
 
         <div className="p-5">
           {selectedEventId ? (
-            <PurchaseOrderTab eventId={selectedEventId} />
+            <PurchaseOrderTab eventId={selectedEventId} createSignal={poCreateSignal} />
           ) : (
             <div className="flex flex-col items-center justify-center gap-3 py-12 text-center">
               <ClipboardList className="size-8 text-slate-300" />
