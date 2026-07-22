@@ -64,14 +64,15 @@ export default function PerencanaanPage() {
           murni ke perencanaan anggaran. JANGAN dikembalikan ke sini. */}
       <DocumentTable />
 
-      {/* ── Ringkasan Simulasi Harga Tiket (hasil terakhir) ──────────────────
-          Cerminan hasil halaman /dashboard/simulasi tanpa harus membukanya. */}
-      {selectedEventId && <SimulationSummaryCard eventId={selectedEventId} />}
-
       {/* ── Distribusi Biaya Event (donut alokasi RAB) ───────────────────────
           Dipulihkan 2026-07-21: chart ini hilang tanpa sengaja saat /dashboard
           ditulis ulang jadi Dashboard KPI (commit 0842e0d). */}
       {selectedEventId && <BudgetAllocationCard eventId={selectedEventId} />}
+
+      {/* ── Ringkasan Simulasi Harga Tiket (hasil terakhir) ──────────────────
+          Cerminan hasil halaman /dashboard/simulasi tanpa harus membukanya.
+          Sengaja DI BAWAH donut RAB (permintaan founder 2026-07-22). */}
+      {selectedEventId && <SimulationSummaryCard eventId={selectedEventId} />}
 
       {/* ── Purchase Order (per event aktif) ─────────────────────────────── */}
       <section className="rounded-xl border border-slate-200 bg-white">
