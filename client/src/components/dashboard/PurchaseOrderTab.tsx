@@ -557,17 +557,10 @@ export default function PurchaseOrderTab({
         />
       ) : selectedEventId ? (
         <>
-          {/* Header + Tombol Buat PO */}
-          <div className="flex items-center justify-between">
-            <p className="text-sm text-slate-500">{pos.length} Purchase Order tersimpan</p>
-            <Button
-              className="gap-2 bg-slate-900 hover:bg-slate-800"
-              onClick={() => { resetForm(); setShowForm(true) }}
-            >
-              <Plus className="size-4" />
-              Buat PO Baru
-            </Button>
-          </div>
+          {/* Tombol "Buat PO Baru" internal DIHAPUS 2026-07-22 — pembuatan PO
+              kini lewat tombol "Buat PO" di baris aksi cepat header halaman
+              Perencanaan (prop createSignal → handler yang sama). */}
+          <p className="text-sm text-slate-500">{pos.length} Purchase Order tersimpan</p>
 
           {/* Daftar PO */}
           {loadingPos && (
@@ -580,7 +573,7 @@ export default function PurchaseOrderTab({
             <div className="rounded-2xl border border-dashed border-slate-200 py-16 text-center text-slate-400">
               <PackageOpen className="mx-auto mb-3 size-10 opacity-30" />
               <p className="font-medium">Belum ada Purchase Order.</p>
-              <p className="mt-1 text-sm">Klik "Buat PO Baru" untuk memulai.</p>
+              <p className="mt-1 text-sm">Klik "Buat PO" di bagian atas halaman untuk memulai.</p>
             </div>
           )}
 

@@ -147,25 +147,22 @@ export function DocumentTable() {
                 <TableHead className="text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-500">
                   Tanggal Event
                 </TableHead>
-                <TableHead className="text-right text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-500">
+                <TableHead className="pr-5 text-right text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-500">
                   Nilai RAB
-                </TableHead>
-                <TableHead className="sticky right-0 bg-white z-10 pr-5 text-right text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-500">
-                  Aksi
                 </TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
               {isLoading ? (
                 <TableRow>
-                  <TableCell colSpan={5} className="py-12 text-center text-sm text-slate-500">
+                  <TableCell colSpan={4} className="py-12 text-center text-sm text-slate-500">
                     <RotateCw className="mx-auto mb-2 size-4 animate-spin text-slate-400" />
                     Memuat data...
                   </TableCell>
                 </TableRow>
               ) : !event ? (
                 <TableRow>
-                  <TableCell colSpan={5} className="py-12 text-center text-sm text-slate-500">
+                  <TableCell colSpan={4} className="py-12 text-center text-sm text-slate-500">
                     Event tidak ditemukan atau sudah dihapus.
                   </TableCell>
                 </TableRow>
@@ -232,7 +229,10 @@ function EventTableRow({ event }: { event: EventDetail }) {
       </TableCell>
 
       {/* Nilai RAB */}
-      <TableCell className="text-right">
+      {/* Kolom "Aksi" (tombol Kelola RAB per baris) DIHAPUS 2026-07-22 —
+          digantikan tombol "Kelola RAB" di baris aksi cepat header halaman
+          Perencanaan (commit 5f64d59). Badge status RAB tetap di sini. */}
+      <TableCell className="pr-5 text-right">
         {isLoadingBudget ? (
           <span className="text-xs text-slate-400 animate-pulse">Menghitung...</span>
         ) : (
@@ -251,17 +251,6 @@ function EventTableRow({ event }: { event: EventDetail }) {
             )}
           </div>
         )}
-      </TableCell>
-
-      {/* Aksi */}
-      <TableCell className="sticky right-0 bg-white z-10 pr-5">
-        <div className="flex items-center justify-end gap-1.5">
-          <Link href={`/dashboard/rab/${event.id}`}>
-            <Button size="sm" className="h-8 bg-emerald-800 text-white hover:bg-emerald-900">
-              Kelola RAB
-            </Button>
-          </Link>
-        </div>
       </TableCell>
     </TableRow>
   )
