@@ -3285,3 +3285,38 @@ tidak akan terhitung** → catatan jadi bohong dan promotor salah membaca sisa k
 - Deploy: BUTUH backend (`git pull` + `pm2 restart nexevent-api` — TIDAK ada perubahan schema, tak perlu
   `db push`); frontend Vercel auto.
 - Tag: #fitur #dashboard-kpi #aggregate-endpoint #reuse #pro-gating-per-seksi #starter-tier
+
+---
+
+## [2026-07-23] FITUR: Search box top-bar difungsikan (dulu dekoratif) — pencarian global event & sponsor
+
+- Gejala: kotak pencarian di top-bar dashboard (`top-bar.tsx`, placeholder "Cari dokumen, event, atau
+  klien...") murni dekoratif — tanpa onChange, tanpa state, tanpa endpoint. Founder minta difungsikan.
+- Root cause: memang belum pernah diimplementasi (placeholder UI sejak awal).
+- File terkait: `server/controllers/search.controller.js` (BARU), `server/routes/search.routes.js` (BARU),
+  `server/src/index.js` (mount `/api/search`), `client/src/components/dashboard/top-bar.tsx`
+  (komponen `GlobalSearch` top-level modul).
+- Fix / implementasi:
+  - **Backend** `GET /api/search?q=` (`verifyToken`, TANPA `requireActivePro` — navigasi dasar): mencari
+    **Event** (title + location) dan **SponsorDeal** (sponsorName + contactName = "klien"), keduanya
+    `contains` case-insensitive, **SELALU di-scope pemilik sesi** (`promotor_id`/`promotorId` = `req.user.id`
+    — prinsip isolasi per-promotor CLAUDE.md). "Dokumen" (RAB) menempel 1:1 ke Event → tercakup lewat hasil
+    event. `ClientAccount` SENGAJA tidak ikut dicari (sponsorName-nya duplikat 1:1 dari deal → hasil dobel).
+    Min 2 karakter (di bawah itu → data kosong, bukan error); maks 10 hasil gabungan (event dulu, lalu deal).
+    Respons: `{ type: "event"|"sponsor_deal", id, eventId, label, sublabel }`.
+  - **Frontend**: `GlobalSearch` di `top-bar.tsx` — debounce 300ms + `AbortController` (request lama batal
+    saat query berubah/unmount; dependency effect hanya string `trimmed`, stabil), dropdown hasil di bawah
+    input, state "Tidak ditemukan", tutup via klik-luar (listener `mousedown` lokal — belum ada util
+    click-outside di codebase) + Escape.
+  - **Navigasi hasil — JANGAN diubah ke useSelectedEvent()**: TopBar dirender **DI LUAR `EventProvider`**
+    (disengaja, lihat komentar `app/dashboard/layout.tsx`), jadi klik hasil bernavigasi dengan
+    **`?eventId=` di URL** — jalur deep-link resmi yang diadopsi provider lewat "Aturan 1: URL menang"
+    (`event-context.tsx`). Event → `/dashboard?eventId=`; deal sponsor → `/dashboard/kerjasama?eventId=`.
+- Verifikasi: `node --check` ketiga file backend OK; `npx tsc --noEmit` client bersih; handler dites
+  LANGSUNG terhadap DB production (mock req/res): cari judul event ✓, lokasi ✓, nama sponsor ✓ (label +
+  eventId benar), query 1 huruf → kosong ✓, query ngawur → kosong ✓, **isolasi lintas akun ✓** (user lain
+  cari judul event yang sama → 0 hasil). TIDAK diverifikasi live: interaksi dropdown di browser (klik hasil,
+  klik-luar) — hanya lolos typecheck.
+- Deploy: BUTUH backend (`git pull` + `pm2 restart nexevent-api`); TIDAK butuh `db push` (nol perubahan
+  schema — read-only atas tabel existing); frontend Vercel auto.
+- Tag: #fitur #search #top-bar #scoping-per-promotor #debounce

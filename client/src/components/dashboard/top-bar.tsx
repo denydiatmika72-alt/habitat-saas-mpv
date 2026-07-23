@@ -2,10 +2,185 @@
 
 import Link from "next/link"
 import { useRouter } from "next/navigation"
-import { Bell, Search, LogOut, Settings2 } from "lucide-react"
+import { useEffect, useRef, useState } from "react"
+import { Bell, Search, LogOut, Settings2, CalendarDays, Handshake, Loader2 } from "lucide-react"
 import { Input } from "@/components/ui/input"
 import { Button } from "@/components/ui/button"
 import { useUser } from "@/hooks/useUser"
+
+// ── Pencarian global top-bar ─────────────────────────────────────────────────
+// Memanggil GET /api/search?q= (search.controller.js) — hasilnya event & deal
+// sponsor MILIK promotor login saja (di-scope server-side).
+//
+// PENTING: TopBar dirender DI LUAR <EventProvider> (lihat komentar di
+// app/dashboard/layout.tsx — sengaja, TopBar tidak bergantung event). Jadi kita
+// TIDAK bisa memanggil useSelectedEvent() di sini. Cara set event aktif dari
+// hasil pencarian: navigasi dengan ?eventId= — itu jalur deep-link resmi yang
+// diadopsi provider lewat "Aturan 1: URL menang" di event-context.tsx.
+//
+// Komponen ini top-level modul (BUKAN di dalam TopBar) — aturan CLAUDE.md soal
+// komponen inline yang bikin remount + kehilangan fokus input tiap keystroke.
+
+const SEARCH_MIN_LENGTH = 2 // selaras MIN_QUERY_LENGTH backend
+const SEARCH_DEBOUNCE_MS = 300
+
+interface SearchResult {
+  type: "event" | "sponsor_deal"
+  id: string
+  eventId: string
+  label: string
+  sublabel: string
+}
+
+function GlobalSearch() {
+  const router = useRouter()
+  const [query, setQuery] = useState("")
+  const [results, setResults] = useState<SearchResult[]>([])
+  const [open, setOpen] = useState(false)
+  const [loading, setLoading] = useState(false)
+  // Query yang hasilnya sedang ditampilkan — pembeda "belum dicari" vs "sudah
+  // dicari tapi kosong" (untuk state "Tidak ditemukan").
+  const [searchedFor, setSearchedFor] = useState("")
+  const containerRef = useRef<HTMLDivElement>(null)
+
+  const trimmed = query.trim()
+
+  // Debounce 300ms + AbortController: request lama dibatalkan saat query berubah
+  // atau komponen unmount (pola safe-fetch — tidak ada dependency tak stabil).
+  useEffect(() => {
+    if (trimmed.length < SEARCH_MIN_LENGTH) {
+      setResults([])
+      setSearchedFor("")
+      setLoading(false)
+      return
+    }
+
+    const controller = new AbortController()
+    setLoading(true)
+    const timer = setTimeout(async () => {
+      try {
+        const token = localStorage.getItem("token") ?? ""
+        const res = await fetch(`/api/search?q=${encodeURIComponent(trimmed)}`, {
+          headers: { Authorization: `Bearer ${token}` },
+          signal: controller.signal,
+        })
+        if (!res.ok) throw new Error(`HTTP ${res.status}`)
+        const json = await res.json()
+        setResults(Array.isArray(json.data) ? json.data : [])
+        setSearchedFor(trimmed)
+        setLoading(false)
+      } catch (err) {
+        if ((err as Error).name === "AbortError") return // dibatalkan — biarkan
+        setResults([])
+        setSearchedFor(trimmed)
+        setLoading(false)
+      }
+    }, SEARCH_DEBOUNCE_MS)
+
+    return () => {
+      clearTimeout(timer)
+      controller.abort()
+    }
+  }, [trimmed])
+
+  // Klik di luar kotak pencarian → tutup dropdown (pola combobox standar;
+  // belum ada util click-outside di codebase, jadi listener dipasang lokal).
+  useEffect(() => {
+    const onMouseDown = (e: MouseEvent) => {
+      if (containerRef.current && !containerRef.current.contains(e.target as Node)) {
+        setOpen(false)
+      }
+    }
+    document.addEventListener("mousedown", onMouseDown)
+    return () => document.removeEventListener("mousedown", onMouseDown)
+  }, [])
+
+  const handlePick = (r: SearchResult) => {
+    setOpen(false)
+    setQuery("")
+    setResults([])
+    setSearchedFor("")
+    // ?eventId= = deep-link resmi yang diadopsi EventProvider (URL menang),
+    // sehingga event hasil pencarian jadi event aktif seluruh dashboard.
+    if (r.type === "sponsor_deal") {
+      router.push(`/dashboard/kerjasama?eventId=${r.eventId}`)
+    } else {
+      router.push(`/dashboard?eventId=${r.eventId}`)
+    }
+  }
+
+  const showDropdown =
+    open && trimmed.length >= SEARCH_MIN_LENGTH && (loading || searchedFor === trimmed)
+
+  return (
+    <div ref={containerRef} className="relative w-full max-w-sm">
+      <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-slate-500" />
+      <Input
+        type="search"
+        placeholder="Cari dokumen, event, atau klien..."
+        value={query}
+        onChange={(e) => {
+          setQuery(e.target.value)
+          setOpen(true)
+        }}
+        onFocus={() => setOpen(true)}
+        onKeyDown={(e) => {
+          if (e.key === "Escape") setOpen(false)
+        }}
+        className="h-10 border-slate-200 bg-white pl-9 text-sm placeholder:text-slate-500 focus-visible:ring-emerald-800/40"
+      />
+
+      {showDropdown && (
+        <div className="absolute left-0 right-0 top-full z-30 mt-1.5 overflow-hidden rounded-md border border-slate-200 bg-white shadow-lg">
+          {loading ? (
+            <div className="flex items-center gap-2 px-3 py-3 text-sm text-slate-500">
+              <Loader2 className="size-4 animate-spin" />
+              Mencari...
+            </div>
+          ) : results.length === 0 ? (
+            <p className="px-3 py-3 text-sm text-slate-500">
+              Tidak ditemukan untuk &ldquo;{searchedFor}&rdquo;
+            </p>
+          ) : (
+            <ul className="max-h-80 overflow-y-auto py-1">
+              {results.map((r) => (
+                <li key={`${r.type}-${r.id}`}>
+                  <button
+                    type="button"
+                    onClick={() => handlePick(r)}
+                    className="flex w-full items-center gap-3 px-3 py-2 text-left hover:bg-slate-50"
+                  >
+                    <span
+                      className={`flex size-8 shrink-0 items-center justify-center rounded-md ${
+                        r.type === "event"
+                          ? "bg-emerald-50 text-emerald-700"
+                          : "bg-indigo-50 text-indigo-700"
+                      }`}
+                    >
+                      {r.type === "event" ? (
+                        <CalendarDays className="size-4" />
+                      ) : (
+                        <Handshake className="size-4" />
+                      )}
+                    </span>
+                    <span className="min-w-0">
+                      <span className="block truncate text-sm font-medium text-slate-900">
+                        {r.label}
+                      </span>
+                      <span className="block truncate text-xs text-slate-500">
+                        {r.sublabel}
+                      </span>
+                    </span>
+                  </button>
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+      )}
+    </div>
+  )
+}
 
 export function TopBar() {
   const router = useRouter()
@@ -42,14 +217,7 @@ export function TopBar() {
     <header className="print:hidden sticky top-0 z-20 flex items-center gap-4 border-b border-slate-200 bg-slate-50/80 px-4 py-3.5 backdrop-blur-md md:px-8">
       {/* Search */}
       <div className="flex flex-1 items-center gap-3">
-        <div className="relative w-full max-w-sm">
-          <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-slate-500" />
-          <Input
-            type="search"
-            placeholder="Cari dokumen, event, atau klien..."
-            className="h-10 border-slate-200 bg-white pl-9 text-sm placeholder:text-slate-500 focus-visible:ring-emerald-800/40"
-          />
-        </div>
+        <GlobalSearch />
       </div>
 
       {/* Right Section */}
