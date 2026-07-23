@@ -1,3 +1,4 @@
+const crypto = require('crypto');
 const prisma = require('../src/lib/prisma');
 const bcrypt = require('bcryptjs');
 const { sendSponsorCredential } = require('../services/email.service');
@@ -15,10 +16,18 @@ const { sendSponsorCredential } = require('../services/email.service');
 // ═══════════════════════════════════════════════════════════════════════════════
 
 // ─── Code helpers ─────────────────────────────────────────────────────────────
+// CSPRNG (fix K2 2026-07-25): crypto.randomInt, BUKAN Math.random — standar yang sama dgn
+// boxOfficeToken Ticket Box. Format/charset TIDAK berubah (SPN-XXXX-XXXX, 32 char aman-baca)
+// supaya kode lama di DB tetap valid — hanya jalur GENERATE yang berubah.
+const CODE_CHARS = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
 function makeCodeString() {
-  const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
-  const seg = () => Array.from({ length: 4 }, () => chars[Math.floor(Math.random() * chars.length)]).join('');
+  const seg = () => Array.from({ length: 4 }, () => CODE_CHARS[crypto.randomInt(CODE_CHARS.length)]).join('');
   return `SPN-${seg()}-${seg()}`;
+}
+
+/** Password acak 8 char dari charset aman-baca — pengganti Math.random di resendCredential. */
+function makeRandomPassword() {
+  return Array.from({ length: 8 }, () => CODE_CHARS[crypto.randomInt(CODE_CHARS.length)]).join('');
 }
 
 // Verifikasi eventId ada & milik promotor login (dipakai semua CREATE katalog per-event —
@@ -75,6 +84,14 @@ const generateCode = async (req, res) => {
   }
 };
 
+// ═══ LIFECYCLE KODE UNDANGAN (fix K1+F2 2026-07-25 — lihat known-bugs [2026-07-25]) ═══
+// DULU: kode dikonsumsi (isActive:false) DI SINI saat validasi, lalu createDeal mengabaikan
+// isActive. Dua akibat buruk: (a) sponsor yang refresh di tengah form terkunci selamanya
+// (kodenya "sudah digunakan" padahal belum jadi deal), (b) kode BEKAS tetap sakti membuat
+// deal tanpa batas lewat POST /deals publik (spam deal + penyanderaan stok benefit heldQty).
+// SEKARANG: validasi & katalog READ-ONLY terhadap kode (boleh diulang — refresh aman);
+// konsumsi terjadi SEKALI, ATOMIK, di createDeal saat deal benar-benar dibuat. Setelah itu
+// kode mati untuk SEMUA jalur (validate, catalog, deals). JANGAN kembalikan konsumsi ke sini.
 const validateInviteCode = async (req, res) => {
   try {
     const { code } = req.body;
@@ -86,10 +103,7 @@ const validateInviteCode = async (req, res) => {
     if (!inviteCode) {
       return res.status(400).json({ success: false, message: 'Kode tidak valid atau sudah digunakan.' });
     }
-    await prisma.inviteCode.update({
-      where: { id: inviteCode.id },
-      data: { isActive: false, usedAt: new Date() },
-    });
+    // TIDAK mengonsumsi kode — murni verifikasi. Kode baru hangus saat deal berhasil dibuat.
     // promotorId diikutkan supaya portal bisa memuat katalog milik promotor pengundang.
     return res.status(200).json({
       success: true,
@@ -102,16 +116,22 @@ const validateInviteCode = async (req, res) => {
 };
 
 // ─── Public catalog (sponsor portal — di-scope oleh KODE, bukan token promotor) ──
-// Portal publik memuat paket + benefit milik promotor PENGUNDANG. Kode undangan sudah
-// dikonsumsi (isActive:false) saat gate, jadi lookup di sini SENGAJA mengabaikan isActive —
-// yang penting menurunkan promotorId dari createdBy. Kalau kode tak dikenal → array kosong.
+// Portal publik memuat paket + benefit milik promotor PENGUNDANG. Sejak fix lifecycle
+// 2026-07-25, kode TETAP aktif selama pengisian form (konsumsi baru terjadi di createDeal),
+// jadi katalog kini KETAT: hanya kode yang MASIH aktif yang memuat katalog — kode bekas
+// (deal-nya sudah jadi) tidak lagi bisa mengintip katalog selamanya (dulu lookup sengaja
+// mengabaikan isActive karena kode sudah hangus di gate; alasan itu kini tidak ada).
+// Kode tak dikenal ATAU sudah dikonsumsi → array kosong (bentuk respons sama, frontend aman).
 const getPortalCatalog = async (req, res) => {
   try {
     const code = String(req.query.code || '').toUpperCase();
     if (!code) return res.status(400).json({ success: false, message: 'code wajib diisi.' });
     // eventId diturunkan SERVER-SIDE dari kode undangan (fix cross-event bleed 2026-07-19) —
     // sponsor hanya melihat katalog event yang mengundangnya, bukan seluruh katalog promotor.
-    const inviteCode = await prisma.inviteCode.findUnique({ where: { code }, select: { createdBy: true, eventId: true } });
+    const inviteCode = await prisma.inviteCode.findFirst({
+      where: { code, isActive: true },
+      select: { createdBy: true, eventId: true },
+    });
     if (!inviteCode) return res.status(200).json({ success: true, data: { packages: [], benefits: [] } });
     const promotorId = inviteCode.createdBy;
     const eventId = inviteCode.eventId;
@@ -264,13 +284,18 @@ const createDeal = async (req, res) => {
       return res.status(400).json({ success: false, message: 'sponsorName, email, tier, dan codeUsed wajib diisi.' });
     }
 
-    // Turunkan pemilik dari kode undangan (createdBy). Lookup mengabaikan isActive (kode sudah dikonsumsi di gate).
+    // Turunkan pemilik dari kode undangan (createdBy). Sejak fix lifecycle 2026-07-25 kode
+    // WAJIB masih aktif: kode yang sudah menghasilkan deal ditolak 410 — menutup celah K1
+    // (kode bekas dulu sakti membuat deal tanpa batas karena lookup mengabaikan isActive).
     const inviteCode = await prisma.inviteCode.findUnique({
       where: { code: String(codeUsed).toUpperCase() },
-      select: { createdBy: true, eventId: true },
+      select: { id: true, createdBy: true, eventId: true, isActive: true },
     });
     if (!inviteCode) {
       return res.status(400).json({ success: false, message: 'Kode undangan tidak dikenal — pendaftaran ditolak.' });
+    }
+    if (!inviteCode.isActive) {
+      return res.status(410).json({ success: false, message: 'Kode undangan sudah digunakan — satu kode hanya untuk satu pendaftaran.' });
     }
     const promotorId = inviteCode.createdBy;
     // eventId SELALU dari InviteCode (kini wajib non-null di schema) — tidak pernah dari client, tidak pernah null.
@@ -312,36 +337,59 @@ const createDeal = async (req, res) => {
       computedTotalValue = selectedBenefits.reduce((sum, { benefitId, qty }) => sum + (priceMap.get(benefitId) ?? 0) * Number(qty), 0);
     }
 
-    const deal = await prisma.sponsorDeal.create({
-      data: {
-        promotorId,
-        sponsorName,
-        contactName: contactName ?? '',
-        email,
-        tier,
-        codeUsed,
-        status: 'Negosiasi',
-        packageId: packageId ?? null,
-        eventId,
-        totalValue: computedTotalValue,
-        ...(Array.isArray(selectedBenefits) && selectedBenefits.length > 0 && {
-          dealBenefits: {
-            create: selectedBenefits.map(({ benefitId, qty, unitPrice }) => ({
-              benefitId,
-              qty: Number(qty),
-              unitPrice: Number(unitPrice ?? 0),
-              totalPrice: Number(qty) * Number(unitPrice ?? 0),
-            })),
-          },
-        }),
-      },
-    });
+    // ATOMIK dalam satu transaksi: klaim kode (sekali saja — updateMany ber-guard isActive:true
+    // menutup race dua submit bersamaan) + buat deal + tahan stok. Kalau ada yang gagal,
+    // rollback mengembalikan semuanya — kode TIDAK hangus tanpa deal.
+    let deal;
+    try {
+      deal = await prisma.$transaction(async (tx) => {
+        const claimed = await tx.inviteCode.updateMany({
+          where: { id: inviteCode.id, isActive: true },
+          data: { isActive: false, usedAt: new Date() },
+        });
+        if (claimed.count === 0) {
+          throw Object.assign(new Error('Kode undangan sudah digunakan — satu kode hanya untuk satu pendaftaran.'), { codeConsumed: true });
+        }
 
-    // Tahan stok (heldQty += qty)
-    if (Array.isArray(selectedBenefits) && selectedBenefits.length > 0) {
-      for (const { benefitId, qty } of selectedBenefits) {
-        await prisma.sponsorBenefit.update({ where: { id: benefitId }, data: { heldQty: { increment: Number(qty) } } });
+        const createdDeal = await tx.sponsorDeal.create({
+          data: {
+            promotorId,
+            sponsorName,
+            contactName: contactName ?? '',
+            email,
+            tier,
+            codeUsed,
+            status: 'Negosiasi',
+            packageId: packageId ?? null,
+            eventId,
+            totalValue: computedTotalValue,
+            ...(Array.isArray(selectedBenefits) && selectedBenefits.length > 0 && {
+              dealBenefits: {
+                create: selectedBenefits.map(({ benefitId, qty, unitPrice }) => ({
+                  benefitId,
+                  qty: Number(qty),
+                  unitPrice: Number(unitPrice ?? 0),
+                  totalPrice: Number(qty) * Number(unitPrice ?? 0),
+                })),
+              },
+            }),
+          },
+        });
+
+        // Tahan stok (heldQty += qty)
+        if (Array.isArray(selectedBenefits) && selectedBenefits.length > 0) {
+          for (const { benefitId, qty } of selectedBenefits) {
+            await tx.sponsorBenefit.update({ where: { id: benefitId }, data: { heldQty: { increment: Number(qty) } } });
+          }
+        }
+
+        return createdDeal;
+      });
+    } catch (txErr) {
+      if (txErr.codeConsumed) {
+        return res.status(410).json({ success: false, message: txErr.message });
       }
+      throw txErr;
     }
 
     return res.status(201).json({ success: true, data: deal });
@@ -706,7 +754,8 @@ const resendCredential = async (req, res) => {
     const account = await prisma.clientAccount.findUnique({ where: { dealId } });
     if (!account) return res.status(404).json({ success: false, message: 'Akun sponsor belum dibuat. Setujui deal dulu.' });
 
-    const newPassword = Math.random().toString(36).slice(-8).toUpperCase();
+    // CSPRNG (fix K2 2026-07-25) — dulu Math.random().toString(36), bisa diprediksi.
+    const newPassword = makeRandomPassword();
     const hashed = await bcrypt.hash(newPassword, 10);
     await prisma.clientAccount.update({ where: { dealId }, data: { password: hashed } });
 
@@ -738,7 +787,7 @@ const getDeliverables = async (req, res) => {
       prisma.sponsorDeliverable.findMany({ where: { dealId: String(dealId) }, orderBy: { createdAt: 'asc' } }),
       prisma.sponsorDeal.findUnique({
         where: { id: String(dealId) },
-        select: { tier: true, createdAt: true, status: true, promotorId: true },
+        select: { tier: true, createdAt: true, status: true, promotorId: true, eventId: true },
       }),
     ]);
 
@@ -763,8 +812,11 @@ const getDeliverables = async (req, res) => {
 
     const benefitPriceMap = new Map();
     if (deal) {
+      // eventId WAJIB ikut (fix F1 2026-07-25): promotor multi-event dgn nama paket sama di
+      // dua event bisa mengambil harga event yang SALAH — sisa yang terlewat dari fix
+      // cross-event bleed 2026-07-19 (pola scoping sama dgn getPublicTierPrice).
       const pkg = await prisma.sponsorPackage.findFirst({
-        where: { name: deal.tier, promotorId: deal.promotorId },
+        where: { name: deal.tier, promotorId: deal.promotorId, eventId: deal.eventId },
         include: { benefits: { include: { benefit: true } } },
       });
       pkg?.benefits.forEach(({ benefit }) => {

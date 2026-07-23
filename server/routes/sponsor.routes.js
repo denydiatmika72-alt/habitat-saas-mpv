@@ -46,17 +46,38 @@ const verifyLimiter = rateLimit({
   message: { success: false, message: 'Terlalu banyak percobaan login. Coba lagi dalam 15 menit.' },
 });
 
+// Rate-limit endpoint publik portal (fix K1 2026-07-25 — dulu tanpa rem sama sekali).
+// Dua tingkat sesuai pola pemakaian sah:
+//  - WRITE/gate (validate kode + createDeal): sponsor sah paling banter mencoba beberapa kali
+//    → 20/15mnt (selaras verifyLimiter). Ini rem utama anti brute-force kode & spam deal.
+//  - READ (katalog): halaman form bisa memuat ulang berkali-kali (refresh, re-render)
+//    → 60/15mnt, lebih longgar supaya sponsor sah tidak pernah tersandung.
+const portalWriteLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 20,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { success: false, message: 'Terlalu banyak percobaan. Coba lagi dalam 15 menit.' },
+});
+const portalReadLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 60,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { success: false, message: 'Terlalu banyak permintaan. Coba lagi dalam 15 menit.' },
+});
+
 // Dashboard Kerjasama — ringkasan per-event (read-only, di-scope promotorId + eventId). Pro per-event (?eventId=).
 router.get('/dashboard-summary', verifyToken, requireActivePro(), getKerjasamaDashboard);
 
 // Invite codes
 router.post('/codes', verifyToken, requireActivePro(), generateCode);
-router.post('/codes/validate', validateInviteCode);         // public
+router.post('/codes/validate', portalWriteLimiter, validateInviteCode);  // public + rate-limited
 
 // ─── PUBLIC sponsor-facing (di-scope oleh resource, BUKAN token promotor) ───────
 // Katalog portal di-scope oleh KODE undangan; harga tier sponsor-dashboard di-scope oleh dealId.
 // Menggantikan pemakaian publik lama GET /benefits, /packages, /thresholds yang kini di-lock.
-router.get('/portal/catalog', getPortalCatalog);            // public — portal sponsor (by ?code=)
+router.get('/portal/catalog', portalReadLimiter, getPortalCatalog);  // public + rate-limited — portal sponsor (by ?code=)
 router.get('/public/tier-price', getPublicTierPrice);       // public — sponsor-dashboard (by ?dealId=)
 
 // Benefits — DIKUNCI ke promotor (sebelumnya publik → bocor lintas akun) + Pro per-event
@@ -69,7 +90,7 @@ router.delete('/benefits/:id', verifyToken, requireActivePro(fromBenefitParam), 
 // requireActivePro() default resolver membacanya dari query → gating Pro jadi PER-EVENT
 // (sebelumnya jatuh ke fallback user-level lintas-event).
 router.get('/deals', verifyToken, requireActivePro(), getDeals);
-router.post('/deals', createDeal);                          // public — portal sponsor (owner diturunkan dari kode)
+router.post('/deals', portalWriteLimiter, createDeal);      // public + rate-limited — portal sponsor (owner dari kode; kode dikonsumsi di sini)
 router.patch('/deals/:id', verifyToken, requireActivePro(fromDealParam), updateDealStatus);
 
 // Packages — DIKUNCI ke promotor + Pro per-event

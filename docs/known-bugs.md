@@ -3415,3 +3415,73 @@ tidak akan terhitung** → catatan jadi bohong dan promotor salah membaca sisa k
 - Deploy: BUTUH backend + **`db push` SUDAH dijalankan ke Supabase** (kolom nullable additive) +
   `npx prisma generate` di VPS (wajib, sesuai aturan deploy); frontend Vercel auto.
 - Tag: #security #critical #ticket-box #token #fail-closed #fee-debt #anti-fraud #roadmap-a3
+
+---
+
+## [2026-07-25] 🔴 CRITICAL — Kode undangan bekas sakti selamanya untuk membuat deal (K1) + sponsor terkunci saat refresh (F2)
+
+- Gejala (dua sisi dari satu akar yang sama, temuan audit portal sponsor 2026-07-24):
+  (1) **K1**: `createDeal` (publik, tanpa auth) sengaja mengabaikan `isActive` kode undangan
+  ("kode sudah dikonsumsi di gate") → kode BEKAS tetap sah membuat deal TANPA BATAS selamanya.
+  Siapa pun yang tahu kode bekas (bocor dari URL `?code=` di history/log, email diteruskan) bisa
+  membanjiri promotor dgn deal palsu — tiap deal menahan stok benefit (`heldQty`) → stok tersandera.
+  Tidak ada rate-limit di endpoint publik portal. (2) **F2**: kode dikonsumsi saat VALIDASI di
+  gerbang, bukan saat deal jadi → sponsor sah yang refresh/tutup tab di tengah form terkunci
+  permanen ("kode sudah digunakan" padahal deal belum dibuat).
+- Root cause: konsumsi kode dipasang di langkah yang salah (`validateInviteCode`), memaksa
+  `createDeal` & `getPortalCatalog` mengabaikan `isActive` — sekali diabaikan, kode tak pernah
+  benar-benar mati untuk jalur yang paling berbahaya (pembuatan deal).
+- File terkait: `server/controllers/sponsor.controller.js`, `server/routes/sponsor.routes.js`.
+- Fix (konsumsi pindah ke "saat deal berhasil dibuat"):
+  - `validateInviteCode` kini READ-ONLY — cek `isActive:true`, TIDAK menulis apa pun → refresh aman,
+    validasi boleh diulang (F2 tertutup).
+  - `createDeal`: kode wajib `isActive:true` (bekas → **410**); konsumsi ATOMIK di dalam
+    `$transaction` bersama pembuatan deal + penahanan stok — klaim via
+    `updateMany({ where: { id, isActive: true } })` (count 0 → 410) menutup race dua submit
+    bersamaan; rollback transaksi = kode TIDAK hangus tanpa deal (K1 tertutup: 1 kode = 1 deal).
+  - `getPortalCatalog` ikut KETAT (`isActive: true`) — alasan lama mengabaikan isActive ("kode sudah
+    hangus di gate") tidak berlaku lagi karena kode kini aktif selama pengisian form; kode bekas
+    tidak lagi bisa mengintip katalog selamanya. Bentuk respons tetap (array kosong) → frontend aman.
+  - **Rate-limit** (reuse `express-rate-limit` pola `verifyLimiter`): `portalWriteLimiter` 20/15mnt
+    utk `POST /codes/validate` + `POST /deals` (selaras limiter login; rem brute-force kode & spam
+    deal), `portalReadLimiter` 60/15mnt utk `GET /portal/catalog` (lebih longgar — halaman form
+    bisa refetch berkali-kali secara sah).
+  - Tanpa perubahan schema (`usedAt` sudah ada sejak awal) — TIDAK perlu `db push`.
+- Verifikasi (mock req/res thd DB production, kode & deal tes dibersihkan di akhir): generate → 201
+  format `SPN-XXXX-XXXX` ✓; validate 2× beruntun (simulasi refresh) → 200 & kode tetap aktif ✓;
+  catalog kode aktif → 200 berisi data ✓; createDeal ke-1 → 201 + kode hangus + `usedAt` terisi ✓;
+  createDeal ke-2 kode sama → **410** & jumlah deal tetap 1 ✓; validate & catalog kode bekas →
+  400 / kosong ✓; kode ngawur → 400 ✓. `node --check` bersih. (Limiter tidak dites unit — murni
+  middleware express-rate-limit yang sudah terbukti di `accounts/verify`.)
+- Deploy: BUTUH backend; TIDAK butuh `db push`.
+- Tag: #security #critical #sponsor-portal #invite-code #lifecycle #rate-limit #atomic-claim
+
+---
+
+## [2026-07-25] Generator kode undangan & password sponsor pakai Math.random (K2) → CSPRNG
+
+- Gejala: `makeCodeString()` (kode undangan `SPN-XXXX-XXXX`) & password baru `resendCredential`
+  dibuat dari `Math.random()` — bukan CSPRNG, output bisa diprediksi penyerang yang mengamati
+  cukup banyak sampel. Kontras dgn standar yang baru ditegakkan utk `boxOfficeToken` Ticket Box.
+- File terkait: `server/controllers/sponsor.controller.js`.
+- Fix: keduanya kini `crypto.randomInt(CODE_CHARS.length)` per karakter (helper `makeRandomPassword`
+  utk password 8 char). **Format/charset TIDAK berubah** (`SPN-XXXX-XXXX`, 32 char aman-baca) —
+  kode lama di DB tetap valid, hanya jalur generate yang berubah; nol dampak data existing.
+- Verifikasi: kode hasil generate lolos regex format lama ✓ (tes lifecycle di entry K1 memakai
+  kode hasil CSPRNG ini end-to-end).
+- Tag: #security #csprng #invite-code #password #sponsor
+
+---
+
+## [2026-07-25] Lookup harga paket `getDeliverables` tanpa eventId (F1) — sisa cross-event bleed
+
+- Gejala: `sponsorPackage.findFirst({ name: deal.tier, promotorId })` di `getDeliverables` TANPA
+  `eventId` → promotor multi-event dgn nama paket sama di dua event bisa menampilkan harga benefit
+  dari event yang SALAH pada kartu "Nilai tersampaikan" sponsor-dashboard. Kelas bug yang fix
+  cross-event bleed 2026-07-19 klaim sudah tutup — lookup ini terlewat.
+- File terkait: `server/controllers/sponsor.controller.js` (`getDeliverables`).
+- Fix: tambah `eventId: deal.eventId` di where (select deal ikut ambil `eventId`) — pola scoping
+  sama dgn `getPublicTierPrice`. `SponsorDeal.eventId` NOT NULL sejak 2026-07-18, jadi selalu ada.
+- Verifikasi: `node --check` bersih; perubahan berupa penambahan filter pada query read-only
+  (fail-safe: paket tak ketemu → harga null, perilaku fallback existing).
+- Tag: #cross-event-bleed #scoping #sponsor #deliverables

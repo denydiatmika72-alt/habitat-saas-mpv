@@ -210,10 +210,17 @@ Alur: **homepage discovery → storefront event → checkout.** `is_published` d
 
 ## Alur: Invite Code → Deal → Invoice → Document Table
 
-1. Promotor generate kode di `/dashboard/sponsor` (pilih event dulu)
+1. Promotor generate kode di `/dashboard/sponsor` (pilih event dulu) — kode dibuat CSPRNG
+   (`crypto.randomInt`, fix 2026-07-25; format tetap `SPN-XXXX-XXXX`)
 2. Kode disimpan dengan `eventId` di tabel `invite_codes`
-3. Sponsor validasi kode di `/sponsor-portal` → response mengandung `eventId`
-4. Sponsor submit form → deal dibuat dengan `eventId`
+3. Sponsor validasi kode di `/sponsor-portal` → response mengandung `eventId`. **Validasi READ-ONLY
+   (sejak 2026-07-25)** — kode TIDAK dikonsumsi di sini; sponsor boleh refresh/validasi ulang tanpa
+   kehilangan akses. Katalog portal juga hanya terbuka untuk kode yang MASIH aktif.
+4. Sponsor submit form → deal dibuat dengan `eventId`. **Kode dikonsumsi DI SINI** (atomik dalam
+   transaksi yang sama dgn pembuatan deal + penahanan stok; `isActive:false` + `usedAt`). Kode bekas
+   → 410 di `createDeal` — satu kode = tepat satu deal, selamanya. Endpoint publik portal
+   (validate/catalog/deals) juga ber-rate-limit. **JANGAN kembalikan konsumsi kode ke langkah
+   validasi** — itu penyebab celah K1+F2 (lihat known-bugs [2026-07-25]).
 5. Promotor generate invoice dari deal
 6. Invoice dilihat/dikelola di `/dashboard/invoice` (dicapai dari Dashboard Kerjasama): `GET /api/invoices?eventId=` — **`eventId` WAJIB sejak 2026-07-20**, daftar selalu per-event. Kolom: sponsor, tanggal, nomor invoice, nilai, status dropdown, aksi PDF+WA.
 
