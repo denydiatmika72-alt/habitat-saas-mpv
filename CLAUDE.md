@@ -772,6 +772,13 @@ Pendekatan: cash TETAP masuk sistem (bukan cashless-only).
 
 Keputusan final:
 - Promotor generate QR/barcode unik per event untuk box office
+- **HARDENING 2026-07-24 (menutup celah terbuka sejak 2026-07-06)**: kedua endpoint publik
+  (`GET /api/ticket-box/:eventId` + `POST .../order`) kini mensyaratkan **`Event.boxOfficeToken`**
+  (crypto-random per-event, ter-embed di URL dalam QR: `/ticket-box/:eventId?token=…`) → 403 tanpa
+  token cocok, **fail-closed** kalau QR belum pernah digenerate. eventId di path BUKAN rahasia (dipakai
+  juga di URL storefront) — token = kredensial tambahan. Rotasi via tombol "Buat Ulang (Token Baru)" di
+  seksi Ticket Box `/dashboard/tickets` (QR/link lama langsung mati). Alur lapangan TIDAK berubah
+  (pembeli scan QR → token ikut otomatis). Lihat known-bugs [2026-07-24] token Ticket Box.
 - Panitia di lokasi scan QR → pembeli isi data via HP sendiri
 - Penanda metode bayar: CASH atau TRANSFER (wajib dicatat)
 - Metode bayar ini jadi DASAR perhitungan hutang fee promotor ke nexEvent

@@ -3372,3 +3372,46 @@ tidak akan terhitung** → catatan jadi bohong dan promotor salah membaca sisa k
 - Verifikasi: `npx tsc --noEmit` client bersih. Interaksi visual di device mobile nyata tidak diverifikasi
   dari environment ini.
 - Tag: #ui #navigation #mobile-nav #hub-only #notifikasi #decorative-cleanup #founder-decision
+
+---
+
+## [2026-07-24] 🔴 CRITICAL — Ticket Box publik hanya ber-kunci eventId (tertebak) → token per-event tak-tertebak
+
+- Gejala: `GET /api/ticket-box/:eventId` & `POST /api/ticket-box/:eventId/order` sepenuhnya publik dgn
+  satu-satunya "kunci" = eventId di URL — padahal eventId BUKAN rahasia (muncul di URL storefront publik
+  & mudah didapat). Siapa pun bisa membuat order CASH palsu berstatus langsung "paid" → stok tiket
+  berkurang permanen + tercatat sebagai HUTANG FEE promotor ke nexEvent (`DEBT_ORDER_WHERE` di
+  fee-debt.service.js melacak `channel:"ticket_box"` + `paymentMethod:"cash"`). Celah ini DIKETAHUI &
+  didokumentasikan sejak entry [2026-07-06] ("hardening ke depan: token per-event tak-tertebak") tapi
+  tidak pernah dikerjakan — 18 hari terbuka; ditagih ulang oleh audit roadmap 2026-07-23 (item A3).
+- Root cause: keputusan desain v1 "kontrol keamanan = penguasaan fisik QR" keliru mengasumsikan eventId
+  efektif rahasia. Investigasi ulang 2026-07-24 mengonfirmasi TIDAK ada mekanisme auth yang bisa
+  dipasang begitu saja: pengirim POST adalah PEMBELI WALK-UP ANONIM yang scan QR dgn HP sendiri (bukan
+  crew ber-login; crew hanya memegang QR fisik & menerima uang) → solusi harus tetap tanpa login pembeli.
+- File terkait: `server/prisma/schema.prisma` (Event +`boxOfficeToken String?`),
+  `server/controllers/ticket-box.controller.js`, `server/routes/ticket-box.routes.js` (komentar),
+  `client/src/app/ticket-box/[eventId]/page.tsx`, `client/src/app/dashboard/tickets/page.tsx`.
+- Fix (skema token-dalam-QR — UX lapangan nol perubahan):
+  - **`Event.boxOfficeToken`** — `crypto.randomBytes(24).toString('base64url')` (32 char, TIDAK diturunkan
+    dari eventId/data tertebak), nullable additive (`db push` aman — 3 event, 0 order ticket_box di
+    production saat perubahan → tidak ada QR tercetak yang rusak).
+  - **Lazy-generate** di `generateTicketBoxQR` (protected, pemilik event): token dibuat saat pertama kali
+    generate QR; URL dalam QR kini `/ticket-box/:eventId?token=…`. Body `{ rotate:true }` menerbitkan
+    token BARU (QR/link lama mati seketika) — tombol "Buat Ulang (Token Baru)" + confirm di seksi
+    Ticket Box `/dashboard/tickets`.
+  - **Guard `isValidBoxToken(event, provided)`** di KEDUA endpoint publik: constant-time compare
+    (`timingSafeEqual` atas sha256 kedua nilai), **fail-closed** saat `boxOfficeToken` null → 403
+    `"Link Ticket Box tidak valid atau sudah diganti..."`. Di POST, guard jalan SEBELUM stok/order
+    disentuh. eventId TETAP di path (routing) — token kredensial TAMBAHAN.
+  - **Halaman publik** `/ticket-box/[eventId]`: baca `?token=` via `useSearchParams` (dibungkus
+    `<Suspense>`, pola wrapper+Inner wajib Next 16), kirim di GET (`?token=`) & POST (`boxToken` di
+    body); respons 403 → layar khusus "Link Ticket Box Tidak Valid" (beda dari event-tak-ada).
+- Verifikasi (mock req/res thd DB production, 8 skenario): token null → GET 403 ✓ & POST 403 ✓
+  (fail-closed); generate-qr bukan pemilik → 404 ✓; pemilik → 200 + token 32 char tersimpan + URL memuat
+  token ✓; generate ulang tanpa rotate → token SAMA (QR stabil) ✓; GET token salah 403 / benar 200 ✓;
+  POST token benar → LOLOS gerbang (400 validasi bisnis, bukan 403; sengaja payload dummy agar tidak
+  menyentuh stok) ✓; rotate → token baru jalan (200) & token lama mati (403) ✓. `node --check` +
+  `npx tsc --noEmit` bersih.
+- Deploy: BUTUH backend + **`db push` SUDAH dijalankan ke Supabase** (kolom nullable additive) +
+  `npx prisma generate` di VPS (wajib, sesuai aturan deploy); frontend Vercel auto.
+- Tag: #security #critical #ticket-box #token #fail-closed #fee-debt #anti-fraud #roadmap-a3

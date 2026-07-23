@@ -342,15 +342,25 @@ function TicketsPageInner() {
     fetchDetail()
   }, [selectedEventId, fetchDetail])
 
-  const handleGenerateTicketBoxQR = async () => {
+  // rotate:true = terbitkan token keamanan BARU (QR/link lama langsung mati) — dipakai kalau
+  // token dicurigai bocor. Tanpa rotate, token existing dipertahankan → QR stabil utk dicetak.
+  const handleGenerateTicketBoxQR = async (rotate = false) => {
     if (!selectedEventId) return
+    if (
+      rotate &&
+      !confirm(
+        "Buat ulang QR dengan token baru?\n\nQR & link Ticket Box yang LAMA langsung tidak berlaku — " +
+          "QR yang sudah dicetak/disebar harus diganti dengan yang baru."
+      )
+    )
+      return
     setTicketBoxError("")
     setGeneratingBoxQr(true)
     try {
       const res = await fetch("/api/tickets/ticket-box/generate-qr", {
         method: "POST",
         headers: authHeaders(),
-        body: JSON.stringify({ eventId: selectedEventId }),
+        body: JSON.stringify({ eventId: selectedEventId, rotate }),
       })
       const data = await res.json()
       if (data.success) {
@@ -1822,7 +1832,7 @@ function TicketsPageInner() {
 
               {!ticketBoxQr ? (
                 <button
-                  onClick={handleGenerateTicketBoxQR}
+                  onClick={() => handleGenerateTicketBoxQR()}
                   disabled={generatingBoxQr || !selectedEventId}
                   className="rounded-lg bg-emerald-800 px-4 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-emerald-900 disabled:opacity-50"
                 >
@@ -1851,7 +1861,19 @@ function TicketsPageInner() {
                     >
                       Unduh QR
                     </a>
+                    <button
+                      onClick={() => handleGenerateTicketBoxQR(true)}
+                      disabled={generatingBoxQr}
+                      title="Terbitkan token keamanan baru — QR/link lama langsung tidak berlaku"
+                      className="rounded-lg border border-red-200 px-3 py-1.5 text-xs font-semibold text-red-600 hover:bg-red-50 disabled:opacity-50"
+                    >
+                      {generatingBoxQr ? "Membuat..." : "Buat Ulang (Token Baru)"}
+                    </button>
                   </div>
+                  <p className="text-center text-[11px] text-slate-500">
+                    Link QR memuat token keamanan — hanya QR/link resmi ini yang bisa dipakai membeli.
+                    Curiga bocor? Klik &ldquo;Buat Ulang (Token Baru)&rdquo;.
+                  </p>
                 </div>
               )}
 

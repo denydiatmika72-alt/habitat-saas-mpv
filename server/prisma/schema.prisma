@@ -79,6 +79,12 @@ model Event {
   saleEndAt         DateTime? @map("sale_end_at")
   storefrontStatus  String    @default("draft") @map("storefront_status")
   storefrontNote    String?   @map("storefront_note")
+  // Token rahasia Ticket Box Offline (fix keamanan 2026-07-24): kredensial TAMBAHAN di atas eventId
+  // untuk /ticket-box/:eventId (eventId bukan rahasia — dipakai juga di URL storefront publik).
+  // Digenerate crypto-random saat promotor generate QR (lazy), ikut ter-embed di URL dalam QR.
+  // Nullable = QR belum pernah digenerate → endpoint publik Ticket Box FAIL-CLOSED (403).
+  // Rotasi (generate ulang dgn rotate:true) langsung mematikan QR/link lama.
+  boxOfficeToken    String?   @map("box_office_token")
 
   bannerUrl          String?  @map("banner_url")
   logoUrl            String?  @map("logo_url")

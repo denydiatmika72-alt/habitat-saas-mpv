@@ -1,7 +1,7 @@
 "use client"
 
-import { useEffect, useState, useCallback } from "react"
-import { useParams, useRouter } from "next/navigation"
+import { Suspense, useEffect, useState, useCallback } from "react"
+import { useParams, useRouter, useSearchParams } from "next/navigation"
 import Script from "next/script"
 import { Calendar, MapPin, Minus, Plus, Loader2, CheckCircle2, Ticket } from "lucide-react"
 import { validateNik } from "@/lib/nik"
@@ -57,14 +57,18 @@ type OrderResult = {
   tickets: ResultTicket[]
 }
 
-type Status = "loading" | "not_found" | "active" | "error"
+type Status = "loading" | "not_found" | "invalid_token" | "active" | "error"
 
 const IDR = new Intl.NumberFormat("id-ID", { style: "currency", currency: "IDR", maximumFractionDigits: 0 })
 const MAX_QTY_PER_TYPE = 4
 
-export default function TicketBoxPage() {
+function TicketBoxPageInner() {
   const { eventId } = useParams<{ eventId: string }>()
   const router = useRouter()
+  // Token keamanan per-event (fix 2026-07-24): ter-embed di URL dalam QR yang di-scan pembeli
+  // (?token=…). Wajib dikirim di GET & POST — tanpa token cocok backend menolak 403.
+  const searchParams = useSearchParams()
+  const boxToken = searchParams.get("token") ?? ""
 
   const [status, setStatus] = useState<Status>("loading")
   const [event, setEvent] = useState<EventData | null>(null)
@@ -82,10 +86,12 @@ export default function TicketBoxPage() {
 
   const fetchEvent = useCallback(async () => {
     try {
-      const res = await fetch(`/api/ticket-box/${eventId}`)
+      const res = await fetch(`/api/ticket-box/${eventId}?token=${encodeURIComponent(boxToken)}`)
       const data = await res.json()
       if (!data.success) {
-        setStatus("not_found")
+        // 403 = token hilang/salah/di-rotasi — pesan beda dari event-tak-ada supaya
+        // panitia tahu harus menampilkan QR terbaru, bukan mengira event-nya hilang.
+        setStatus(res.status === 403 ? "invalid_token" : "not_found")
         return
       }
       setEvent(data.event)
@@ -94,7 +100,7 @@ export default function TicketBoxPage() {
     } catch {
       setStatus("error")
     }
-  }, [eventId])
+  }, [eventId, boxToken])
 
   useEffect(() => {
     if (eventId) fetchEvent()
@@ -156,6 +162,7 @@ export default function TicketBoxPage() {
           buyerEmail: buyerEmail.trim(),
           buyerNik,
           paymentMethod,
+          boxToken,
         }),
       })
       const data = await res.json()
@@ -197,6 +204,19 @@ export default function TicketBoxPage() {
     return (
       <div className="flex min-h-screen items-center justify-center bg-slate-50">
         <Loader2 className="size-8 animate-spin text-emerald-800" />
+      </div>
+    )
+  }
+
+  if (status === "invalid_token") {
+    return (
+      <div className="flex min-h-screen flex-col items-center justify-center gap-2 bg-slate-50 px-6 text-center">
+        <Ticket className="size-10 text-slate-300" />
+        <p className="text-lg font-semibold text-slate-900">Link Ticket Box Tidak Valid</p>
+        <p className="text-sm text-slate-500">
+          QR / link ini sudah tidak berlaku (mungkin sudah diganti oleh penyelenggara).
+          Silakan scan ulang QR terbaru dari panitia.
+        </p>
       </div>
     )
   }
@@ -418,5 +438,21 @@ export default function TicketBoxPage() {
         </button>
       </div>
     </div>
+  )
+}
+
+// useSearchParams (Next 16) WAJIB dibungkus <Suspense> — pola wrapper + *Inner yang sama
+// dgn invoice/upgrade/pl-report/expenses/event-summary (lihat CLAUDE.md catatan implementasi).
+export default function TicketBoxPage() {
+  return (
+    <Suspense
+      fallback={
+        <div className="flex min-h-screen items-center justify-center bg-slate-50">
+          <Loader2 className="size-8 animate-spin text-emerald-800" />
+        </div>
+      }
+    >
+      <TicketBoxPageInner />
+    </Suspense>
   )
 }

@@ -1,3 +1,4 @@
+const crypto = require('crypto');
 const prisma = require('../src/lib/prisma');
 const QRCode = require('qrcode');
 const { snap } = require('../services/midtrans.service');
@@ -8,27 +9,55 @@ const { parseNik } = require('../services/nik-parser.service');
 const PAYMENT_METHODS = ['cash', 'transfer'];
 const BOOKING_MINUTES = 15; // sama dengan online storefront — window bayar transfer sebelum di-release cron.
 
-// Keputusan desain: URL Ticket Box Offline memakai eventId langsung (/ticket-box/:eventId), bukan token khusus.
-// Alasan: route publik memang di-key by eventId (sesuai spec), dan halaman hanya expose jenis tiket
-// (info publik, sama dengan storefront). Kontrol keamanan v1 = penguasaan fisik QR oleh panitia di lokasi.
-// Catatan: order Ticket Box CASH dibuat langsung "paid" & mengurangi stok permanen; order TRANSFER dibuat
-// "pending" (lewat Midtrans) & di-release cron kalau tak dibayar 15 menit — hardening ke depan bisa
-// tambah token per-event tak-tertebak untuk cegah pembuatan order palsu oleh yang tahu eventId.
+// ═══ Keamanan Ticket Box (hardening 2026-07-24 — menutup celah terbuka sejak 2026-07-06) ═══
+// Model v1 lama ("kontrol keamanan = penguasaan fisik QR") TIDAK cukup: eventId BUKAN rahasia
+// (muncul di URL storefront publik), dan order CASH langsung "paid" + mengurangi stok permanen +
+// tercatat sebagai hutang fee promotor (DEBT_ORDER_WHERE di fee-debt.service.js). Siapa pun yang tahu
+// eventId bisa membanjiri event dengan order cash palsu.
+// Model sekarang: `Event.boxOfficeToken` — string crypto-random per-event, TIDAK diturunkan dari data
+// apa pun yang bisa ditebak. Digenerate lazy saat promotor generate QR; ter-embed di URL dalam QR
+// (`/ticket-box/:eventId?token=…`) sehingga alur lapangan TIDAK berubah: pembeli scan QR → token ikut.
+// KEDUA endpoint publik (GET event + POST order) menolak 403 tanpa token yang cocok, dan FAIL-CLOSED
+// kalau event belum punya token (QR belum pernah digenerate = belum ada kanal jualan yang sah).
+// eventId TETAP di path (routing/lookup) — token adalah kredensial TAMBAHAN, bukan pengganti.
+// Rotasi: generate-qr dgn `rotate:true` menerbitkan token baru → QR/link lama langsung mati.
+
+/** Bandingkan token kiriman vs tersimpan secara constant-time; fail-closed kalau belum ada token. */
+function isValidBoxToken(event, provided) {
+  if (!event.boxOfficeToken || typeof provided !== 'string' || provided.length === 0) return false;
+  // Hash dulu supaya panjang buffer selalu sama (syarat timingSafeEqual) tanpa membocorkan panjang token.
+  const a = crypto.createHash('sha256').update(provided).digest();
+  const b = crypto.createHash('sha256').update(event.boxOfficeToken).digest();
+  return crypto.timingSafeEqual(a, b);
+}
+
+const BOX_TOKEN_REJECT_MESSAGE =
+  'Link Ticket Box tidak valid atau sudah diganti. Minta panitia menampilkan QR terbaru.';
 
 // POST /api/tickets/ticket-box/generate-qr — protected (promotor pemilik event)
+// body: { eventId, rotate? } — rotate:true menerbitkan token BARU (mematikan QR/link lama seketika;
+// dipakai kalau token dicurigai bocor). Tanpa rotate, token existing dipertahankan → QR stabil.
 const generateTicketBoxQR = async (req, res) => {
   try {
-    const { eventId } = req.body;
+    const { eventId, rotate } = req.body;
     if (!eventId) return res.status(400).json({ success: false, message: 'eventId wajib diisi.' });
 
     const event = await prisma.event.findFirst({ where: { id: eventId, promotor_id: req.user.id } });
     if (!event) return res.status(404).json({ success: false, message: 'Event tidak ditemukan.' });
 
+    // Lazy-generate token saat pertama kali (event lama pra-fitur ikut kebagian di sini),
+    // atau terbitkan baru saat rotasi. base64url 24 byte ≈ 32 char, aman & URL-safe.
+    let token = event.boxOfficeToken;
+    if (!token || rotate === true) {
+      token = crypto.randomBytes(24).toString('base64url');
+      await prisma.event.update({ where: { id: event.id }, data: { boxOfficeToken: token } });
+    }
+
     const baseUrl = process.env.CLIENT_URL || 'https://nexeventapp.tech';
-    const url = `${baseUrl}/ticket-box/${event.id}`;
+    const url = `${baseUrl}/ticket-box/${event.id}?token=${token}`;
     const qrDataUrl = await QRCode.toDataURL(url, { width: 400 });
 
-    return res.json({ success: true, url, qrDataUrl, eventId: event.id });
+    return res.json({ success: true, url, qrDataUrl, eventId: event.id, rotated: Boolean(rotate) });
   } catch (err) {
     console.error('[TICKET BOX GENERATE QR ERROR]', err);
     return res.status(500).json({ success: false, message: 'Server error.' });
@@ -44,6 +73,11 @@ const getTicketBoxEvent = async (req, res) => {
       include: { ticketTypes: { where: { isActive: true }, orderBy: { price: 'asc' } } },
     });
     if (!event) return res.status(404).json({ success: false, message: 'Event tidak ditemukan.' });
+
+    // Guard token (lihat blok keamanan di atas): tanpa token yang cocok → 403, fail-closed.
+    if (!isValidBoxToken(event, req.query.token)) {
+      return res.status(403).json({ success: false, message: BOX_TOKEN_REJECT_MESSAGE });
+    }
 
     // Gating fee per-kategori — sama dgn online storefront: jenis tiket yang fee-nya belum
     // ditetapkan admin TIDAK ditawarkan (checkout-nya pasti ditolak). feePercent ikut dikirim
@@ -117,6 +151,12 @@ const createTicketBoxOrder = async (req, res) => {
 
     const event = await prisma.event.findUnique({ where: { id: eventId } });
     if (!event) return res.status(404).json({ success: false, message: 'Event tidak ditemukan.' });
+
+    // Guard token — dicek SEBELUM menyentuh stok/order apa pun. Token dari body (dikirim halaman
+    // Ticket Box yang membacanya dari ?token= di URL hasil scan QR) dgn fallback query param.
+    if (!isValidBoxToken(event, req.body.boxToken ?? req.query.token)) {
+      return res.status(403).json({ success: false, message: BOX_TOKEN_REJECT_MESSAGE });
+    }
 
     // Anti-calo NIK: kumulatif lintas SEMUA channel (online + ticket_box). Order transfer "pending"
     // tetap menahan kuota NIK (countTicketsForNik hitung status pending & paid).
