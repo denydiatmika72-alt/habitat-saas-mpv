@@ -4,7 +4,6 @@ import { useEffect, useRef, useState } from "react"
 import {
   ArrowLeft,
   ArrowRight,
-  Bell,
   CalendarDays,
   Camera,
   Check,
@@ -206,14 +205,8 @@ function SponsorTopbar({ clientName, clientTier }: { clientName: string; clientT
             <Download className="size-4 text-emerald-800" />
             Export report
           </button>
-          <button
-            type="button"
-            aria-label="Notifications"
-            className="relative flex size-9 items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-500 transition-colors hover:text-slate-900"
-          >
-            <Bell className="size-4" />
-            <span className="absolute right-2 top-2 size-1.5 rounded-full bg-emerald-800" />
-          </button>
+          {/* Ikon lonceng notifikasi DIHAPUS 2026-07-24 (keputusan founder):
+              dekoratif tanpa backend — sama seperti di top-bar dashboard. */}
           <button
             type="button"
             className="flex items-center gap-2 rounded-lg border border-slate-200 bg-white py-1 pl-1 pr-2.5 transition-colors hover:bg-slate-100"

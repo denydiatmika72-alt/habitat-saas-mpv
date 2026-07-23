@@ -8,7 +8,8 @@ import {
   ClipboardList,
   Handshake,
   Users,
-  ReceiptText,
+  Ticket,
+  Wallet,
   BarChart2,
   ShieldCheck,
   TrendingUp,
@@ -18,13 +19,19 @@ import {
 import { cn } from "@/lib/utils"
 import { useUser } from "@/hooks/useUser"
 
-// Dashboard = KPI + pemilih event (satu-satunya). Perencanaan menggantikan
-// "Simulasi" di slot kedua: ia hub yang memuat RAB, PO, dan pintu ke Simulasi.
+// Diselaraskan dgn desktop 2026-07-24 (keputusan founder): HUB-ONLY, sama seperti
+// sidebar. Quick-link lama "Sponsor" (/dashboard/sponsor) & "Invoice"
+// (/dashboard/invoice) DIHAPUS — dua halaman itu turunan Dashboard Kerjasama dan
+// sudah dicabut dari sidebar desktop sejak 2026-07-18; mobile tertinggal.
+// Ikon mengikuti kartu Akses Cepat Dashboard KPI (Handshake/Ticket/Wallet) supaya
+// tiap hub punya ikon khas — BarChart2 seragam ala desktop tak terbedakan di
+// bottom-nav tanpa label panjang. JANGAN tambahkan kembali link non-hub di sini.
 const mobileNavItems = [
   { label: "Dashboard", icon: LayoutDashboard, href: "/dashboard" },
   { label: "Perencanaan", icon: ClipboardList, href: "/dashboard/perencanaan" },
-  { label: "Sponsor", icon: Handshake, href: "/dashboard/sponsor" },
-  { label: "Invoice", icon: ReceiptText, href: "/dashboard/invoice" },
+  { label: "Kerjasama", icon: Handshake, href: "/dashboard/kerjasama" },
+  { label: "Tiket", icon: Ticket, href: "/dashboard/ticketing" },
+  { label: "Keuangan", icon: Wallet, href: "/dashboard/pl-report" },
 ]
 
 type NavGroup = "Perencanaan" | "Kerjasama" | "Operasional" | "Keuangan" | "Tiket & Pencairan"

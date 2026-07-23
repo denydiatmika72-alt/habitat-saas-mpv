@@ -3,7 +3,7 @@
 import Link from "next/link"
 import { useRouter } from "next/navigation"
 import { useEffect, useRef, useState } from "react"
-import { Bell, Search, LogOut, Settings2, CalendarDays, Handshake, Loader2 } from "lucide-react"
+import { Search, LogOut, Settings2, CalendarDays, Handshake, Loader2 } from "lucide-react"
 import { Input } from "@/components/ui/input"
 import { Button } from "@/components/ui/button"
 import { useUser } from "@/hooks/useUser"
@@ -221,12 +221,10 @@ export function TopBar() {
       </div>
 
       {/* Right Section */}
+      {/* Ikon lonceng notifikasi DIHAPUS 2026-07-24 (keputusan founder): murni
+          dekoratif — tidak ada sistem notifikasi in-app di backend, titik hijaunya
+          hardcoded, menyesatkan user. JANGAN dikembalikan tanpa backend nyata. */}
       <div className="flex items-center gap-2 md:gap-3">
-        <Button variant="outline" size="icon" className="relative size-10 border-slate-200 bg-white text-slate-900 hover:bg-slate-100">
-          <Bell className="size-4" />
-          <span className="absolute right-2.5 top-2.5 size-2 rounded-full bg-emerald-800 ring-2 ring-white" />
-        </Button>
-
         {/* Pintu tunggal ke pusat administrasi event (buat / ubah data terkunci /
             ajukan hapus / riwayat permintaan). "Buat Event Baru" sudah ada di dalam
             halaman Setup Event, jadi tombol hijau ini mengarah ke sana — bukan lagi

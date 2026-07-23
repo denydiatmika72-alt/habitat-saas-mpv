@@ -3349,3 +3349,26 @@ tidak akan terhitung** → catatan jadi bohong dan promotor salah membaca sisa k
   item utuh ✓; id fiktif → 404 ✓; deletePO oleh pemilik → 200 & bersih ✓. `node --check` OK.
 - Deploy: BUTUH backend; TIDAK butuh `db push` (nol perubahan schema).
 - Tag: #security #idor #critical #purchase-order #ownership #scoping-per-promotor
+
+---
+
+## [2026-07-24] Hapus lonceng notifikasi dekoratif + selaraskan bottom-nav mobile ke hub-only
+
+- Gejala/konteks: (2 keputusan founder dari audit roadmap 2026-07-23, dieksekusi bersama.)
+  (1) Ikon lonceng notifikasi di top-bar dashboard & sponsor-dashboard murni dekoratif — tanpa backend,
+  tanpa onClick, titik hijau hardcoded — menyesatkan user seolah ada sistem notifikasi. Keputusan: HAPUS
+  (bukan bangun). (2) Bottom-nav mobile (`mobileNavItems`) masih punya quick-link "Sponsor" & "Invoice"
+  padahal sidebar desktop sudah hub-only sejak 2026-07-18 (catatan "kandidat penyelarasan" di known-bugs
+  [2026-07-18] tak pernah ditindak).
+- File terkait: `client/src/components/dashboard/top-bar.tsx`, `client/src/app/sponsor-dashboard/page.tsx`,
+  `client/src/components/dashboard/sidebar.tsx`.
+- Fix:
+  - Lonceng + badge dot dihapus dari kedua file (import `Bell` ikut dibuang); layout header aman — baris
+    flex hanya memendek. Komentar penjaga ditinggalkan: JANGAN kembalikan tanpa backend notifikasi nyata.
+  - `mobileNavItems` kini 5 hub selaras desktop: Dashboard / Perencanaan / Kerjasama (`/dashboard/kerjasama`)
+    / Tiket (`/dashboard/ticketing`) / Keuangan (`/dashboard/pl-report`). Ikon khas per hub (Handshake/
+    Ticket/Wallet — mengikuti kartu Akses Cepat KPI, BUKAN BarChart2 seragam ala desktop yang tak
+    terbedakan di bottom-nav). `MobileNav` render `flex-1` per item → 5 item muat tanpa perubahan layout.
+- Verifikasi: `npx tsc --noEmit` client bersih. Interaksi visual di device mobile nyata tidak diverifikasi
+  dari environment ini.
+- Tag: #ui #navigation #mobile-nav #hub-only #notifikasi #decorative-cleanup #founder-decision
