@@ -665,6 +665,30 @@ function DealCard({
           status: "Belum Dibayar",
           invoiceNumber: data.invoiceNumber as string,
         })
+        // Auto-download PDF sekali sebagai efek samping generate (permintaan founder
+        // 2026-07-27). Mekanisme SAMA persis dgn tombol unduh di halaman Invoice
+        // (invoice/page.tsx downloadPdf): proxy /api/pdf → blob → klik <a download>.
+        // Backend sudah mengirim pdfUrl di respons generate — dulu dibuang.
+        // SENGAJA tanpa tombol unduh permanen di kartu ini — unduh-ulang tetap satu
+        // pintu lewat Dashboard Kerjasama → Invoice & PO. Gagal unduh TIDAK dilaporkan
+        // sebagai error generate (invoice-nya sudah jadi; badge tetap tampil, file bisa
+        // diambil di halaman Invoice) — jangan setInvoiceError di blok ini.
+        if (typeof data.pdfUrl === "string" && data.pdfUrl) {
+          try {
+            const pdfRes = await fetch(`/api/pdf?path=${encodeURIComponent(data.pdfUrl)}`)
+            if (pdfRes.ok) {
+              const blob = await pdfRes.blob()
+              const url = URL.createObjectURL(blob)
+              const a = document.createElement("a")
+              a.href = url
+              a.download = `${data.invoiceNumber as string}.pdf`
+              a.click()
+              URL.revokeObjectURL(url)
+            }
+          } catch {
+            // Unduhan otomatis gagal — diamkan (lihat komentar di atas).
+          }
+        }
       } else {
         setInvoiceError((d.message as string) ?? "Gagal generate invoice.")
       }

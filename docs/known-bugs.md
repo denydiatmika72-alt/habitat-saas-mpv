@@ -3485,3 +3485,23 @@ tidak akan terhitung** → catatan jadi bohong dan promotor salah membaca sisa k
 - Verifikasi: `node --check` bersih; perubahan berupa penambahan filter pada query read-only
   (fail-safe: paket tak ketemu → harga null, perilaku fallback existing).
 - Tag: #cross-event-bleed #scoping #sponsor #deliverables
+
+---
+
+## [2026-07-27] FITUR KECIL: auto-download PDF saat "Generate Invoice" di kartu deal sponsor
+
+- Gejala/konteks: (Bukan bug — investigasi 2026-07-26 memvonis "by design".) Tombol "Generate
+  Invoice" di DealCard membuat record + PDF server-side dan respons backend SUDAH memuat `pdfUrl`,
+  tapi frontend membuangnya → tidak ada file terunduh, founder mengira gagal. Keputusan founder:
+  klik Generate → PDF langsung terunduh otomatis SEKALI; unduh-ulang tetap satu pintu di
+  Dashboard Kerjasama → Invoice & PO (TIDAK ada tombol unduh permanen baru di kartu deal).
+- File terkait: `client/src/app/dashboard/sponsor/page.tsx` (handler `generateInvoice` DealCard).
+- Fix: setelah generate sukses & `pdfUrl` ada di respons, jalankan mekanisme unduh YANG SAMA dgn
+  halaman Invoice (`downloadPdf` di invoice/page.tsx): fetch proxy `/api/pdf?path=` → blob →
+  klik `<a download>` terprogram, nama file `{invoiceNumber}.pdf`. Gagal-unduh SENGAJA diam
+  (bukan `setInvoiceError`) — invoice sudah jadi, badge tetap tampil, file tetap bisa diambil di
+  halaman Invoice; error merah tetap khusus utk gagal GENERATE. Badge/status/error lain tak berubah.
+- Verifikasi: `npx tsc --noEmit` bersih. Frontend-only — backend TIDAK disentuh (pdfUrl sudah
+  dikirim sejak fix isolasi invoice Juli 2026), TIDAK butuh deploy VPS / db push; Vercel auto.
+  Unduhan nyata di browser belum diverifikasi dari environment ini (butuh klik manual founder).
+- Tag: #ux #invoice #auto-download #sponsor #frontend-only
