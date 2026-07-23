@@ -732,7 +732,54 @@ const verifyAccount = async (req, res) => {
     if (!account) return res.status(401).json({ success: false, message: 'Username/email atau password salah.' });
     const match = await bcrypt.compare(password, account.password);
     if (!match) return res.status(401).json({ success: false, message: 'Username/email atau password salah.' });
-    return res.status(200).json({ success: true, data: { sponsorName: account.sponsorName, tier: account.tier, dealId: account.dealId } });
+    // email diambil dari deal (ClientAccount tidak punya kolom email) — dipakai seksi info akun
+    // di dropdown profil sponsor-dashboard (2026-07-28). username ikut utk kelengkapan sesi.
+    const dealInfo = await prisma.sponsorDeal.findUnique({
+      where: { id: account.dealId },
+      select: { email: true },
+    });
+    return res.status(200).json({
+      success: true,
+      data: {
+        sponsorName: account.sponsorName,
+        tier: account.tier,
+        dealId: account.dealId,
+        username: account.username,
+        email: dealInfo?.email ?? null,
+      },
+    });
+  } catch (error) {
+    console.error('[SPONSOR ERROR]', error.message, error.stack);
+    return res.status(500).json({ success: false, message: error.message });
+  }
+};
+
+// POST /api/sponsor/accounts/change-password — PUBLIK + rate-limited (verifyLimiter, surface
+// tebak-password yang sama dgn login). PENTING: "sesi" sponsor hanyalah dealId yang dipegang
+// client (tidak ada token server-side), jadi PASSWORD SAAT INI WAJIB diverifikasi di sini —
+// dealId saja TIDAK boleh cukup (siapa pun yang tahu UUID deal bisa membajak akun kalau tidak).
+// Hash pola sama createAccount/resendCredential (bcrypt 10 rounds).
+const changeAccountPassword = async (req, res) => {
+  try {
+    const { dealId, currentPassword, newPassword } = req.body;
+    if (!dealId || !currentPassword || !newPassword) {
+      return res.status(400).json({ success: false, message: 'dealId, currentPassword, dan newPassword wajib diisi.' });
+    }
+    // Konsisten dgn aturan register user (min 6 karakter).
+    if (String(newPassword).length < 6) {
+      return res.status(400).json({ success: false, message: 'Password baru minimal 6 karakter.' });
+    }
+    const account = await prisma.clientAccount.findUnique({ where: { dealId: String(dealId) } });
+    if (!account) {
+      return res.status(401).json({ success: false, message: 'Akun tidak ditemukan atau password salah.' });
+    }
+    const match = await bcrypt.compare(String(currentPassword), account.password);
+    if (!match) {
+      return res.status(401).json({ success: false, message: 'Password saat ini salah.' });
+    }
+    const hashed = await bcrypt.hash(String(newPassword), 10);
+    await prisma.clientAccount.update({ where: { dealId: String(dealId) }, data: { password: hashed } });
+    return res.status(200).json({ success: true, message: 'Password berhasil diubah.' });
   } catch (error) {
     console.error('[SPONSOR ERROR]', error.message, error.stack);
     return res.status(500).json({ success: false, message: error.message });
@@ -893,6 +940,7 @@ module.exports = {
   validateInviteCode,
   getPortalCatalog,
   getPublicTierPrice,
+  changeAccountPassword,
   getBenefits,
   createBenefit,
   deleteBenefit,

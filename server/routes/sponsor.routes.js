@@ -31,6 +31,7 @@ const {
   deleteThreshold,
   createAccount,
   verifyAccount,
+  changeAccountPassword,
   resendCredential,
   getDeliverables,
   createDeliverable,
@@ -107,6 +108,9 @@ router.delete('/thresholds/:id', verifyToken, requireActivePro(fromThresholdPara
 // Client accounts — createAccount di-scope event deal (Pro); verify PUBLIK (login sponsor, jangan gate)
 router.post('/accounts', verifyToken, requireActivePro(fromDealBody), createAccount);
 router.post('/accounts/verify', verifyLimiter, verifyAccount);           // public + rate-limited
+// Ubah password sponsor (dropdown profil sponsor-dashboard) — WAJIB verifikasi password saat ini
+// (tidak ada token server-side utk sesi sponsor); limiter sama dgn login (surface tebak-password).
+router.post('/accounts/change-password', verifyLimiter, changeAccountPassword);  // public + rate-limited
 router.post('/deals/:id/resend-credential', verifyToken, requireActivePro(fromDealParam), resendCredential);
 
 // Deliverables — GET PUBLIK (client dashboard sponsor); mutasi di-scope event deal (Pro)
