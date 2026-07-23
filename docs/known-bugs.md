@@ -3320,3 +3320,32 @@ tidak akan terhitung** → catatan jadi bohong dan promotor salah membaca sisa k
 - Deploy: BUTUH backend (`git pull` + `pm2 restart nexevent-api`); TIDAK butuh `db push` (nol perubahan
   schema — read-only atas tabel existing); frontend Vercel auto.
 - Tag: #fitur #search #top-bar #scoping-per-promotor #debounce
+
+---
+
+## [2026-07-24] 🔴 CRITICAL — IDOR Purchase Order by-id: baca/ubah/hapus PO promotor lain bermodal UUID
+
+- Gejala: SEMUA endpoint PO by-`:id` (`GET /api/po/:id`, `PUT /api/po/:id`, `DELETE /api/po/:id`,
+  `POST /api/po/:id/items`, `DELETE /api/po/:id/items/:itemId`, `GET /api/po/:id/pdf`) beroperasi murni
+  by-id TANPA memeriksa bahwa event induk PO milik `req.user.id`. User login mana pun yang tahu/menebak
+  UUID sebuah PO bisa membaca isinya, mengubah judul/status, menghapus PO, menambah/menghapus item, dan
+  mengunduh PDF-nya — lintas akun.
+- Root cause: audit scoping 2026-07-20 hanya menutup endpoint LIST (`createPO` & `getPOsByEvent` sudah
+  ber-guard); mutasi by-id sudah di-flag di known-bugs [2026-07-18] sebagai "kandidat audit lanjutan"
+  tapi tidak pernah ditindaklanjuti — ditemukan kembali oleh audit roadmap 2026-07-23. Peredam selama
+  celah terbuka: UUID sulit ditebak + route Pro-gated (`requireActivePro(fromPOParam)`) — tapi
+  `fromPOParam` hanya me-resolve eventId utk cek Pro PEMILIK event, BUKAN cek identitas pemanggil.
+- File terkait: `server/controllers/purchaseOrder.controller.js`.
+- Fix: helper tunggal **`findOwnedPO(req, res, include?)`** — ambil PO + `event.promotor_id` dalam SATU
+  query (join relasi `event`), `404` kalau PO tak ada, `403` "Anda tidak memiliki akses ke PO ini." kalau
+  bukan milik pemanggil (konvensi 404/403 sama dgn invoice/sponsor controller, prinsip #4 CLAUDE.md
+  "Isolasi Data Per-Promotor"). Dipasang di KEENAM fungsi (5 dari audit + `generatePurchaseOrderPdf` yang
+  kelas celahnya sama). Bonus hardening: `deletePOItem` kini `deleteMany({ id, purchaseOrderId })` —
+  item juga wajib milik PO di `:id` (dulu hapus by-`itemId` polos, bisa hapus item PO lain). Bentuk
+  response `getPOById` TIDAK berubah (field `event` bawaan guard di-strip). LIST/CREATE tidak disentuh.
+- Verifikasi (mock req/res thd DB production; DB belum punya PO → dibuat PO sementara di event asli,
+  dihapus bersih di akhir): pemilik sah `getPOById` → 200 tanpa field event ✓; user lain: get 403 ✓,
+  update 403 + title utuh ✓, delete 403 + PO utuh ✓, addItem 403 + jumlah item utuh ✓, deleteItem 403 +
+  item utuh ✓; id fiktif → 404 ✓; deletePO oleh pemilik → 200 & bersih ✓. `node --check` OK.
+- Deploy: BUTUH backend; TIDAK butuh `db push` (nol perubahan schema).
+- Tag: #security #idor #critical #purchase-order #ownership #scoping-per-promotor

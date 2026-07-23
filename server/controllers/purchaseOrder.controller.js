@@ -282,15 +282,44 @@ const getPOsByEvent = async (req, res) => {
   }
 };
 
+// ─── Guard kepemilikan PO (fix IDOR 2026-07-24) ──────────────────────────────
+// SEMUA endpoint by-:id WAJIB lewat sini dulu. Sebelumnya kelima fungsi di bawah
+// (+ generate PDF) beroperasi murni by-id TANPA cek pemilik → user login mana pun
+// yang tahu UUID sebuah PO bisa baca/ubah/hapus PO promotor lain (IDOR — lolos
+// dari audit scoping 2026-07-20 yang hanya menutup endpoint LIST).
+// Pola: ambil PO + pemilik event-nya dalam SATU query (join relasi `event`),
+// lalu 404 kalau tak ada / 403 kalau bukan milik pemanggil — konvensi sama dgn
+// invoice/sponsor controller (CLAUDE.md "Isolasi Data Per-Promotor", prinsip #4).
+// Return: record PO kalau sah; null kalau response error sudah dikirim.
+async function findOwnedPO(req, res, include = {}) {
+  const po = await prisma.purchaseOrder.findUnique({
+    where: { id: req.params.id },
+    include: {
+      ...include,
+      event: {
+        select: { promotor_id: true, ...(include.event?.select ?? {}) },
+      },
+    },
+  });
+  if (!po) {
+    res.status(404).json({ success: false, message: 'PO tidak ditemukan.' });
+    return null;
+  }
+  if (po.event.promotor_id !== req.user.id) {
+    res.status(403).json({ success: false, message: 'Anda tidak memiliki akses ke PO ini.' });
+    return null;
+  }
+  return po;
+}
+
 // ─── GET /api/po/:id ──────────────────────────────────────────────────────────
 const getPOById = async (req, res) => {
   try {
-    const po = await prisma.purchaseOrder.findUnique({
-      where: { id: req.params.id },
-      include: { items: true },
-    });
-    if (!po) return res.status(404).json({ success: false, message: 'PO tidak ditemukan.' });
-    return res.json({ success: true, data: po });
+    const po = await findOwnedPO(req, res, { items: true });
+    if (!po) return;
+    // Buang field `event` bawaan guard supaya bentuk response tidak berubah.
+    const { event, ...data } = po;
+    return res.json({ success: true, data });
   } catch (err) {
     console.error('[getPOById]', err);
     return res.status(500).json({ success: false, message: 'Gagal mengambil PO.' });
@@ -312,6 +341,8 @@ const updatePO = async (req, res) => {
     if (notes !== undefined) data.notes = notes?.trim() ?? null;
     if (status !== undefined) data.status = status;
 
+    if (!(await findOwnedPO(req, res))) return;
+
     const updated = await prisma.purchaseOrder.update({
       where: { id: req.params.id },
       data,
@@ -328,6 +359,7 @@ const updatePO = async (req, res) => {
 // ─── DELETE /api/po/:id ───────────────────────────────────────────────────────
 const deletePO = async (req, res) => {
   try {
+    if (!(await findOwnedPO(req, res))) return;
     await prisma.purchaseOrder.delete({ where: { id: req.params.id } });
     return res.json({ success: true, message: 'PO berhasil dihapus.' });
   } catch (err) {
@@ -350,6 +382,8 @@ const addPOItem = async (req, res) => {
     const q = Number(qty);
     const p = Number(unitPrice);
     const totalPrice = q * p;
+
+    if (!(await findOwnedPO(req, res))) return;
 
     const item = await prisma.purchaseOrderItem.create({
       data: {
@@ -377,7 +411,15 @@ const addPOItem = async (req, res) => {
 // ─── DELETE /api/po/:id/items/:itemId ────────────────────────────────────────
 const deletePOItem = async (req, res) => {
   try {
-    await prisma.purchaseOrderItem.delete({ where: { id: req.params.itemId } });
+    if (!(await findOwnedPO(req, res))) return;
+    // deleteMany dgn filter ganda: item HARUS milik PO di :id (cegah hapus item
+    // PO lain bermodal itemId — celah yang sama kelasnya dgn IDOR di atas).
+    const deleted = await prisma.purchaseOrderItem.deleteMany({
+      where: { id: req.params.itemId, purchaseOrderId: req.params.id },
+    });
+    if (deleted.count === 0) {
+      return res.status(404).json({ success: false, message: 'Item tidak ditemukan.' });
+    }
 
     // Recalculate totalAmount di PO
     const allItems = await prisma.purchaseOrderItem.findMany({ where: { purchaseOrderId: req.params.id } });
@@ -395,14 +437,12 @@ const deletePOItem = async (req, res) => {
 // ─── GET /api/po/:id/pdf ──────────────────────────────────────────────────────
 const generatePurchaseOrderPdf = async (req, res) => {
   try {
-    const po = await prisma.purchaseOrder.findUnique({
-      where: { id: req.params.id },
-      include: {
-        items: true,
-        event: { select: { title: true, event_date: true } },
-      },
+    // Guard yang sama dgn endpoint by-id lain — PDF memuat seluruh isi PO.
+    const po = await findOwnedPO(req, res, {
+      items: true,
+      event: { select: { title: true, event_date: true } },
     });
-    if (!po) return res.status(404).json({ success: false, message: 'PO tidak ditemukan.' });
+    if (!po) return;
 
     // Simpan ke file dulu — JANGAN pipe langsung ke res
     const filename = `${po.id}.pdf`;
