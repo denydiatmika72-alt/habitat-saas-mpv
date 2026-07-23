@@ -3505,3 +3505,62 @@ tidak akan terhitung** → catatan jadi bohong dan promotor salah membaca sisa k
   dikirim sejak fix isolasi invoice Juli 2026), TIDAK butuh deploy VPS / db push; Vercel auto.
   Unduhan nyata di browser belum diverifikasi dari environment ini (butuh klik manual founder).
 - Tag: #ux #invoice #auto-download #sponsor #frontend-only
+
+---
+
+## [2026-07-28] F3: Sesi sponsor-dashboard hilang tiap refresh → bertahan via sessionStorage
+
+- Gejala: sesi login sponsor hanya hidup di state React (+ handoff `sessionStorage` sekali-pakai dari
+  `/login` yang LANGSUNG dihapus setelah dibaca) → refresh halaman = logout paksa. Terasa rusak bagi
+  pengguna eksternal non-teknis (temuan F3 audit portal sponsor 2026-07-24).
+- Keputusan founder: sesi bertahan melintasi REFRESH tapi TIDAK melewati tutup-tab → semantik native
+  `sessionStorage` persis pas (BUKAN localStorage / "remember me").
+- File terkait: `client/src/app/sponsor-dashboard/page.tsx` (+ `client/src/app/login/page.tsx` penulis
+  handoff — TIDAK diubah, formatnya sudah cocok).
+- Fix: entri `sponsor_session` kini DIPERTAHANKAN (dihapus hanya saat Logout / deal terbukti mati);
+  login langsung di halaman ini ikut menulis ke sessionStorage. Restore di-mount divalidasi ringan:
+  `GET /sponsor/public/tier-price?dealId=` → 404 (deal dihapus) → sesi dibersihkan & balik ke login;
+  kegagalan JARINGAN sengaja TIDAK menggugurkan sesi. Keamanan: isi sesi hanya data yang memang sudah
+  tampil ke sponsor login (sponsorName/tier/dealId/email/username) — tanpa password/token; tidak
+  bersinggungan dgn lifecycle InviteCode (kredensial berbeda).
+- Verifikasi: `npx tsc --noEmit` bersih. Perilaku refresh nyata di browser belum diverifikasi dari
+  environment ini.
+- Tag: #ux #session #sponsor-dashboard #sessionstorage
+
+---
+
+## [2026-07-28] M2: Dropdown profil sponsor-dashboard fungsional (dulu dekoratif) + Ubah Password
+
+- Gejala: tombol profil di header sponsor-dashboard dekoratif — ChevronDown menyiratkan dropdown yang
+  tidak ada, tanpa logout, tanpa kelola akun (temuan M2 audit 2026-07-24).
+- File terkait: `client/src/app/sponsor-dashboard/page.tsx`, `server/controllers/sponsor.controller.js`
+  (`changeAccountPassword` BARU + `verifyAccount` kirim email/username), `server/routes/sponsor.routes.js`.
+- Fix (spec founder): dropdown via primitive `components/ui/dropdown-menu` (Base UI — sudah ada di repo,
+  pemakaian pertama) berisi (1) info akun nama+email display-only, (2) "Ubah Password" → modal top-level
+  `ChangePasswordModal` (password saat ini + baru min 6), (3) "Logout" (variant destructive) → hapus
+  sessionStorage + kembali ke form login halaman ini.
+  Endpoint `POST /api/sponsor/accounts/change-password` (publik + `verifyLimiter` 20/15mnt — surface
+  tebak-password yang sama dgn login): **WAJIB verifikasi password SAAT INI** karena sesi sponsor
+  hanyalah dealId di client tanpa token server — dealId saja TIDAK boleh dianggap cukup (kalau tidak,
+  siapa pun yang tahu UUID deal bisa membajak akun). Hash bcrypt 10 (pola createAccount). Tanpa
+  perubahan schema (kolom password sudah ada) — TIDAK perlu db push.
+- Verifikasi (mock req/res thd DB nyata, akun tes dibersihkan): login lama 200 + email/username ikut ✓;
+  current-pw salah → 401 & hash utuh ✓; pw baru < 6 → 400 ✓; ganti sah → 200, hash bcrypt baru ✓;
+  login pw lama → 401, pw baru → 200 ✓; dealId ngawur → 401 ✓. `node --check` + tsc bersih.
+  Interaksi dropdown/modal di browser belum diverifikasi visual.
+- Tag: #ux #sponsor-dashboard #dropdown #change-password #bcrypt #rate-limit
+
+---
+
+## [2026-07-28] M3: Overflow baris invoice sponsor-dashboard di layar sempit
+
+- Gejala: baris invoice (`flex items-center justify-between` tanpa wrap/min-w-0/truncate) berisiko
+  terpotong keluar kartu di lebar ±360-390px — kelas bug yang sama dgn overflow Manajemen Sponsor
+  promotor (fix 0a4f6b2) (temuan M3 audit 2026-07-24).
+- File terkait: `client/src/app/sponsor-dashboard/page.tsx` (`InvoiceSection`).
+- Fix (pola sama 0a4f6b2): container `flex-wrap gap-3`; sisi kiri `min-w-0` + `truncate` di nomor
+  invoice/tanggal/nominal + ikon `shrink-0`; sisi kanan (badge status + tombol PDF) `shrink-0
+  flex-wrap` → di layar sempit turun ke baris kedua alih-alih terpotong.
+- Verifikasi: `npx tsc --noEmit` bersih; perilaku visual belum dicek di device nyata (pola sudah
+  terbukti di fix promotor).
+- Tag: #ui #overflow #mobile #sponsor-dashboard

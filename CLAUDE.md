@@ -110,6 +110,22 @@ guard, kandidat audit lanjutan" (known-bugs [2026-07-18]) dengan ini SUDAH DITIN
 
 ## Fixed / Completed
 
+### Polish Portal Sponsor — 3 item minor audit 2026-07-24 SELESAI (2026-07-28)
+Ketiga item minor dari audit portal sponsor kini resolved (lihat known-bugs [2026-07-28]):
+- **F3 — sesi sponsor bertahan saat refresh**: `sponsor_session` di sessionStorage kini DIPERTAHANKAN
+  (dulu one-shot handoff yang langsung dihapus → refresh = logout paksa). Semantik = keputusan founder:
+  tahan REFRESH, hilang saat tab ditutup (native sessionStorage — JANGAN ganti localStorage). Isi sesi
+  hanya data yang memang tampil ke sponsor (nama/tier/email/username/dealId) — tanpa password/token.
+  Restore divalidasi ringan via `tier-price?dealId=` (404 = deal mati → sesi dibersihkan).
+- **M2 — dropdown profil fungsional** di sponsor-dashboard (dulu dekoratif): info akun (nama+email,
+  display-only) + "Ubah Password" (modal) + "Logout". Pakai primitive `components/ui/dropdown-menu`
+  (Base UI). Endpoint BARU `POST /api/sponsor/accounts/change-password` (publik + `verifyLimiter`):
+  **WAJIB verifikasi password saat ini** — sesi sponsor tidak punya token server-side, dealId saja
+  TIDAK boleh cukup (JANGAN dilonggarkan). `verifyAccount` kini ikut mengembalikan `email`+`username`.
+- **M3 — overflow baris invoice** di sponsor-dashboard: `flex-wrap`+`min-w-0`+`truncate` (pola sama
+  fix overflow Manajemen Sponsor 0a4f6b2).
+Tersisa dari audit itu (belum diputuskan founder): tombol "Export report" dekoratif di sponsor-dashboard.
+
 ### Gating Fitur Pro PER-EVENT — tutup monetization gap (2026-07-19)
 **Gap:** `proEventId`/`proExpiresAt` ditulis saat bayar (`payment.controller.js`) tapi **TIDAK PERNAH dicek** endpoint
 fitur mana pun → semua fitur Pro bisa dipakai GRATIS oleh user terautentikasi mana pun (panggil API langsung). Gate

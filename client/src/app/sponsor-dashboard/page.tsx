@@ -12,12 +12,21 @@ import {
   Download,
   FileText,
   ImageOff,
+  KeyRound,
   Loader2,
+  LogOut,
   MapPin,
   Trophy,
   X,
 } from "lucide-react"
 import { cn } from "@/lib/utils"
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu"
 
 // ─── API ──────────────────────────────────────────────────────────────────────
 const API_BASE = "/api"
@@ -178,8 +187,36 @@ function StatusBadge({ status }: { status: DeliverableStatus }) {
   )
 }
 
+// ─── Sesi sponsor (F3, 2026-07-28) ───────────────────────────────────────────
+// Sesi bertahan melintasi REFRESH tapi TIDAK melewati tutup-tab — semantik native
+// sessionStorage, persis keputusan founder (BUKAN localStorage/"remember me").
+// Isinya HANYA data yang memang sudah ditampilkan ke sponsor login (nama/tier/email/
+// username + dealId sebagai kunci sesi) — tanpa password/token, tidak menambah
+// permukaan bocor baru. Entri dihapus saat Logout atau saat deal-nya terbukti mati.
+const SESSION_KEY = "sponsor_session"
+
+type SponsorSession = {
+  sponsorName: string
+  tier: string
+  dealId: string
+  email?: string | null
+  username?: string
+}
+
 // ─── SponsorTopbar ────────────────────────────────────────────────────────────
-function SponsorTopbar({ clientName, clientTier }: { clientName: string; clientTier: string }) {
+function SponsorTopbar({
+  clientName,
+  clientTier,
+  email,
+  onChangePassword,
+  onLogout,
+}: {
+  clientName: string
+  clientTier: string
+  email?: string | null
+  onChangePassword: () => void
+  onLogout: () => void
+}) {
   return (
     <header className="sticky top-0 z-30 border-b border-slate-200 bg-slate-50/80 backdrop-blur-xl">
       <div className="mx-auto flex max-w-[1400px] items-center justify-between gap-4 px-5 py-3.5 md:px-8">
@@ -207,23 +244,41 @@ function SponsorTopbar({ clientName, clientTier }: { clientName: string; clientT
           </button>
           {/* Ikon lonceng notifikasi DIHAPUS 2026-07-24 (keputusan founder):
               dekoratif tanpa backend — sama seperti di top-bar dashboard. */}
-          <button
-            type="button"
-            className="flex items-center gap-2 rounded-lg border border-slate-200 bg-white py-1 pl-1 pr-2.5 transition-colors hover:bg-slate-100"
-          >
-            <span className="flex size-7 items-center justify-center rounded-md bg-emerald-50 text-xs font-semibold text-emerald-800 ring-1 ring-emerald-800/30">
-              {clientName.slice(0, 2).toUpperCase()}
-            </span>
-            <span className="hidden text-left leading-tight sm:block">
-              <span className="block text-xs font-medium text-slate-900">
-                {clientName}
+          {/* Dropdown profil FUNGSIONAL sejak 2026-07-28 (dulu tombol dekoratif) —
+              info akun + Ubah Password + Logout. Pakai primitive dropdown-menu
+              (Base UI) yang sudah ada di components/ui. */}
+          <DropdownMenu>
+            <DropdownMenuTrigger className="flex items-center gap-2 rounded-lg border border-slate-200 bg-white py-1 pl-1 pr-2.5 transition-colors hover:bg-slate-100">
+              <span className="flex size-7 items-center justify-center rounded-md bg-emerald-50 text-xs font-semibold text-emerald-800 ring-1 ring-emerald-800/30">
+                {clientName.slice(0, 2).toUpperCase()}
               </span>
-              <span className="block text-[10px] text-slate-500">
-                {clientTier}
+              <span className="hidden text-left leading-tight sm:block">
+                <span className="block text-xs font-medium text-slate-900">
+                  {clientName}
+                </span>
+                <span className="block text-[10px] text-slate-500">
+                  {clientTier}
+                </span>
               </span>
-            </span>
-            <ChevronDown className="size-3.5 text-slate-500" />
-          </button>
+              <ChevronDown className="size-3.5 text-slate-500" />
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end" className="w-56">
+              {/* Info akun — display saja, bukan item klik */}
+              <div className="px-2 py-1.5">
+                <p className="truncate text-sm font-medium text-slate-900">{clientName}</p>
+                {email && <p className="truncate text-xs text-slate-500">{email}</p>}
+              </div>
+              <DropdownMenuSeparator />
+              <DropdownMenuItem onClick={onChangePassword}>
+                <KeyRound />
+                Ubah Password
+              </DropdownMenuItem>
+              <DropdownMenuItem variant="destructive" onClick={onLogout}>
+                <LogOut />
+                Logout
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
         </div>
       </div>
     </header>
@@ -552,24 +607,27 @@ function InvoiceSection({ dealId }: { dealId: string }) {
         <p className="mt-1 text-sm text-slate-500">Dokumen tagihan sponsorship Anda</p>
       </div>
 
+      {/* M3 (2026-07-28): flex-wrap + min-w-0 + truncate — pola fix overflow yang sama
+          dgn Manajemen Sponsor promotor (commit 0a4f6b2). Di layar ≤390px sisi kanan
+          (badge status + tombol PDF) turun ke baris kedua alih-alih terpotong keluar kartu. */}
       <div className="space-y-3">
         {invoices.map((inv) => (
-          <div key={inv.id} className="flex items-center justify-between rounded-2xl border border-slate-200 bg-white px-5 py-4 shadow-sm">
-            <div className="flex items-center gap-4">
-              <div className="flex size-10 items-center justify-center rounded-xl bg-slate-100">
+          <div key={inv.id} className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-slate-200 bg-white px-5 py-4 shadow-sm">
+            <div className="flex min-w-0 items-center gap-4">
+              <div className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-slate-100">
                 <FileText className="size-5 text-slate-600" />
               </div>
-              <div>
-                <p className="font-mono text-sm font-bold text-slate-900">{inv.invoiceNumber}</p>
-                <p className="text-xs text-slate-500">
+              <div className="min-w-0">
+                <p className="truncate font-mono text-sm font-bold text-slate-900">{inv.invoiceNumber}</p>
+                <p className="truncate text-xs text-slate-500">
                   {new Date(inv.createdAt).toLocaleDateString("id-ID", { day: "numeric", month: "long", year: "numeric" })}
                   {" · "}Tier {inv.currentTier}
                 </p>
-                <p className="mt-0.5 font-mono text-base font-bold text-emerald-700">{IDR.format(Number(inv.grandTotal))}</p>
+                <p className="mt-0.5 truncate font-mono text-base font-bold text-emerald-700">{IDR.format(Number(inv.grandTotal))}</p>
               </div>
             </div>
 
-            <div className="flex items-center gap-3">
+            <div className="flex shrink-0 flex-wrap items-center gap-3">
               <span className={cn("inline-flex items-center gap-1 rounded-full px-3 py-1 text-xs font-medium ring-1 ring-inset", statusInvoiceColor(inv.status))}>
                 {inv.status === "Lunas" && <Check className="size-3" strokeWidth={2.5} />}
                 {inv.status}
@@ -668,24 +726,162 @@ function DeliverablesTracker({ dealId }: { dealId: string }) {
   )
 }
 
+// ─── ChangePasswordModal ──────────────────────────────────────────────────────
+// Top-level modul (BUKAN di dalam page) — aturan CLAUDE.md soal komponen inline
+// yang bikin remount + kehilangan fokus input tiap keystroke.
+function ChangePasswordModal({ dealId, onClose }: { dealId: string; onClose: () => void }) {
+  const [currentPassword, setCurrentPassword] = useState("")
+  const [newPassword, setNewPassword] = useState("")
+  const [saving, setSaving] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const [done, setDone] = useState(false)
+
+  async function handleSubmit(e: React.FormEvent) {
+    e.preventDefault()
+    if (saving) return
+    setError(null)
+    if (newPassword.length < 6) {
+      setError("Password baru minimal 6 karakter.")
+      return
+    }
+    setSaving(true)
+    try {
+      const res = await fetch(`${API_BASE}/sponsor/accounts/change-password`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ dealId, currentPassword, newPassword }),
+      })
+      const data = await safeJson(res)
+      if (res.ok && data.success) {
+        setDone(true)
+      } else {
+        setError((data.message as string) ?? "Gagal mengubah password.")
+      }
+    } catch {
+      setError("Gagal menghubungi server. Coba lagi.")
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 p-4" onClick={onClose}>
+      <div
+        className="w-full max-w-sm rounded-2xl border border-slate-200 bg-white p-6 shadow-xl"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="mb-4 flex items-center justify-between">
+          <p className="text-base font-semibold text-slate-900">Ubah Password</p>
+          <button
+            type="button"
+            onClick={onClose}
+            aria-label="Tutup"
+            className="rounded-md p-1 text-slate-400 transition-colors hover:bg-slate-100 hover:text-slate-700"
+          >
+            <X className="size-4" />
+          </button>
+        </div>
+
+        {done ? (
+          <div className="flex flex-col items-center gap-3 py-4 text-center">
+            <Check className="size-8 rounded-full bg-emerald-50 p-1.5 text-emerald-700" />
+            <p className="text-sm text-slate-700">
+              Password berhasil diubah. Gunakan password baru saat login berikutnya.
+            </p>
+            <button
+              type="button"
+              onClick={onClose}
+              className="mt-1 rounded-lg bg-emerald-800 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-900"
+            >
+              Tutup
+            </button>
+          </div>
+        ) : (
+          <form onSubmit={handleSubmit} className="flex flex-col gap-3">
+            <label className="flex flex-col gap-1.5 text-xs font-medium text-slate-600">
+              Password Saat Ini
+              <input
+                type="password"
+                value={currentPassword}
+                onChange={(e) => setCurrentPassword(e.target.value)}
+                required
+                autoComplete="current-password"
+                className="h-10 rounded-lg border border-slate-200 bg-slate-50 px-3 text-sm text-slate-900 outline-none focus:border-emerald-800"
+              />
+            </label>
+            <label className="flex flex-col gap-1.5 text-xs font-medium text-slate-600">
+              Password Baru (min. 6 karakter)
+              <input
+                type="password"
+                value={newPassword}
+                onChange={(e) => setNewPassword(e.target.value)}
+                required
+                minLength={6}
+                autoComplete="new-password"
+                className="h-10 rounded-lg border border-slate-200 bg-slate-50 px-3 text-sm text-slate-900 outline-none focus:border-emerald-800"
+              />
+            </label>
+            {error && <p className="text-xs text-red-600">{error}</p>}
+            <button
+              type="submit"
+              disabled={saving || !currentPassword || !newPassword}
+              className="mt-1 flex h-10 items-center justify-center gap-2 rounded-lg bg-emerald-800 text-sm font-semibold text-white transition-colors hover:bg-emerald-900 disabled:opacity-50"
+            >
+              {saving ? <Loader2 className="size-4 animate-spin" /> : "Simpan Password Baru"}
+            </button>
+          </form>
+        )}
+      </div>
+    </div>
+  )
+}
+
 // ─── Page ─────────────────────────────────────────────────────────────────────
 export default function SponsorDashboardPage() {
-  const [session, setSession] = useState<{ sponsorName: string; tier: string; dealId: string } | null>(null)
+  const [session, setSession] = useState<SponsorSession | null>(null)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [form, setForm] = useState({ username: "", password: "" })
+  const [showChangePassword, setShowChangePassword] = useState(false)
   const [stats, setStats] = useState<DashStats>({
     total: 0, executed: 0, active: 0, packagePrice: 0, loaded: false,
   })
 
-  // Baca session dari sessionStorage jika redirect dari /login?role=sponsor
+  // F3 (2026-07-28): baca sesi dari sessionStorage & PERTAHANKAN — dulu entri langsung
+  // dihapus (one-shot handoff dari /login) sehingga refresh = logout paksa. Entri kini
+  // hanya dihapus saat Logout atau saat deal-nya terbukti sudah tidak ada di backend.
   useEffect(() => {
-    const stored = sessionStorage.getItem('sponsor_session')
-    if (stored) {
-      try { setSession(JSON.parse(stored)) } catch {}
-      sessionStorage.removeItem('sponsor_session')
+    const stored = sessionStorage.getItem(SESSION_KEY)
+    if (!stored) return
+    let parsed: SponsorSession | null = null
+    try {
+      parsed = JSON.parse(stored) as SponsorSession
+    } catch {
+      sessionStorage.removeItem(SESSION_KEY)
+      return
     }
+    if (!parsed?.dealId) {
+      sessionStorage.removeItem(SESSION_KEY)
+      return
+    }
+    setSession(parsed)
+    // Validasi ringan ke backend: deal sudah dihapus → 404 → sesi mati, balik ke login.
+    // Kegagalan JARINGAN bukan bukti sesi mati — jangan logout karena offline sesaat.
+    fetch(`${API_BASE}/sponsor/public/tier-price?dealId=${parsed.dealId}`)
+      .then((r) => {
+        if (r.status === 404) {
+          sessionStorage.removeItem(SESSION_KEY)
+          setSession(null)
+        }
+      })
+      .catch(() => {})
   }, [])
+
+  function handleLogout() {
+    sessionStorage.removeItem(SESSION_KEY)
+    setShowChangePassword(false)
+    setSession(null) // halaman ini otomatis kembali menampilkan form login
+  }
 
   // Setelah login berhasil, ambil deliverables dan harga paket dari tier
   useEffect(() => {
@@ -727,8 +923,17 @@ export default function SponsorDashboardPage() {
         setError((data.message as string) ?? "Login gagal. Periksa username dan password Anda.")
         return
       }
-      const d = data.data as { sponsorName: string; tier: string; dealId: string }
-      setSession({ sponsorName: d.sponsorName, tier: d.tier, dealId: d.dealId })
+      const d = data.data as SponsorSession
+      const sess: SponsorSession = {
+        sponsorName: d.sponsorName,
+        tier: d.tier,
+        dealId: d.dealId,
+        email: d.email ?? null,
+        username: d.username,
+      }
+      setSession(sess)
+      // F3: tulis ke sessionStorage supaya refresh tidak logout (hilang saat tab ditutup).
+      sessionStorage.setItem(SESSION_KEY, JSON.stringify(sess))
     } catch {
       setError("Belum ada akun klien aktif. Hubungi Event Organizer Anda.")
     } finally {
@@ -807,7 +1012,16 @@ export default function SponsorDashboardPage() {
 
   return (
     <main className="min-h-dvh bg-slate-50 pb-16">
-      <SponsorTopbar clientName={session.sponsorName} clientTier={session.tier} />
+      <SponsorTopbar
+        clientName={session.sponsorName}
+        clientTier={session.tier}
+        email={session.email}
+        onChangePassword={() => setShowChangePassword(true)}
+        onLogout={handleLogout}
+      />
+      {showChangePassword && (
+        <ChangePasswordModal dealId={session.dealId} onClose={() => setShowChangePassword(false)} />
+      )}
       <RightsOverview sponsorName={session.sponsorName} tier={session.tier} stats={stats} />
       <InvoiceSection dealId={session.dealId} />
       <DeliverablesTracker dealId={session.dealId} />
